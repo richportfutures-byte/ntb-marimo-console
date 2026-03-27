@@ -1,0 +1,31 @@
+{
+  "contract": "MGC",
+  "timestamp": "2026-01-14T15:05:00Z",
+  "current_price": 2054.3,
+  "session_open": 2048.7,
+  "prior_day_high": 2058.1,
+  "prior_day_low": 2039.5,
+  "prior_day_close": 2044.2,
+  "overnight_high": 2050.6,
+  "overnight_low": 2042.4,
+  "current_session_vah": 2053.8,
+  "current_session_val": 2049.6,
+  "current_session_poc": 2051.2,
+  "previous_session_vah": 2048.9,
+  "previous_session_val": 2043.7,
+  "previous_session_poc": 2046.4,
+  "vwap": 2050.9,
+  "session_range": 9.1,
+  "avg_20d_session_range": 18.4,
+  "cumulative_delta": 980.0,
+  "current_volume_vs_average": 1.02,
+  "event_calendar_remainder": [
+    {
+      "name": "Fed Minutes",
+      "time": "2026-01-14T19:00:00Z",
+      "tier": 1,
+      "event_state": "upcoming",
+      "minutes_until": 235
+    }
+  ]
+}

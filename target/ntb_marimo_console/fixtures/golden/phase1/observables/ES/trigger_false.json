@@ -1,0 +1,13 @@
+{
+  "contract": "ES",
+  "timestamp_et": "2026-03-25T09:31:00-04:00",
+  "market": {
+    "current_price": 5598.0,
+    "cumulative_delta": -200.0
+  },
+  "cross_asset": {
+    "breadth": {
+      "current_advancers_pct": 0.49
+    }
+  }
+}

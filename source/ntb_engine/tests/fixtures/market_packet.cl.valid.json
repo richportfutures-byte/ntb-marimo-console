@@ -1,0 +1,48 @@
+{
+  "$schema": "market_packet_v1",
+  "timestamp": "2026-01-14T14:05:00Z",
+  "contract": "CL",
+  "session_type": "RTH",
+  "current_price": 73.42,
+  "session_open": 72.95,
+  "prior_day_high": 73.8,
+  "prior_day_low": 72.1,
+  "prior_day_close": 72.88,
+  "overnight_high": 73.2,
+  "overnight_low": 72.55,
+  "current_session_vah": 73.35,
+  "current_session_val": 72.9,
+  "current_session_poc": 73.08,
+  "previous_session_vah": 73.1,
+  "previous_session_val": 72.5,
+  "previous_session_poc": 72.82,
+  "vwap": 73.07,
+  "session_range": 1.04,
+  "avg_20d_session_range": 1.68,
+  "cumulative_delta": 1842.0,
+  "current_volume_vs_average": 1.12,
+  "opening_type": "Open-Auction",
+  "major_higher_timeframe_levels": [
+    74.0,
+    72.0
+  ],
+  "key_hvns": [
+    73.1,
+    72.8
+  ],
+  "key_lvns": [
+    73.5
+  ],
+  "singles_excess_poor_high_low_notes": "No structural defects flagged in the prebuilt packet.",
+  "event_calendar_remainder": [
+    {
+      "name": "EIA Petroleum Status Report",
+      "time": "2026-01-14T15:30:00Z",
+      "tier": 1,
+      "event_state": "upcoming",
+      "minutes_until": 85
+    }
+  ],
+  "cross_market_context": null,
+  "data_quality_flags": []
+}

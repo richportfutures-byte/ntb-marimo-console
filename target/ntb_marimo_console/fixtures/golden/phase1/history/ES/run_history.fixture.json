@@ -1,0 +1,10 @@
+[
+  {
+    "run_id": "run_fixture_001",
+    "logged_at": "2026-03-25T09:35:00-04:00",
+    "contract": "ES",
+    "run_type": "pipeline",
+    "final_decision": "NO_TRADE",
+    "notes": "Fixture-backed history row"
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "contract": "ZN",
+  "timestamp": "2026-01-14T15:05:00Z",
+  "current_price": 110.40625,
+  "session_open": 110.28125,
+  "prior_day_high": 110.5,
+  "prior_day_low": 110.09375,
+  "prior_day_close": 110.21875,
+  "overnight_high": 110.375,
+  "overnight_low": 110.1875,
+  "current_session_vah": 110.421875,
+  "current_session_val": 110.296875,
+  "current_session_poc": 110.359375,
+  "previous_session_vah": 110.3125,
+  "previous_session_val": 110.1875,
+  "previous_session_poc": 110.25,
+  "vwap": 110.34375,
+  "session_range": 0.21875,
+  "avg_20d_session_range": 0.515625,
+  "cumulative_delta": 2210.0,
+  "current_volume_vs_average": 1.05,
+  "event_calendar_remainder": [
+    {
+      "name": "10Y Auction",
+      "time": "2026-01-14T18:00:00Z",
+      "tier": 2,
+      "event_state": "upcoming",
+      "minutes_until": 175
+    }
+  ]
+}

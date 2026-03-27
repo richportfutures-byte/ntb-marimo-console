@@ -1,0 +1,11 @@
+{
+  "contract": "CL",
+  "eia_timing": {
+    "status": "scheduled",
+    "scheduled_time": "2026-01-14T15:30:00Z",
+    "minutes_until": 85
+  },
+  "oil_specific_headlines": "No new OPEC or geopolitical headlines.",
+  "liquidity_sweep_summary": "Sell-side sweep below the overnight low failed to continue.",
+  "dom_liquidity_summary": "Bid stack rebuilding near session VWAP."
+}

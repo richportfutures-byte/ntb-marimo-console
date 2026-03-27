@@ -1,0 +1,10 @@
+{
+  "$schema": "attached_visuals_v1",
+  "daily_chart_attached": true,
+  "higher_timeframe_chart_attached": true,
+  "tpo_chart_attached": true,
+  "volume_profile_attached": true,
+  "execution_chart_attached": true,
+  "footprint_chart_attached": true,
+  "dom_snapshot_attached": true
+}

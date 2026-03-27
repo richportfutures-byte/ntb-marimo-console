@@ -1,0 +1,8 @@
+{
+  "contract": "ES",
+  "dataset": "GLBX.MDP3",
+  "symbol": "ES.c.0",
+  "stype_in": "continuous",
+  "current_session_date": "2026-01-14",
+  "trades_schema": "trades"
+}

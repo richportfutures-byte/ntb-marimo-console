@@ -1,0 +1,38 @@
+{
+  "contract": "ES",
+  "session_date": "2026-03-25",
+  "status": "READY",
+  "version": "pmkt_brief_v1",
+  "structural_setups": [
+    {
+      "id": "es_setup_1",
+      "summary": "Acceptance above resistance cluster activates long thesis.",
+      "description": "Schema-anchored fixture narrative.",
+      "fields_used": [
+        "market.current_price",
+        "market.cumulative_delta",
+        "cross_asset.breadth.current_advancers_pct"
+      ],
+      "query_triggers": [
+        {
+          "id": "es_trigger_acceptance",
+          "logic": "acceptance_above_cluster",
+          "description": "Trigger when price acceptance confirms.",
+          "observable_conditions": [
+            "market.current_price >= 5604",
+            "market.cumulative_delta > 0",
+            "cross_asset.breadth.current_advancers_pct > 0.55"
+          ],
+          "fields_used": [
+            "market.current_price",
+            "market.cumulative_delta",
+            "cross_asset.breadth.current_advancers_pct"
+          ]
+        }
+      ],
+      "warnings": [
+        "Neither thesis is live until trigger conditions are met."
+      ]
+    }
+  ]
+}

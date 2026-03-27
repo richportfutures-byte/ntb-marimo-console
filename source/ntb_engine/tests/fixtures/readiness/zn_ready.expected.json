@@ -1,0 +1,49 @@
+{
+  "$schema": "readiness_engine_output_v1",
+  "stage": "readiness_engine",
+  "authority": "ESCALATE_ONLY",
+  "contract": "ZN",
+  "timestamp": "2026-01-14T15:05:00Z",
+  "status": "READY",
+  "doctrine_gates": [
+    {
+      "gate": "data_sufficiency_gate",
+      "state": "PASS",
+      "rationale": "Market packet and context inputs are complete."
+    },
+    {
+      "gate": "context_alignment_gate",
+      "state": "PASS",
+      "rationale": "Treasury context remains aligned with the long-side readiness check."
+    },
+    {
+      "gate": "structure_quality_gate",
+      "state": "PASS",
+      "rationale": "Session structure remains intact above session VWAP."
+    },
+    {
+      "gate": "trigger_gate",
+      "state": "PASS",
+      "rationale": "The required price touch has already occurred."
+    },
+    {
+      "gate": "risk_window_gate",
+      "state": "PASS",
+      "rationale": "Trading window remains open."
+    },
+    {
+      "gate": "lockout_gate",
+      "state": "PASS",
+      "rationale": "No readiness lockout is active."
+    }
+  ],
+  "trigger_data": {
+    "family": "price_level_touch",
+    "recheck_at_time": null,
+    "price_level": 110.40625
+  },
+  "wait_for_trigger_reason": null,
+  "lockout_reason": null,
+  "insufficient_data_reasons": [],
+  "missing_inputs": []
+}

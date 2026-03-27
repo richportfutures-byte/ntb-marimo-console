@@ -1,0 +1,20 @@
+[project]
+name = "ntb-marimo-console"
+version = "0.1.0"
+description = "Marimo operator console for NinjaTradeBuilder"
+requires-python = ">=3.11"
+dependencies = [
+    "marimo>=0.10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+]
+preserved_engine = [
+    "pydantic>=2.8,<3",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"

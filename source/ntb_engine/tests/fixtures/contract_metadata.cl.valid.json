@@ -1,0 +1,11 @@
+{
+  "$schema": "contract_metadata_v1",
+  "contract": "CL",
+  "tick_size": 0.01,
+  "dollar_per_tick": 10.0,
+  "point_value": 1000.0,
+  "max_position_size": 2,
+  "slippage_ticks": 2,
+  "allowed_hours_start_et": "09:00",
+  "allowed_hours_end_et": "14:15"
+}

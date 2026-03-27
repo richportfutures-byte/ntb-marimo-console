@@ -1,0 +1,52 @@
+{
+  "contract": "CL",
+  "challenge_state": {
+    "$schema": "challenge_state_v1",
+    "current_balance": 50000.0,
+    "daily_realized_pnl": 0.0,
+    "max_risk_per_trade_dollars": 1450.0,
+    "daily_loss_stop_dollars": 10000.0,
+    "minimum_reward_to_risk": 1.5,
+    "event_lockout_minutes_before": 15,
+    "event_lockout_minutes_after": 5,
+    "max_position_size_by_contract": {
+      "ES": 2,
+      "NQ": 2,
+      "CL": 2,
+      "ZN": 4,
+      "6E": 4,
+      "MGC": 12
+    },
+    "max_trades_per_day": 60,
+    "max_trades_per_contract_per_day": 3,
+    "cooldown_after_stopout_minutes": 30,
+    "current_open_positions": [],
+    "trades_today_all": 0,
+    "trades_today_by_contract": {
+      "ES": 0,
+      "NQ": 0,
+      "CL": 0,
+      "ZN": 0,
+      "6E": 0,
+      "MGC": 0
+    },
+    "profit_target_dollars": 400000.0,
+    "last_stopout_time_by_contract": {
+      "ES": null,
+      "NQ": null,
+      "CL": null,
+      "ZN": null,
+      "6E": null,
+      "MGC": null
+    },
+    "last_trade_direction_by_contract": {
+      "ES": null,
+      "NQ": null,
+      "CL": null,
+      "ZN": null,
+      "6E": null,
+      "MGC": null
+    }
+  },
+  "opening_type": "Open-Auction"
+}

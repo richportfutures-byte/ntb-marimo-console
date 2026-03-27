@@ -1,0 +1,40 @@
+{
+  "contract": "ZN",
+  "session_date": "2026-01-14",
+  "timezone": "America/New_York",
+  "prior_day": {
+    "high": 110.5,
+    "low": 110.09375,
+    "close": 110.21875,
+    "poc": 110.25,
+    "vah": 110.3125,
+    "val": 110.1875,
+    "session_range": 0.40625
+  },
+  "current_session": {
+    "vah": 110.421875,
+    "val": 110.296875,
+    "poc": 110.359375
+  },
+  "overnight": {
+    "high": 110.375,
+    "low": 110.1875
+  },
+  "macro_context": {
+    "treasury_auction_schedule": [
+      "today 13:00 10Y"
+    ],
+    "macro_release_context": "CPI slightly soft, yields initially down then stabilized."
+  },
+  "cross_asset": {
+    "cash_10y_yield": 4.12
+  },
+  "metadata": {
+    "packet_version": "pmkt_v1",
+    "generated_at": "2026-01-14T08:00:00-05:00",
+    "provenance": [
+      "source_fixture:zn_historical_input.valid.json",
+      "source_fixture:zn_extension.valid.json"
+    ]
+  }
+}

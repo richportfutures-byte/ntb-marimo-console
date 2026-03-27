@@ -1,0 +1,10 @@
+{
+  "contract": "ES",
+  "event_risk_state": "lockout_active",
+  "vwap_posture_state": "price_below_vwap",
+  "value_location_state": "inside_value",
+  "level_proximity_state": "near_prior_day_level",
+  "hard_lockout_flags": ["event_lockout"],
+  "awareness_flags": [],
+  "missing_inputs": []
+}

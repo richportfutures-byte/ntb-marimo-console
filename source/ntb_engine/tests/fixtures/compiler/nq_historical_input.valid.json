@@ -1,0 +1,31 @@
+{
+  "contract": "NQ",
+  "timestamp": "2026-01-14T15:05:00Z",
+  "current_price": 18142.0,
+  "session_open": 18055.5,
+  "prior_day_high": 18188.0,
+  "prior_day_low": 17982.0,
+  "prior_day_close": 18024.75,
+  "overnight_high": 18105.5,
+  "overnight_low": 17996.0,
+  "current_session_vah": 18128.0,
+  "current_session_val": 18062.25,
+  "current_session_poc": 18094.5,
+  "previous_session_vah": 18046.0,
+  "previous_session_val": 17988.0,
+  "previous_session_poc": 18012.25,
+  "vwap": 18098.25,
+  "session_range": 126.5,
+  "avg_20d_session_range": 255.0,
+  "cumulative_delta": 8430.0,
+  "current_volume_vs_average": 1.14,
+  "event_calendar_remainder": [
+    {
+      "name": "Megacap Earnings",
+      "time": "2026-01-14T21:00:00Z",
+      "tier": 2,
+      "event_state": "upcoming",
+      "minutes_until": 360
+    }
+  ]
+}

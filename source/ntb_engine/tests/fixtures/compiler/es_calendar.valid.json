@@ -1,0 +1,19 @@
+{
+  "contract": "ES",
+  "event_calendar_remainder": [
+    {
+      "name": "CPI",
+      "time": "2026-01-14T13:30:00Z",
+      "tier": 1,
+      "event_state": "released",
+      "minutes_since": 150
+    },
+    {
+      "name": "Fed Speaker",
+      "time": "2026-01-14T18:00:00Z",
+      "tier": 2,
+      "event_state": "upcoming",
+      "minutes_until": 120
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "contract": "CL",
+  "current_session_timestamp": "2026-01-14T14:05:00Z",
+  "scheduled_release_time": "2026-01-14T15:30:00Z",
+  "release_week_ending": "2026-01-09",
+  "route": "petroleum/stoc/wstk/data",
+  "facets": {
+    "series": [
+      "WCESTUS1"
+    ]
+  }
+}

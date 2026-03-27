@@ -1,0 +1,49 @@
+{
+  "$schema": "readiness_engine_output_v1",
+  "stage": "readiness_engine",
+  "authority": "ESCALATE_ONLY",
+  "contract": "ZN",
+  "timestamp": "2026-01-14T15:05:00Z",
+  "status": "WAIT_FOR_TRIGGER",
+  "doctrine_gates": [
+    {
+      "gate": "data_sufficiency_gate",
+      "state": "PASS",
+      "rationale": "Market packet and context inputs are complete."
+    },
+    {
+      "gate": "context_alignment_gate",
+      "state": "PASS",
+      "rationale": "Macro context remains aligned while awaiting the trigger."
+    },
+    {
+      "gate": "structure_quality_gate",
+      "state": "PASS",
+      "rationale": "Current ZN structure remains acceptable."
+    },
+    {
+      "gate": "trigger_gate",
+      "state": "WAIT",
+      "rationale": "The next recheck time has not been reached yet."
+    },
+    {
+      "gate": "risk_window_gate",
+      "state": "PASS",
+      "rationale": "Trading window remains open."
+    },
+    {
+      "gate": "lockout_gate",
+      "state": "PASS",
+      "rationale": "No readiness lockout is active."
+    }
+  ],
+  "trigger_data": {
+    "family": "recheck_at_time",
+    "price_level": null,
+    "recheck_at_time": "2026-01-14T15:15:00Z"
+  },
+  "wait_for_trigger_reason": "timing_window_not_open",
+  "lockout_reason": null,
+  "insufficient_data_reasons": [],
+  "missing_inputs": []
+}

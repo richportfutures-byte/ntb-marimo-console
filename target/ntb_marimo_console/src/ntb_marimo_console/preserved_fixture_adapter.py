@@ -1,0 +1,103 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+from ninjatradebuilder.adapters import InProcessStructuredAdapter
+from ninjatradebuilder.pipeline import STAGE_AB_PROMPT_BY_CONTRACT
+
+from .runtime_profiles import get_runtime_profile
+
+
+def _workspace_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def _load_json_fixture(relative_path: str) -> dict[str, Any]:
+    path = _workspace_root() / relative_path
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _valid_contract_analysis_no_trade(
+    *,
+    contract: str,
+    timestamp: str,
+    support_level: float,
+    resistance_level: float,
+    pivot_level: float,
+    structural_notes: str,
+) -> dict[str, object]:
+    return {
+        "$schema": "contract_analysis_v1",
+        "stage": "contract_market_read",
+        "contract": contract,
+        "timestamp": timestamp,
+        "market_regime": "range_bound",
+        "directional_bias": "bullish",
+        "key_levels": {
+            "support_levels": [support_level],
+            "resistance_levels": [resistance_level],
+            "pivot_level": pivot_level,
+        },
+        "evidence_score": 6,
+        "confidence_band": "MEDIUM",
+        "value_context": {
+            "relative_to_prior_value_area": "above",
+            "relative_to_current_developing_value": "above_vah",
+            "relative_to_vwap": "above",
+            "relative_to_prior_day_range": "above",
+        },
+        "structural_notes": structural_notes,
+        "outcome": "NO_TRADE",
+        "conflicting_signals": ["fixture_preserved_mode_bound_to_stage_b_no_trade"],
+        "assumptions": [],
+    }
+
+
+def _es_fixture_analysis() -> dict[str, object]:
+    profile = get_runtime_profile("preserved_es_phase1")
+    return _valid_contract_analysis_no_trade(
+        contract=profile.contract,
+        timestamp=profile.evaluation_timestamp_iso,
+        support_level=5576.0,
+        resistance_level=5604.0,
+        pivot_level=5589.0,
+        structural_notes=(
+            "Price is above the prior-day value area but the fixture integration path terminates at NO_TRADE."
+        ),
+    )
+
+
+def _zn_fixture_analysis() -> dict[str, object]:
+    profile = get_runtime_profile("preserved_zn_phase1")
+    historical = _load_json_fixture("source/ntb_engine/tests/fixtures/compiler/zn_historical_input.valid.json")
+    extension = _load_json_fixture("source/ntb_engine/tests/fixtures/compiler/zn_extension.valid.json")
+    return _valid_contract_analysis_no_trade(
+        contract=profile.contract,
+        timestamp=profile.evaluation_timestamp_iso,
+        support_level=float(historical["current_session_val"]),
+        resistance_level=float(historical["prior_day_high"]),
+        pivot_level=float(historical["current_session_poc"]),
+        structural_notes=(
+            "Cash 10Y yield remains anchored at "
+            f"{float(extension['cash_10y_yield']):.2f} with buyer absorption near session VWAP, "
+            "but the bounded preserved fixture adapter terminates at NO_TRADE."
+        ),
+    )
+
+
+def build_profile_fixture_adapter(profile_id: str = "preserved_es_phase1") -> InProcessStructuredAdapter:
+    profile = get_runtime_profile(profile_id)
+    if profile.profile_id == "preserved_es_phase1":
+        analysis = _es_fixture_analysis()
+    elif profile.profile_id == "preserved_zn_phase1":
+        analysis = _zn_fixture_analysis()
+    else:
+        raise RuntimeError(f"Unsupported preserved fixture adapter profile: {profile.profile_id}")
+    return InProcessStructuredAdapter({STAGE_AB_PROMPT_BY_CONTRACT[profile.contract]: analysis})
+
+
+adapter_es = build_profile_fixture_adapter("preserved_es_phase1")
+adapter_zn = build_profile_fixture_adapter("preserved_zn_phase1")
+adapter = adapter_es

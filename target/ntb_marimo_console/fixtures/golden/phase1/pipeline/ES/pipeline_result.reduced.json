@@ -1,0 +1,9 @@
+{
+  "contract": "ES",
+  "termination_stage": "risk_authorization",
+  "final_decision": "TRADE_REDUCED",
+  "sufficiency_gate_status": "READY",
+  "contract_analysis_outcome": "ANALYSIS_COMPLETE",
+  "proposed_setup_outcome": "SETUP_PROPOSED",
+  "risk_authorization_decision": "REDUCED"
+}

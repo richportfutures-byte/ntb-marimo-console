@@ -1,0 +1,50 @@
+{
+  "contract": "ZN",
+  "session_date": "2026-01-14",
+  "status": "READY",
+  "version": "pmkt_brief_v1",
+  "structural_setups": [
+    {
+      "id": "zn_setup_1",
+      "summary": "Yield stability and acceptance above monitored treasury value keep the ZN long-side read queryable.",
+      "description": "Schema-anchored ZN fixture narrative using yield context, auction proximity, and explicit observable query conditions.",
+      "fields_used": [
+        "market.current_price",
+        "market.cumulative_delta",
+        "cross_asset.cash_10y_yield",
+        "macro_context.macro_release_context_populated"
+      ],
+      "contract_framework_labels": [
+        "macro_primary",
+        "yield_context",
+        "auction_proximity"
+      ],
+      "stage_b_thesis_links": [
+        "zn_macro_primary_balance"
+      ],
+      "query_triggers": [
+        {
+          "id": "zn_trigger_yield_supported_acceptance",
+          "logic": "yield_supported_acceptance",
+          "description": "Trigger when ZN is holding at or above the monitored treasury level with positive delta and macro context populated.",
+          "observable_conditions": [
+            "market.current_price >= 110.40625",
+            "market.cumulative_delta > 0",
+            "cross_asset.cash_10y_yield <= 4.12",
+            "macro_context.macro_release_context_populated == True"
+          ],
+          "fields_used": [
+            "market.current_price",
+            "market.cumulative_delta",
+            "cross_asset.cash_10y_yield",
+            "macro_context.macro_release_context_populated"
+          ]
+        }
+      ],
+      "warnings": [
+        "If macro release context is not populated or yields back up, keep the query blocked.",
+        "Auction proximity remains a caution condition even when the trigger is armed."
+      ]
+    }
+  ]
+}
