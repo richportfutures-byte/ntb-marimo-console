@@ -10,6 +10,7 @@ from .adapters.contracts import (
     PipelineBackend,
     PreMarketArtifactStore,
     RunHistoryStore,
+    SessionTarget,
     WatchmanContextLike,
 )
 from .adapters.trigger_evaluator import TriggerEvaluator
@@ -26,6 +27,7 @@ from .viewmodels.mappers import (
     trigger_status_vm_from_eval,
 )
 from .viewmodels.models import PipelineTraceVM, TriggerStatusVM
+from .watchman_gate import WatchmanValidatorResult, build_watchman_gate_payload, validate_watchman_brief
 
 
 @dataclass
@@ -46,8 +48,12 @@ class Phase1RuntimeStatus:
 class Phase1WorkflowStatus:
     state: SessionState
     state_history: tuple[SessionState, ...]
+    watchman_gate_status: str
+    watchman_gate_open: bool
     live_query_status: str
     query_action_status: str
+    query_enabled: bool
+    readiness_gate: bool
     query_action_available: bool
     decision_review_ready: bool
     audit_replay_ready: bool
@@ -63,7 +69,9 @@ class Phase1BuildArtifacts:
     payload: AppShellPayload
     runtime_status: Phase1RuntimeStatus
     workflow_status: Phase1WorkflowStatus
+    watchman_gate: dict[str, object]
     audit_replay: AuditReplayRecord | None
+    run_history_source: str
 
 
 def _fail_closed(
@@ -115,6 +123,9 @@ def build_phase1_payload(
     if packet_session_date != session_target.session_date or brief_session_date != session_target.session_date:
         _fail_closed(session, "Pre-market artifacts did not match the selected operator session date.")
 
+    watchman_validator = validate_watchman_brief(premarket.brief)
+    watchman_gate = build_watchman_gate_payload(watchman_validator)
+
     try:
         watchman_map = backend.sweep_watchman(inputs.premarket)
     except Exception as exc:
@@ -132,10 +143,12 @@ def build_phase1_payload(
 
     trigger_vms = tuple(trigger_status_vm_from_eval(item) for item in eval_bundle.evaluations)
     blocked_reasons = _build_blocked_reasons(
+        watchman_gate=watchman_gate,
         watchman_context=watchman_context,
         trigger_rows=trigger_vms,
     )
-    query_enabled = eval_bundle.query_gate_true and not watchman_context.hard_lockout_flags
+    readiness_gate = watchman_validator.pipeline_gate_open and not watchman_context.hard_lockout_flags
+    query_enabled = watchman_validator.pipeline_gate_open and eval_bundle.query_gate_true and not watchman_context.hard_lockout_flags
 
     if query_enabled:
         session.mark_live_query_eligible()
@@ -171,16 +184,27 @@ def build_phase1_payload(
                     error_message = f"Audit/replay load failed after bounded query completion: {exc}"
                     session.mark_error()
                 else:
-                    session.mark_audit_replay_ready()
+                    if audit_replay.get("replay_available") is True:
+                        session.mark_audit_replay_ready()
+                    else:
+                        error_message = (
+                            "Audit/replay stayed unavailable after bounded query completion. "
+                            "The session failed closed because no persisted Stage E record was available."
+                        )
+                        session.mark_error()
 
     try:
         history_rows = dependencies.run_history_store.list_rows(session_target)
     except Exception as exc:
         _fail_closed(session, "Failed to load run history.", exc)
+    run_history_source = _run_history_source(dependencies.run_history_store, session_target=session_target)
 
     payload = AppShellPayload(
         session_header=session_header_vm(session_target.contract, session_target.session_date),
-        premarket_brief=premarket_brief_vm_from_brief(premarket.brief),
+        premarket_brief=premarket_brief_vm_from_brief(
+            premarket.brief,
+            status_override=watchman_validator.status,
+        ),
         live_observable=live_observable_vm_from_snapshot(inputs.live_snapshot),
         readiness_cards=(readiness_card_vm_from_context(watchman_context),),
         trigger_rows=trigger_vms,
@@ -194,6 +218,8 @@ def build_phase1_payload(
     workflow_status = _build_workflow_status(
         session=session,
         query_enabled=query_enabled,
+        readiness_gate=readiness_gate,
+        watchman_validator=watchman_validator,
         query_action_requested=query_action_requested,
         pipeline_vm=pipeline_vm,
         audit_replay=audit_replay,
@@ -204,7 +230,9 @@ def build_phase1_payload(
         payload=payload,
         runtime_status=runtime_status,
         workflow_status=workflow_status,
+        watchman_gate=watchman_gate,
         audit_replay=audit_replay,
+        run_history_source=run_history_source,
     )
 
 
@@ -231,8 +259,11 @@ def build_phase1_app(
         if isinstance(query_panel, dict):
             query_panel.update(
                 {
+                    "watchman_gate_status": artifacts.workflow_status.watchman_gate_status,
                     "live_query_status": artifacts.workflow_status.live_query_status,
                     "query_action_status": artifacts.workflow_status.query_action_status,
+                    "readiness_gate": artifacts.workflow_status.readiness_gate,
+                    "query_enabled": artifacts.workflow_status.query_enabled,
                     "action_available": artifacts.workflow_status.query_action_available,
                     "action_requested": query_action_requested,
                     "action_label": "Run bounded query for loaded snapshot",
@@ -266,6 +297,7 @@ def build_phase1_app(
             if artifacts.audit_replay is not None:
                 audit_panel.update(
                     {
+                        "mode": artifacts.audit_replay["source"],
                         "source": artifacts.audit_replay["source"],
                         "replay_available": artifacts.audit_replay["replay_available"],
                         "last_run_id": artifacts.audit_replay["last_run_id"],
@@ -284,11 +316,20 @@ def build_phase1_app(
                     }
                 )
 
+        run_history_panel = surfaces.get("run_history")
+        if isinstance(run_history_panel, dict):
+            run_history_panel["source"] = artifacts.run_history_source
+
+    shell["watchman_gate"] = dict(artifacts.watchman_gate)
     shell["workflow"] = {
         "current_state": artifacts.workflow_status.state.value,
         "state_history": [state.value for state in artifacts.workflow_status.state_history],
+        "watchman_gate_status": artifacts.workflow_status.watchman_gate_status,
+        "watchman_gate_open": artifacts.workflow_status.watchman_gate_open,
         "live_query_status": artifacts.workflow_status.live_query_status,
         "query_action_status": artifacts.workflow_status.query_action_status,
+        "query_enabled": artifacts.workflow_status.query_enabled,
+        "readiness_gate": artifacts.workflow_status.readiness_gate,
         "query_action_available": artifacts.workflow_status.query_action_available,
         "decision_review_ready": artifacts.workflow_status.decision_review_ready,
         "audit_replay_ready": artifacts.workflow_status.audit_replay_ready,
@@ -305,6 +346,7 @@ def build_phase1_app(
         "session_date": inputs.selection.session.session_date,
         "session_state": artifacts.runtime_status.state.value,
         "state_history": [state.value for state in artifacts.runtime_status.state_history],
+        "watchman_gate_status": artifacts.workflow_status.watchman_gate_status,
         "live_query_status": artifacts.workflow_status.live_query_status,
         "query_action_status": artifacts.workflow_status.query_action_status,
         "decision_review_ready": artifacts.workflow_status.decision_review_ready,
@@ -314,12 +356,32 @@ def build_phase1_app(
     return shell
 
 
+def _run_history_source(store: RunHistoryStore, *, session_target: SessionTarget) -> str:
+    source_label = getattr(store, "source_label", None)
+    if callable(source_label):
+        source = source_label(session_target)
+        if isinstance(source, str) and source:
+            return source
+    return "fixture_backed"
+
+
 def _build_blocked_reasons(
     *,
+    watchman_gate: Mapping[str, object],
     watchman_context: WatchmanContextLike,
     trigger_rows: tuple[TriggerStatusVM, ...],
 ) -> tuple[str, ...]:
     reasons: list[str] = []
+
+    if watchman_gate.get("pipeline_gate_open") is not True:
+        reasons.append(
+            str(
+                watchman_gate.get(
+                    "status_summary",
+                    "Watchman validator has not authorized this brief yet.",
+                )
+            )
+        )
 
     if watchman_context.hard_lockout_flags:
         flags = ", ".join(watchman_context.hard_lockout_flags)
@@ -347,6 +409,8 @@ def _build_workflow_status(
     *,
     session: OperatorSessionMachine,
     query_enabled: bool,
+    readiness_gate: bool,
+    watchman_validator: WatchmanValidatorResult,
     query_action_requested: bool,
     pipeline_vm: PipelineTraceVM | None,
     audit_replay: AuditReplayRecord | None,
@@ -390,8 +454,12 @@ def _build_workflow_status(
     return Phase1WorkflowStatus(
         state=session.state,
         state_history=session.state_history,
+        watchman_gate_status=watchman_validator.status,
+        watchman_gate_open=watchman_validator.pipeline_gate_open,
         live_query_status=live_query_status,
         query_action_status=query_action_status,
+        query_enabled=query_enabled,
+        readiness_gate=readiness_gate,
         query_action_available=query_action_available,
         decision_review_ready=decision_review_ready,
         audit_replay_ready=audit_replay_ready,

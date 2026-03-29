@@ -79,7 +79,9 @@ def build_backend_for_profile(
         )
 
     try:
-        return PreservedEngineBackend(model_adapter=model_adapter)
+        return PreservedEngineBackend(
+            model_adapter=model_adapter,
+        )
     except Exception as exc:  # pragma: no cover - preserves fail-closed behavior
         raise PreservedModeInitializationError(
             f"Failed to initialize preserved backend for profile {profile.profile_id}."
@@ -202,7 +204,10 @@ def assemble_runtime_for_profile(
         lockout=lockout,
         model_adapter=model_adapter,
     )
-    dependencies = build_phase1_dependencies(artifacts_root)
+    dependencies = build_phase1_dependencies(
+        artifacts_root,
+        profile=profile,
+    )
     return RuntimeAssembly(
         profile=profile,
         artifacts_root=artifacts_root,

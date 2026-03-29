@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .adapters.contracts import RuntimeMode
+from .bootstrap import platform_bootstrap_command
 from .demo_fixture_runtime import build_runtime_inputs_for_profile, default_fixtures_root, load_json_object
 from .runtime_modes import validate_preserved_runtime_inputs
 from .runtime_profiles import RuntimeProfile
@@ -329,7 +330,10 @@ def _dependency_check(mode: RuntimeMode) -> DiagnosticCheck:
             category=DIAG_MISSING_DEPENDENCY,
             passed=False,
             summary=f"Missing required imports: {missing_text}.",
-            remedy="Run ./scripts/bootstrap_target_env.sh and verify the target .venv plus workspace path bootstrap are intact.",
+            remedy=(
+                f"Run {platform_bootstrap_command()} and verify the target .venv plus "
+                "workspace path bootstrap are intact."
+            ),
         )
 
     return DiagnosticCheck(

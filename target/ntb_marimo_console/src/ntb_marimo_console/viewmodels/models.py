@@ -64,5 +64,8 @@ class RunHistoryRowVM:
     logged_at: str
     contract: str
     run_type: str
-    final_decision: str
     notes: str
+    session_date: str | None = None
+    final_decision: str | None = None
+    termination_stage: str | None = None
+    stage_d_decision: str | None = None

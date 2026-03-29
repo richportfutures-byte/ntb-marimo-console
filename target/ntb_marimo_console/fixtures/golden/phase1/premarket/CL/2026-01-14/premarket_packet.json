@@ -1,0 +1,46 @@
+{
+  "contract": "CL",
+  "session_date": "2026-01-14",
+  "timezone": "America/New_York",
+  "prior_day": {
+    "high": 73.8,
+    "low": 72.1,
+    "close": 72.88,
+    "poc": 72.82,
+    "vah": 73.1,
+    "val": 72.5,
+    "session_range": 1.04
+  },
+  "current_session": {
+    "vah": 73.35,
+    "val": 72.9,
+    "poc": 73.08,
+    "vwap": 73.07
+  },
+  "overnight": {
+    "high": 73.2,
+    "low": 72.55
+  },
+  "macro_context": {
+    "eia_timing": {
+      "status": "scheduled",
+      "scheduled_time": "2026-01-14T15:30:00Z",
+      "minutes_until": 85
+    },
+    "oil_specific_headlines": "No new OPEC or geopolitical headlines."
+  },
+  "volatility_context": {
+    "avg_20d_session_range": 1.68,
+    "current_volume_vs_average": 1.12,
+    "realized_volatility_context": "normal"
+  },
+  "metadata": {
+    "packet_version": "pmkt_v1",
+    "generated_at": "2026-01-14T08:00:00-05:00",
+    "provenance": [
+      "source/ntb_engine/tests/fixtures/packets.valid.json",
+      "source/ntb_engine/tests/fixtures/compiler/cl_historical_input.valid.json",
+      "source/ntb_engine/tests/fixtures/compiler/cl_extension.valid.json"
+    ]
+  }
+}

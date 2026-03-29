@@ -1,0 +1,141 @@
+{
+  "shared": {
+    "challenge_state": {
+      "$schema": "challenge_state_v1",
+      "current_balance": 50000.0,
+      "daily_realized_pnl": 0.0,
+      "max_risk_per_trade_dollars": 1450.0,
+      "daily_loss_stop_dollars": 10000.0,
+      "minimum_reward_to_risk": 1.5,
+      "event_lockout_minutes_before": 15,
+      "event_lockout_minutes_after": 5,
+      "max_position_size_by_contract": {
+        "ES": 2,
+        "NQ": 2,
+        "CL": 2,
+        "ZN": 4,
+        "6E": 4,
+        "MGC": 12
+      },
+      "max_trades_per_day": 60,
+      "max_trades_per_contract_per_day": 3,
+      "cooldown_after_stopout_minutes": 30,
+      "current_open_positions": [],
+      "trades_today_all": 0,
+      "trades_today_by_contract": {
+        "ES": 0,
+        "NQ": 0,
+        "CL": 0,
+        "ZN": 0,
+        "6E": 0,
+        "MGC": 0
+      },
+      "profit_target_dollars": 400000.0,
+      "last_stopout_time_by_contract": {
+        "ES": null,
+        "NQ": null,
+        "CL": null,
+        "ZN": null,
+        "6E": null,
+        "MGC": null
+      },
+      "last_trade_direction_by_contract": {
+        "ES": null,
+        "NQ": null,
+        "CL": null,
+        "ZN": null,
+        "6E": null,
+        "MGC": null
+      }
+    },
+    "attached_visuals": {
+      "$schema": "attached_visuals_v1",
+      "daily_chart_attached": true,
+      "higher_timeframe_chart_attached": true,
+      "tpo_chart_attached": true,
+      "volume_profile_attached": true,
+      "execution_chart_attached": true,
+      "footprint_chart_attached": true,
+      "dom_snapshot_attached": true
+    }
+  },
+  "contracts": {
+    "CL": {
+      "contract_metadata": {
+        "$schema": "contract_metadata_v1",
+        "contract": "CL",
+        "tick_size": 0.01,
+        "dollar_per_tick": 10.0,
+        "point_value": 1000.0,
+        "max_position_size": 2,
+        "slippage_ticks": 2,
+        "allowed_hours_start_et": "09:00",
+        "allowed_hours_end_et": "14:15"
+      },
+      "market_packet": {
+        "$schema": "market_packet_v1",
+        "timestamp": "2026-01-14T09:05:00-05:00",
+        "contract": "CL",
+        "session_type": "RTH",
+        "current_price": 73.42,
+        "session_open": 72.95,
+        "prior_day_high": 73.8,
+        "prior_day_low": 72.1,
+        "prior_day_close": 72.88,
+        "overnight_high": 73.2,
+        "overnight_low": 72.55,
+        "current_session_vah": 73.35,
+        "current_session_val": 72.9,
+        "current_session_poc": 73.08,
+        "previous_session_vah": 73.1,
+        "previous_session_val": 72.5,
+        "previous_session_poc": 72.82,
+        "vwap": 73.07,
+        "session_range": 1.04,
+        "avg_20d_session_range": 1.68,
+        "cumulative_delta": 1842.0,
+        "current_volume_vs_average": 1.12,
+        "opening_type": "Open-Auction",
+        "major_higher_timeframe_levels": [
+          74.0,
+          72.0
+        ],
+        "key_hvns": [
+          73.1,
+          72.8
+        ],
+        "key_lvns": [
+          73.5
+        ],
+        "singles_excess_poor_high_low_notes": "No structural defects flagged in the prebuilt packet.",
+        "event_calendar_remainder": [
+          {
+            "name": "EIA Petroleum Status Report",
+            "time": "2026-01-14T15:30:00Z",
+            "tier": 1,
+            "event_state": "upcoming",
+            "minutes_until": 85
+          }
+        ],
+        "cross_market_context": {
+          "dxy_direction": "flat",
+          "equity_tone": "risk-on"
+        },
+        "data_quality_flags": []
+      },
+      "contract_specific_extension": {
+        "$schema": "contract_specific_extension_v1",
+        "contract": "CL",
+        "eia_timing": {
+          "status": "scheduled",
+          "scheduled_time": "2026-01-14T15:30:00Z",
+          "minutes_until": 85
+        },
+        "oil_specific_headlines": "No new OPEC or geopolitical headlines.",
+        "liquidity_sweep_summary": "Sell-side sweep below the overnight low failed to continue.",
+        "dom_liquidity_summary": "Bid stack rebuilding near session VWAP.",
+        "realized_volatility_context": "normal"
+      }
+    }
+  }
+}

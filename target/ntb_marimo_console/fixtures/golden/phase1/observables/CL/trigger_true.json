@@ -1,0 +1,14 @@
+{
+  "contract": "CL",
+  "timestamp_et": "2026-01-14T09:05:00-05:00",
+  "market": {
+    "current_price": 73.42,
+    "cumulative_delta": 1842.0
+  },
+  "volatility_context": {
+    "current_volume_vs_average": 1.12
+  },
+  "macro_context": {
+    "eia_lockout_active": false
+  }
+}

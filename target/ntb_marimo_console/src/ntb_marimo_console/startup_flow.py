@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from enum import Enum
 
+from .bootstrap import platform_bootstrap_command
+from .profile_operations import build_profile_operations_snapshot
 from .runtime_diagnostics import (
     DIAG_ADAPTER_RESOLUTION_FAILURE,
     DIAG_INVALID_ARTIFACT_CONTRACT,
@@ -14,7 +16,6 @@ from .runtime_diagnostics import (
     PreflightReport,
     runtime_identity_payload,
 )
-from .runtime_profiles import PROFILE_REGISTRY
 
 
 class StartupReadinessState(str, Enum):
@@ -33,15 +34,34 @@ def build_startup_payload(
     runtime_shell: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     identity = runtime_identity_payload(report)
+    profile_operations = build_profile_operations_snapshot(
+        current_profile_id=str(identity.get("profile_id")) if identity.get("profile_id") is not None else None
+    )
     supported_profiles = [
         {
-            "profile_id": getattr(profile, "profile_id", profile_id),
-            "runtime_mode": getattr(profile, "runtime_mode", "<unresolved>"),
-            "contract": getattr(profile, "contract", "<unresolved>"),
-            "session_date": getattr(profile, "session_date", "<unresolved>"),
+            "profile_id": profile.profile_id,
+            "runtime_mode": profile.runtime_mode,
+            "runtime_mode_label": profile.runtime_mode_label,
+            "profile_kind": profile.profile_kind,
+            "contract": profile.contract,
+            "session_date": profile.session_date,
+            "active": profile.active,
+            "selectable": True,
         }
-        for profile_id, profile in sorted(PROFILE_REGISTRY.items())
+        for profile in profile_operations.supported_profiles
     ]
+    candidate_profiles = [
+        {
+            "contract": candidate.contract,
+            "profile_id": candidate.profile_id,
+            "status": candidate.status,
+            "reason_category": candidate.reason_category,
+            "reason_label": candidate.reason_label,
+            "summary": candidate.summary,
+        }
+        for candidate in profile_operations.candidate_profiles
+    ]
+    blocked_candidates = [candidate for candidate in candidate_profiles if candidate["status"] == "blocked"]
     readiness_state, readiness_history = _readiness_path(report, runtime_shell=runtime_shell)
     current_session_state = _resolve_current_session_state(runtime_shell, readiness_state)
     operator_ready = readiness_state == StartupReadinessState.OPERATOR_SURFACES_READY.value
@@ -51,6 +71,11 @@ def build_startup_payload(
         "app_name": "NTB Marimo Console",
         "selected_profile_id": identity.get("profile_id", "<unresolved>"),
         "supported_profiles": supported_profiles,
+        "supported_profile_ids": [profile["profile_id"] for profile in supported_profiles],
+        "candidate_profiles": candidate_profiles,
+        "blocked_candidates": blocked_candidates,
+        "candidate_audit_available": profile_operations.audit_available,
+        "candidate_audit_summary": profile_operations.audit_summary,
         "runtime_mode": identity.get("runtime_mode", "<unresolved>"),
         "runtime_mode_label": _runtime_mode_label(identity.get("runtime_mode")),
         "runtime_backend": identity.get("runtime_backend", "<unresolved>"),
@@ -163,20 +188,35 @@ def _next_action(report: PreflightReport, *, operator_ready: bool) -> str:
 
     category = failed_categories[0]
     if category == DIAG_UNSUPPORTED_PROFILE:
-        return "Select one of the supported profile ids shown below, then restart the app."
+        return (
+            "Select one of the supported profile ids shown below with Profile Selector, "
+            "or restart with NTB_CONSOLE_PROFILE set to a supported profile."
+        )
     if category == DIAG_MISSING_ARTIFACT_FILES:
-        return "Restore or refresh the declared artifacts, rerun preflight, then restart the app."
+        return (
+            "Restore or refresh the declared artifacts, then use Reload Current Profile or switch to "
+            "another supported profile."
+        )
     if category == DIAG_INVALID_ARTIFACT_CONTRACT:
-        return "Replace malformed artifacts with contract-valid inputs, rerun preflight, then restart the app."
+        return (
+            "Replace malformed artifacts with contract-valid inputs, then use Reload Current Profile or "
+            "switch to another supported profile."
+        )
     if category == DIAG_MISSING_DEPENDENCY:
-        return "Run ./scripts/bootstrap_target_env.sh, rerun preflight, then restart the app."
+        return (
+            f"Run {platform_bootstrap_command()}, rerun preflight, then relaunch or use Profile Selector "
+            "after the environment is restored."
+        )
     if category == DIAG_ADAPTER_RESOLUTION_FAILURE:
-        return "Fix the adapter binding, rerun preflight, then restart the app."
+        return "Fix the adapter binding, rerun preflight, then reload or switch profiles."
     if category == DIAG_LAUNCH_PREFLIGHT_MISMATCH:
-        return "Align NTB_CONSOLE_MODE with the selected profile, rerun preflight, then restart the app."
+        return (
+            "Align NTB_CONSOLE_MODE with the selected profile, rerun preflight, then reload the current "
+            "profile or relaunch."
+        )
     if category == DIAG_RUNTIME_ASSEMBLY_FAILURE:
-        return "Fix the runtime assembly error, rerun preflight if inputs changed, then restart the app."
-    return "Fix the reported startup diagnostics, rerun preflight, then restart the app."
+        return "Fix the runtime assembly error, then reload the current profile or switch to another supported profile."
+    return "Fix the reported startup diagnostics, then reload the current profile or switch to another supported profile."
 
 
 def _runtime_mode_label(value: object) -> str:

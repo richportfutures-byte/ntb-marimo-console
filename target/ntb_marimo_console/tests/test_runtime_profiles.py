@@ -27,6 +27,14 @@ class RuntimeProfilesTests(unittest.TestCase):
         self.assertEqual(profile.contract, "ZN")
         self.assertEqual(profile.artifact_contract_dir, "ZN")
 
+    def test_third_preserved_profile_selection_succeeds(self) -> None:
+        profile = get_runtime_profile("preserved_cl_phase1")
+
+        self.assertEqual(profile.profile_id, "preserved_cl_phase1")
+        self.assertEqual(profile.runtime_mode, "preserved_engine")
+        self.assertEqual(profile.contract, "CL")
+        self.assertEqual(profile.artifact_contract_dir, "CL")
+
     def test_unsupported_profile_fails_closed(self) -> None:
         with self.assertRaises(RuntimeProfileError):
             get_runtime_profile("unknown_profile")
@@ -55,7 +63,12 @@ class RuntimeProfilesTests(unittest.TestCase):
 
         self.assertEqual(
             tuple(profile.profile_id for profile in profiles),
-            ("fixture_es_demo", "preserved_es_phase1", "preserved_zn_phase1"),
+            (
+                "fixture_es_demo",
+                "preserved_cl_phase1",
+                "preserved_es_phase1",
+                "preserved_zn_phase1",
+            ),
         )
 
 

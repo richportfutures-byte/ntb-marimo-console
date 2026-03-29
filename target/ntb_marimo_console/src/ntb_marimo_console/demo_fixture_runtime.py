@@ -6,7 +6,8 @@ from types import SimpleNamespace
 
 from .adapters.audit_replay_store import FixtureAuditReplayStore
 from .adapters.premarket_store import FixturePreMarketArtifactStore
-from .adapters.run_history_store import FixtureRunHistoryStore
+from .adapters.run_history_store import FixtureRunHistoryStore, JsonlRunHistoryStore
+from .adapters.audit_replay_store import JsonlAuditReplayStore
 from .adapters.trigger_evaluator import TriggerEvaluator
 from .adapters.contracts import (
     JsonDict,
@@ -82,18 +83,27 @@ def build_es_fixture_app_shell(
     artifacts_root = profile.resolve_artifact_root(root)
     backend = FixturePipelineBackend(artifacts_root, profile=profile, lockout=lockout)
     inputs = build_runtime_inputs_for_profile(artifacts_root, profile=profile, lockout=lockout)
-    dependencies = build_phase1_dependencies(artifacts_root)
+    dependencies = build_phase1_dependencies(artifacts_root, profile=profile)
 
     return build_phase1_app(backend=backend, inputs=inputs, dependencies=dependencies)
 
 
-def build_phase1_dependencies(fixtures_root: str | Path) -> Phase1AppDependencies:
+def build_phase1_dependencies(
+    fixtures_root: str | Path,
+    *,
+    profile: RuntimeProfile | None = None,
+) -> Phase1AppDependencies:
     root = Path(fixtures_root)
-    run_history_store = FixtureRunHistoryStore(root)
+    if profile is not None and profile.runtime_mode == "preserved_engine":
+        run_history_store = JsonlRunHistoryStore()
+        audit_replay_store = JsonlAuditReplayStore()
+    else:
+        run_history_store = FixtureRunHistoryStore(root)
+        audit_replay_store = FixtureAuditReplayStore(run_history_store)
     return Phase1AppDependencies(
         premarket_store=FixturePreMarketArtifactStore(root),
         run_history_store=run_history_store,
-        audit_replay_store=FixtureAuditReplayStore(run_history_store),
+        audit_replay_store=audit_replay_store,
         trigger_evaluator=TriggerEvaluator(),
     )
 
@@ -154,6 +164,7 @@ def build_runtime_inputs_for_profile(
             contract=profile.contract,
             packet=query_packet,
             evaluation_timestamp_iso=profile.evaluation_timestamp_iso,
+            readiness_trigger=dict(profile.readiness_trigger),
         ),
     )
 

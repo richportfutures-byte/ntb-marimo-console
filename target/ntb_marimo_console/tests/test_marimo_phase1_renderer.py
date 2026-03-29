@@ -8,6 +8,8 @@ from ntb_marimo_console.ui.marimo_phase1_renderer import (
     FROZEN_SURFACE_KEYS,
     _flatten_mapping_lines,
     build_phase1_render_plan,
+    build_profile_operations_markdown,
+    build_session_evidence_markdown,
     build_session_lifecycle_markdown,
     build_runtime_identity_markdown,
     build_session_workflow_markdown,
@@ -48,6 +50,8 @@ class MarimoPhase1RendererTests(unittest.TestCase):
 
         self.assertIn("## Runtime Identity", source)
         self.assertIn("## Startup Status", source)
+        self.assertIn("## Supported Profile Operations", source)
+        self.assertIn("## Recent Session Evidence", source)
         self.assertIn("## Session Lifecycle", source)
         self.assertIn("## Session Workflow", source)
         self.assertIn("Preflight Status", source)
@@ -93,10 +97,24 @@ class MarimoPhase1RendererTests(unittest.TestCase):
                 {
                     "profile_id": "fixture_es_demo",
                     "runtime_mode": "fixture_demo",
+                    "profile_kind": "Demo",
                     "contract": "ES",
                     "session_date": "2026-03-25",
+                    "active": True,
                 }
             ],
+            "candidate_profiles": [
+                {
+                    "contract": "NQ",
+                    "profile_id": "preserved_nq_phase1",
+                    "status": "blocked",
+                    "reason_category": "blocked_unsupported_query_observable_contract",
+                    "reason_label": "Unsupported query observable contract",
+                    "summary": "NQ remains blocked under the current console observable contract.",
+                }
+            ],
+            "candidate_audit_available": True,
+            "candidate_audit_summary": "Candidate profile status reflects the current preserved-contract audit.",
             "runtime_mode_label": "Fixture/Demo",
             "running_as": "Fixture/Demo",
             "contract": "ES",
@@ -152,6 +170,9 @@ class MarimoPhase1RendererTests(unittest.TestCase):
             "reload_changed_sources": None,
             "reset_available": True,
             "reload_available": True,
+            "profile_switch_available": True,
+            "profile_switch_target_id": "fixture_es_demo",
+            "profile_switch_result": "NOT_RUN",
             "operator_ready": True,
             "query_action_status": "AVAILABLE",
             "decision_review_ready": False,
@@ -175,17 +196,78 @@ class MarimoPhase1RendererTests(unittest.TestCase):
                 "audit_replay_ready": False,
             }
         )
+        shell["evidence"] = {
+            "history_scope": "BOUNDED_PERSISTED_RECENT_HISTORY",
+            "history_limit": 18,
+            "persistence_path": "target/ntb_marimo_console/.state/recent_session_evidence.v1.json",
+            "restore_status": "RESTORE_OK",
+            "restore_status_summary": "Restored 1 retained recent-session evidence entry from the prior persisted ledger.",
+            "persistence_health_status": "HEALTHY",
+            "last_persistence_status": "WRITE_OK",
+            "last_persistence_at_utc": "2026-03-27T12:00:01Z",
+            "last_persistence_summary": "Retained evidence persisted successfully with 2 bounded entries.",
+            "active_profile_id": "fixture_es_demo",
+            "current_session_record_count": 1,
+            "restored_record_count": 1,
+            "recent_profiles": ["fixture_es_demo"],
+            "recent_activity": [
+                {
+                    "event_index": 1,
+                    "recorded_at_utc": "2026-03-27T12:00:00Z",
+                    "source_scope": "CURRENT_SESSION",
+                    "source_label": "Current Session",
+                    "active_profile_id": "fixture_es_demo",
+                    "summary": "Loaded fixture_es_demo with preflight PASS and startup outcome OPERATOR_SURFACES_READY.",
+                }
+            ],
+            "last_known_outcomes": [
+                {
+                    "profile_id": "fixture_es_demo",
+                    "has_recent_evidence": True,
+                    "event_index": 1,
+                    "recorded_at_utc": "2026-03-27T12:00:00Z",
+                    "source_scope": "CURRENT_SESSION",
+                    "source_label": "Current Session",
+                    "last_action": "INITIAL_LOAD",
+                    "preflight_status": "PASS",
+                    "startup_outcome": "OPERATOR_SURFACES_READY",
+                    "query_eligibility_state": "ELIGIBLE",
+                    "query_action_state": "AVAILABLE",
+                    "decision_review_state": "NOT_READY",
+                    "decision_review_outcome": None,
+                    "audit_replay_state": "NOT_READY",
+                    "audit_replay_outcome": None,
+                },
+                {
+                    "profile_id": "preserved_es_phase1",
+                    "has_recent_evidence": False,
+                    "status_summary": "No recent session evidence recorded for this profile in the current console session.",
+                },
+            ],
+            "status_summary": "Recent session evidence is ordered by in-console event markers.",
+        }
 
         startup_markdown = build_startup_status_markdown(shell["startup"])
+        profile_markdown = build_profile_operations_markdown(shell["startup"])
+        evidence_markdown = build_session_evidence_markdown(shell["evidence"])
         runtime_markdown = build_runtime_identity_markdown(shell["runtime"])
         lifecycle_markdown = build_session_lifecycle_markdown(shell["lifecycle"])
         workflow_markdown = build_session_workflow_markdown(shell["workflow"])
 
         self.assertIn("Startup Status", startup_markdown)
         self.assertIn("Supported Profiles", startup_markdown)
+        self.assertIn("Supported Profile Operations", profile_markdown)
+        self.assertIn("Candidate Contract Status", profile_markdown)
+        self.assertIn("Recent Session Evidence", evidence_markdown)
+        self.assertIn("Restore Status", evidence_markdown)
+        self.assertIn("Persistence Health", evidence_markdown)
+        self.assertIn("Last Persistence Status", evidence_markdown)
+        self.assertIn("Last Known Outcome By Supported Profile", evidence_markdown)
+        self.assertIn("Current Session", evidence_markdown)
         self.assertIn("Runtime Identity", runtime_markdown)
         self.assertIn("Startup Readiness", runtime_markdown)
         self.assertIn("Session Lifecycle", lifecycle_markdown)
+        self.assertIn("Profile Switch Result", lifecycle_markdown)
         self.assertIn("Reload Result", lifecycle_markdown)
         self.assertIn("Session Workflow", workflow_markdown)
         self.assertIn("Query Action Status", workflow_markdown)
@@ -196,8 +278,12 @@ class EntrypointSharedRendererTests(unittest.TestCase):
         source = Path("src/ntb_marimo_console/operator_console_app.py").read_text(encoding="utf-8")
         self.assertIn("load_session_lifecycle_from_env", source)
         self.assertIn("mo.ui.run_button", source)
+        self.assertIn("mo.ui.dropdown", source)
         self.assertIn("Reset Session", source)
         self.assertIn("Reload Current Profile", source)
+        self.assertIn("Clear Retained Evidence", source)
+        self.assertIn("Switch To Selected Profile", source)
+        self.assertIn("switch_profile", source)
 
     def test_demo_entrypoint_uses_shared_renderer(self) -> None:
         source = Path("src/ntb_marimo_console/demo_fixture_app.py").read_text(encoding="utf-8")

@@ -182,35 +182,81 @@ def resolve_launch_request_from_env(
     if requested_profile_id or default_profile_id is not None:
         resolved_profile_id = requested_profile_id or default_profile_id or ""
         profile = _resolve_profile_with_diagnostics(resolved_profile_id)
-        mode = parse_runtime_mode(raw_mode) if raw_mode is not None else profile.runtime_mode
+        requested_mode = parse_runtime_mode(raw_mode) if raw_mode is not None else None
     else:
-        mode = parse_runtime_mode(raw_mode or default_mode)
+        requested_mode = parse_runtime_mode(raw_mode or default_mode)
+        mode = requested_mode
         profile = _resolve_profile_with_diagnostics(default_profile_id_for_mode(mode))
 
-    if raw_mode is not None and profile.runtime_mode != mode:
+    return _build_launch_request(
+        profile=profile,
+        requested_mode=requested_mode,
+        fixtures_root=_fixtures_root_from_env(),
+        lockout=_lockout_from_env(),
+        adapter_binding=os.getenv("NTB_MODEL_ADAPTER_REF"),
+    )
+
+
+def resolve_launch_request_for_profile_id(
+    profile_id: str,
+    *,
+    requested_mode: RuntimeMode | None = None,
+    fixtures_root: Path | None = None,
+    lockout: bool | None = None,
+    adapter_binding: str | None = None,
+    use_env_defaults: bool = True,
+) -> LaunchRequest:
+    profile = _resolve_profile_with_diagnostics(profile_id)
+    resolved_fixtures_root = fixtures_root
+    if resolved_fixtures_root is None and use_env_defaults:
+        resolved_fixtures_root = _fixtures_root_from_env()
+
+    resolved_lockout = lockout
+    if resolved_lockout is None:
+        resolved_lockout = _lockout_from_env() if use_env_defaults else False
+
+    resolved_adapter_binding = adapter_binding
+    if resolved_adapter_binding is None and use_env_defaults:
+        resolved_adapter_binding = os.getenv("NTB_MODEL_ADAPTER_REF")
+
+    return _build_launch_request(
+        profile=profile,
+        requested_mode=requested_mode,
+        fixtures_root=resolved_fixtures_root,
+        lockout=resolved_lockout,
+        adapter_binding=resolved_adapter_binding,
+    )
+
+
+def _build_launch_request(
+    *,
+    profile: RuntimeProfile,
+    requested_mode: RuntimeMode | None,
+    fixtures_root: Path | None,
+    lockout: bool,
+    adapter_binding: str | None,
+) -> LaunchRequest:
+    mode = requested_mode or profile.runtime_mode
+    if requested_mode is not None and profile.runtime_mode != requested_mode:
         raise RuntimeDiagnosticError(
             category=DIAG_LAUNCH_PREFLIGHT_MISMATCH,
-            summary=f"Runtime profile {profile.profile_id} requires runtime mode {profile.runtime_mode}, got {mode}.",
+            summary=(
+                f"Runtime profile {profile.profile_id} requires runtime mode {profile.runtime_mode}, "
+                f"got {requested_mode}."
+            ),
             remedy="Either remove NTB_CONSOLE_MODE or set it to the runtime mode required by the selected profile.",
         )
 
-    fixtures_root: Path | None = None
-    fixtures_root_env = os.getenv("NTB_FIXTURES_ROOT")
-    if fixtures_root_env:
-        fixtures_root = Path(fixtures_root_env).expanduser()
-
-    lockout = _parse_bool_env(os.getenv("NTB_FIXTURE_LOCKOUT"), default=False)
-
-    adapter_binding: str | None = None
+    resolved_adapter_binding: str | None = adapter_binding
     if profile.runtime_mode == "preserved_engine":
-        adapter_binding = os.getenv("NTB_MODEL_ADAPTER_REF", profile.default_model_adapter_ref)
+        resolved_adapter_binding = resolved_adapter_binding or profile.default_model_adapter_ref
 
     return LaunchRequest(
         mode=mode,
         profile=profile,
         lockout=lockout,
         fixtures_root=fixtures_root,
-        adapter_binding=adapter_binding,
+        adapter_binding=resolved_adapter_binding,
     )
 
 
@@ -341,3 +387,14 @@ def _parse_bool_env(value: str | None, *, default: bool) -> bool:
         summary=f"Invalid boolean value: {value}",
         remedy="Use one of: true/false, yes/no, on/off, 1/0.",
     )
+
+
+def _fixtures_root_from_env() -> Path | None:
+    fixtures_root_env = os.getenv("NTB_FIXTURES_ROOT")
+    if not fixtures_root_env:
+        return None
+    return Path(fixtures_root_env).expanduser()
+
+
+def _lockout_from_env() -> bool:
+    return _parse_bool_env(os.getenv("NTB_FIXTURE_LOCKOUT"), default=False)

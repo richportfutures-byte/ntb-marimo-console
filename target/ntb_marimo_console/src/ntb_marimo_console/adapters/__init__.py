@@ -6,10 +6,10 @@ from .contracts import (
     TriggerEvaluation,
     TriggerSpec,
 )
-from .audit_replay_store import FixtureAuditReplayStore
+from .audit_replay_store import FixtureAuditReplayStore, JsonlAuditReplayStore
 from .premarket_store import FixturePreMarketArtifactStore
 from .preserved_engine_backend import PreservedEngineBackend, UnavailableEngineBackend
-from .run_history_store import FixtureRunHistoryStore
+from .run_history_store import FixtureRunHistoryStore, JsonlRunHistoryStore
 from .trigger_evaluator import TriggerEvaluationBundle, TriggerEvaluator
 from .trigger_specs import trigger_specs_from_brief
 
@@ -18,6 +18,8 @@ __all__ = [
     "FixtureAuditReplayStore",
     "FixturePreMarketArtifactStore",
     "FixtureRunHistoryStore",
+    "JsonlAuditReplayStore",
+    "JsonlRunHistoryStore",
     "PipelineBackend",
     "PreMarketArtifactStore",
     "PreservedEngineBackend",

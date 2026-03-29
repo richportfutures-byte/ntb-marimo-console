@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 import shutil
 import sys
 import tempfile
@@ -64,6 +65,7 @@ class PreservedFixtureArtifactsTests(unittest.TestCase):
             refreshed = refresh_preserved_fixture_artifacts(artifact_root)
 
         self.assertIn("preserved_es_phase1", refreshed)
+        self.assertIn("preserved_cl_phase1", refreshed)
         self.assertIn("preserved_zn_phase1", refreshed)
         self.assertIn("shared", refreshed["preserved_es_phase1"].packet_bundle)
         self.assertIn("contracts", refreshed["preserved_zn_phase1"].packet_bundle)
@@ -79,13 +81,14 @@ class PreservedFixtureArtifactsTests(unittest.TestCase):
                 profile=get_runtime_profile("preserved_es_phase1"),
             )
 
-            with patch.object(sys, "path", [engine_src, *sys.path]):
-                adapter_module = importlib.import_module("ntb_marimo_console.preserved_fixture_adapter")
-                shell = build_app_shell_for_profile_id(
-                    profile_id="preserved_es_phase1",
-                    fixtures_root=artifact_root,
-                    model_adapter=adapter_module.adapter,
-                )
+            with patch.dict(os.environ, {"NTB_STAGE_E_LOG_ROOT": str(Path(temp_dir) / ".stage_e")}):
+                with patch.object(sys, "path", [engine_src, *sys.path]):
+                    adapter_module = importlib.import_module("ntb_marimo_console.preserved_fixture_adapter")
+                    shell = build_app_shell_for_profile_id(
+                        profile_id="preserved_es_phase1",
+                        fixtures_root=artifact_root,
+                        model_adapter=adapter_module.adapter,
+                    )
 
         self.assertEqual(shell["runtime"]["runtime_mode"], "preserved_engine")
         self.assertEqual(shell["runtime"]["profile_id"], "preserved_es_phase1")
@@ -93,7 +96,37 @@ class PreservedFixtureArtifactsTests(unittest.TestCase):
         self.assertIn("DECISION_REVIEW_READY", shell["runtime"]["state_history"])
         self.assertTrue(shell["surfaces"]["decision_review"]["has_result"])
         self.assertEqual(shell["surfaces"]["decision_review"]["final_decision"], "NO_TRADE")
+        self.assertEqual(shell["surfaces"]["run_history"]["source"], "stage_e_jsonl")
+        self.assertTrue(shell["surfaces"]["audit_replay"]["stage_e_live_backend"])
 
+    def test_third_preserved_profile_reaches_ready_state_with_actual_engine(self) -> None:
+        engine_src = str((Path("../../source/ntb_engine/src")).resolve())
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_root = Path("fixtures/golden/phase1")
+            artifact_root = Path(temp_dir) / "phase1"
+            shutil.copytree(source_root, artifact_root)
+            write_preserved_fixture_artifacts(
+                artifact_root,
+                profile=get_runtime_profile("preserved_cl_phase1"),
+            )
+
+            with patch.dict(os.environ, {"NTB_STAGE_E_LOG_ROOT": str(Path(temp_dir) / ".stage_e")}):
+                with patch.object(sys, "path", [engine_src, *sys.path]):
+                    adapter_module = importlib.import_module("ntb_marimo_console.preserved_fixture_adapter")
+                    shell = build_app_shell_for_profile_id(
+                        profile_id="preserved_cl_phase1",
+                        fixtures_root=artifact_root,
+                        model_adapter=adapter_module.adapter_cl,
+                    )
+
+        self.assertEqual(shell["runtime"]["runtime_mode"], "preserved_engine")
+        self.assertEqual(shell["runtime"]["profile_id"], "preserved_cl_phase1")
+        self.assertEqual(shell["runtime"]["session_state"], "AUDIT_REPLAY_READY")
+        self.assertIn("DECISION_REVIEW_READY", shell["runtime"]["state_history"])
+        self.assertTrue(shell["surfaces"]["decision_review"]["has_result"])
+        self.assertEqual(shell["surfaces"]["decision_review"]["final_decision"], "NO_TRADE")
+        self.assertEqual(shell["surfaces"]["run_history"]["source"], "stage_e_jsonl")
+        self.assertTrue(shell["surfaces"]["audit_replay"]["stage_e_live_backend"])
     def test_second_preserved_profile_reaches_ready_state_with_actual_engine(self) -> None:
         engine_src = str((Path("../../source/ntb_engine/src")).resolve())
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -105,13 +138,14 @@ class PreservedFixtureArtifactsTests(unittest.TestCase):
                 profile=get_runtime_profile("preserved_zn_phase1"),
             )
 
-            with patch.object(sys, "path", [engine_src, *sys.path]):
-                adapter_module = importlib.import_module("ntb_marimo_console.preserved_fixture_adapter")
-                shell = build_app_shell_for_profile_id(
-                    profile_id="preserved_zn_phase1",
-                    fixtures_root=artifact_root,
-                    model_adapter=adapter_module.adapter_zn,
-                )
+            with patch.dict(os.environ, {"NTB_STAGE_E_LOG_ROOT": str(Path(temp_dir) / ".stage_e")}):
+                with patch.object(sys, "path", [engine_src, *sys.path]):
+                    adapter_module = importlib.import_module("ntb_marimo_console.preserved_fixture_adapter")
+                    shell = build_app_shell_for_profile_id(
+                        profile_id="preserved_zn_phase1",
+                        fixtures_root=artifact_root,
+                        model_adapter=adapter_module.adapter_zn,
+                    )
 
         self.assertEqual(shell["runtime"]["runtime_mode"], "preserved_engine")
         self.assertEqual(shell["runtime"]["profile_id"], "preserved_zn_phase1")
@@ -119,6 +153,8 @@ class PreservedFixtureArtifactsTests(unittest.TestCase):
         self.assertIn("DECISION_REVIEW_READY", shell["runtime"]["state_history"])
         self.assertTrue(shell["surfaces"]["decision_review"]["has_result"])
         self.assertEqual(shell["surfaces"]["decision_review"]["final_decision"], "NO_TRADE")
+        self.assertEqual(shell["surfaces"]["run_history"]["source"], "stage_e_jsonl")
+        self.assertTrue(shell["surfaces"]["audit_replay"]["stage_e_live_backend"])
 
 
 if __name__ == "__main__":

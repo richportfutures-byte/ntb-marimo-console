@@ -18,7 +18,11 @@ def session_header_vm(contract: str, session_date: str) -> SessionHeaderVM:
     return SessionHeaderVM(contract=contract, session_date=session_date)
 
 
-def premarket_brief_vm_from_brief(brief: Mapping[str, object]) -> PreMarketBriefVM:
+def premarket_brief_vm_from_brief(
+    brief: Mapping[str, object],
+    *,
+    status_override: str | None = None,
+) -> PreMarketBriefVM:
     setups = brief.get("structural_setups", [])
     setup_summaries: list[str] = []
     warnings: list[str] = []
@@ -37,7 +41,7 @@ def premarket_brief_vm_from_brief(brief: Mapping[str, object]) -> PreMarketBrief
     return PreMarketBriefVM(
         contract=str(brief.get("contract", "UNKNOWN")),
         session_date=str(brief.get("session_date", "")),
-        status=str(brief.get("status", "UNKNOWN")),
+        status=status_override or str(brief.get("status", "UNKNOWN")),
         setup_summaries=tuple(setup_summaries),
         warnings=tuple(warnings),
     )
@@ -111,6 +115,25 @@ def run_history_row_vm_from_row(row: RunHistoryRowRecord) -> RunHistoryRowVM:
         logged_at=str(row.get("logged_at", "")),
         contract=str(row.get("contract", "UNKNOWN")),
         run_type=str(row.get("run_type", "")),
-        final_decision=str(row.get("final_decision", "")),
         notes=str(row.get("notes", "")),
+        session_date=(
+            str(row["session_date"])
+            if row.get("session_date") is not None
+            else None
+        ),
+        final_decision=(
+            str(row["final_decision"])
+            if row.get("final_decision") is not None
+            else None
+        ),
+        termination_stage=(
+            str(row["termination_stage"])
+            if row.get("termination_stage") is not None
+            else None
+        ),
+        stage_d_decision=(
+            str(row["stage_d_decision"])
+            if row.get("stage_d_decision") is not None
+            else None
+        ),
     )

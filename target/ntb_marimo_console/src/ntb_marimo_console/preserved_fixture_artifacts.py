@@ -207,7 +207,12 @@ def _apply_overlay(
         "prior_day.session_range",
         "target pre-market packet",
     )
-    market_packet["vwap"] = _require_number(prior_day.get("poc"), "prior_day.poc", "target pre-market packet")
+    market_packet["vwap"] = _session_value(
+        current_session_payload,
+        "vwap",
+        fallback=prior_day.get("poc"),
+        owner="target pre-market packet",
+    )
     market_packet["event_calendar_remainder"] = _retarget_event_dates(
         market_packet.get("event_calendar_remainder"),
         _require_str(target_premarket.get("session_date"), "session_date", "target pre-market packet"),

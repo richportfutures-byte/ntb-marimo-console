@@ -51,6 +51,14 @@ class RuntimePreflightTests(unittest.TestCase):
         self.assertEqual(report.requested_profile_id, "preserved_zn_phase1")
         self.assertEqual(report.request.mode, "preserved_engine")
 
+    def test_third_preserved_profile_preflight_passes(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_cl_phase1"}, clear=True):
+            report = build_preflight_report_from_env()
+
+        self.assertTrue(report.passed)
+        self.assertEqual(report.requested_profile_id, "preserved_cl_phase1")
+        self.assertEqual(report.request.mode, "preserved_engine")
+
     def test_unsupported_profile_reports_fail_closed_diagnosis(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "unknown_profile"}, clear=True):
             report = build_preflight_report_from_env()

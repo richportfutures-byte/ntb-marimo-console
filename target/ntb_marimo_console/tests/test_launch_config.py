@@ -13,6 +13,7 @@ from ntb_marimo_console.launch_config import (
     build_launch_artifacts_from_env,
     build_startup_artifacts_from_env,
     load_launch_config_from_env,
+    resolve_launch_request_for_profile_id,
 )
 
 
@@ -71,6 +72,27 @@ class LaunchConfigTests(unittest.TestCase):
         self.assertTrue(callable(getattr(config.model_adapter, "generate_structured", None)))
         self.assertTrue(config.preflight.passed)
 
+    def test_profile_only_selection_is_sufficient_for_third_preserved_profile(self) -> None:
+        engine_src = str((Path("../../source/ntb_engine/src")).resolve())
+        with patch.dict(
+            os.environ,
+            {
+                "NTB_CONSOLE_PROFILE": "preserved_cl_phase1",
+            },
+            clear=True,
+        ):
+            with patch.object(sys, "path", [engine_src, *sys.path]):
+                config = load_launch_config_from_env()
+
+        self.assertEqual(config.mode, "preserved_engine")
+        self.assertEqual(config.profile.profile_id, "preserved_cl_phase1")
+        self.assertEqual(
+            config.adapter_binding,
+            "ntb_marimo_console.preserved_fixture_adapter:adapter_cl",
+        )
+        self.assertTrue(callable(getattr(config.model_adapter, "generate_structured", None)))
+        self.assertTrue(config.preflight.passed)
+
     def test_explicit_mode_mismatch_fails_closed(self) -> None:
         with patch.dict(
             os.environ,
@@ -82,6 +104,17 @@ class LaunchConfigTests(unittest.TestCase):
         ):
             with self.assertRaises(RuntimeError):
                 load_launch_config_from_env()
+
+    def test_explicit_profile_request_uses_profile_defaults(self) -> None:
+        request = resolve_launch_request_for_profile_id("preserved_zn_phase1", use_env_defaults=False)
+
+        self.assertEqual(request.mode, "preserved_engine")
+        self.assertEqual(request.profile.profile_id, "preserved_zn_phase1")
+        self.assertEqual(
+            request.adapter_binding,
+            "ntb_marimo_console.preserved_fixture_adapter:adapter_zn",
+        )
+        self.assertFalse(request.lockout)
 
     def test_preserved_profile_loads_model_adapter_override_from_env(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import tempfile
 import types
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from ninjatradebuilder.logging_record import RunHistoryRecord, append_log_record
+
+from ntb_marimo_console.adapters.stage_e_log import resolve_stage_e_log_path
 from ntb_marimo_console.adapters.contracts import PipelineQueryRequest, WatchmanSweepRequest
 from ntb_marimo_console.adapters.preserved_engine_backend import PreservedEngineBackend
 from ntb_marimo_console.demo_fixture_runtime import FixturePipelineBackend
@@ -54,6 +59,33 @@ class _ReadyPreservedBackend:
     def run_pipeline(self, request: PipelineQueryRequest) -> object:
         _ReadyPreservedBackend.run_pipeline_calls += 1
         self._last_contract = request.contract
+        append_log_record(
+            RunHistoryRecord(
+                run_id=f"test-{request.contract.lower()}",
+                logged_at=datetime.now(tz=timezone.utc),
+                contract=request.contract,
+                evaluation_timestamp_iso=request.evaluation_timestamp_iso or "2026-03-25T13:35:00Z",
+                run_type="full_pipeline",
+                trigger_family=str((request.readiness_trigger or {}).get("trigger_family", "price_level_touch")),
+                watchman_status="ready",
+                watchman_hard_lockouts=[],
+                watchman_awareness_flags=[],
+                watchman_missing_inputs=[],
+                vwap_posture="price_above_vwap",
+                value_location="inside_value",
+                level_proximity="clear_of_structure",
+                event_risk="clear",
+                trigger_state="trigger_true",
+                final_decision="NO_TRADE",
+                termination_stage="contract_market_read",
+                sufficiency_gate_status="READY",
+                contract_analysis_outcome="NO_TRADE",
+                proposed_setup_outcome=None,
+                risk_authorization_decision=None,
+                notes="runtime_modes_preserved test log",
+            ),
+            resolve_stage_e_log_path(request.contract),
+        )
         return {"ok": True, "contract": request.contract}
 
     def summarize_pipeline_result(self, result: object) -> dict[str, object]:
@@ -71,6 +103,13 @@ class _ReadyPreservedBackend:
 class _BrokenPreservedBackend:
     def __init__(self, *, model_adapter: object) -> None:
         raise RuntimeError("boom")
+
+
+class _NonLoggingPreservedBackend(_ReadyPreservedBackend):
+    def run_pipeline(self, request: PipelineQueryRequest) -> object:
+        _ReadyPreservedBackend.run_pipeline_calls += 1
+        self._last_contract = request.contract
+        return {"ok": True, "contract": request.contract}
 
 
 class RuntimeModesPreservedTests(unittest.TestCase):
@@ -127,21 +166,24 @@ class RuntimeModesPreservedTests(unittest.TestCase):
                 Path(temp_dir),
                 profile_id="preserved_es_phase1",
             )
-            with patch(
-                "ntb_marimo_console.runtime_modes.PreservedEngineBackend",
-                _ReadyPreservedBackend,
-            ):
-                shell = build_app_shell_for_profile_id(
-                    profile_id="preserved_es_phase1",
-                    fixtures_root=artifact_root,
-                    model_adapter=_ValidModelAdapter(),
-                )
+            with patch.dict(os.environ, {"NTB_STAGE_E_LOG_ROOT": str(Path(temp_dir) / ".stage_e")}):
+                with patch(
+                    "ntb_marimo_console.runtime_modes.PreservedEngineBackend",
+                    _ReadyPreservedBackend,
+                ):
+                    shell = build_app_shell_for_profile_id(
+                        profile_id="preserved_es_phase1",
+                        fixtures_root=artifact_root,
+                        model_adapter=_ValidModelAdapter(),
+                    )
 
         surfaces = shell["surfaces"]
         self.assertEqual(surfaces["session_header"]["contract"], "ES")
-        self.assertEqual(surfaces["run_history"]["source"], "fixture_backed")
+        self.assertEqual(surfaces["run_history"]["source"], "stage_e_jsonl")
         self.assertTrue(surfaces["query_action"]["query_enabled"])
         self.assertTrue(surfaces["decision_review"]["has_result"])
+        self.assertTrue(surfaces["audit_replay"]["stage_e_live_backend"])
+        self.assertEqual(surfaces["audit_replay"]["source"], "stage_e_jsonl")
         self.assertEqual(shell["runtime"]["runtime_mode"], "preserved_engine")
         self.assertEqual(shell["runtime"]["profile_id"], "preserved_es_phase1")
         self.assertEqual(_ReadyPreservedBackend.run_pipeline_calls, 1)
@@ -153,24 +195,78 @@ class RuntimeModesPreservedTests(unittest.TestCase):
                 Path(temp_dir),
                 profile_id="preserved_zn_phase1",
             )
-            with patch(
-                "ntb_marimo_console.runtime_modes.PreservedEngineBackend",
-                _ReadyPreservedBackend,
-            ):
-                shell = build_app_shell_for_profile_id(
-                    profile_id="preserved_zn_phase1",
-                    fixtures_root=artifact_root,
-                    model_adapter=_ValidModelAdapter(),
-                )
+            with patch.dict(os.environ, {"NTB_STAGE_E_LOG_ROOT": str(Path(temp_dir) / ".stage_e")}):
+                with patch(
+                    "ntb_marimo_console.runtime_modes.PreservedEngineBackend",
+                    _ReadyPreservedBackend,
+                ):
+                    shell = build_app_shell_for_profile_id(
+                        profile_id="preserved_zn_phase1",
+                        fixtures_root=artifact_root,
+                        model_adapter=_ValidModelAdapter(),
+                    )
 
         surfaces = shell["surfaces"]
         self.assertEqual(surfaces["session_header"]["contract"], "ZN")
-        self.assertEqual(surfaces["run_history"]["source"], "fixture_backed")
+        self.assertEqual(surfaces["run_history"]["source"], "stage_e_jsonl")
         self.assertTrue(surfaces["query_action"]["query_enabled"])
         self.assertTrue(surfaces["decision_review"]["has_result"])
+        self.assertTrue(surfaces["audit_replay"]["stage_e_live_backend"])
+        self.assertEqual(surfaces["audit_replay"]["source"], "stage_e_jsonl")
         self.assertEqual(shell["runtime"]["runtime_mode"], "preserved_engine")
         self.assertEqual(shell["runtime"]["profile_id"], "preserved_zn_phase1")
         self.assertEqual(_ReadyPreservedBackend.run_pipeline_calls, 1)
+
+    def test_third_supported_preserved_profile_reaches_ready_state(self) -> None:
+        _ReadyPreservedBackend.run_pipeline_calls = 0
+        with tempfile.TemporaryDirectory() as temp_dir:
+            artifact_root = self._build_valid_preserved_artifact_root(
+                Path(temp_dir),
+                profile_id="preserved_cl_phase1",
+            )
+            with patch.dict(os.environ, {"NTB_STAGE_E_LOG_ROOT": str(Path(temp_dir) / ".stage_e")}):
+                with patch(
+                    "ntb_marimo_console.runtime_modes.PreservedEngineBackend",
+                    _ReadyPreservedBackend,
+                ):
+                    shell = build_app_shell_for_profile_id(
+                        profile_id="preserved_cl_phase1",
+                        fixtures_root=artifact_root,
+                        model_adapter=_ValidModelAdapter(),
+                    )
+
+        surfaces = shell["surfaces"]
+        self.assertEqual(surfaces["session_header"]["contract"], "CL")
+        self.assertEqual(surfaces["run_history"]["source"], "stage_e_jsonl")
+        self.assertTrue(surfaces["query_action"]["query_enabled"])
+        self.assertTrue(surfaces["decision_review"]["has_result"])
+        self.assertTrue(surfaces["audit_replay"]["stage_e_live_backend"])
+        self.assertEqual(surfaces["audit_replay"]["source"], "stage_e_jsonl")
+        self.assertEqual(shell["runtime"]["runtime_mode"], "preserved_engine")
+        self.assertEqual(shell["runtime"]["profile_id"], "preserved_cl_phase1")
+        self.assertEqual(_ReadyPreservedBackend.run_pipeline_calls, 1)
+
+    def test_preserved_profile_fails_closed_when_stage_e_record_is_missing(self) -> None:
+        _ReadyPreservedBackend.run_pipeline_calls = 0
+        with tempfile.TemporaryDirectory() as temp_dir:
+            artifact_root = self._build_valid_preserved_artifact_root(
+                Path(temp_dir),
+                profile_id="preserved_es_phase1",
+            )
+            with patch.dict(os.environ, {"NTB_STAGE_E_LOG_ROOT": str(Path(temp_dir) / ".stage_e")}):
+                with patch(
+                    "ntb_marimo_console.runtime_modes.PreservedEngineBackend",
+                    _NonLoggingPreservedBackend,
+                ):
+                    shell = build_app_shell_for_profile_id(
+                        profile_id="preserved_es_phase1",
+                        fixtures_root=artifact_root,
+                        model_adapter=_ValidModelAdapter(),
+                    )
+
+        self.assertEqual(shell["runtime"]["session_state"], "ERROR")
+        self.assertFalse(shell["surfaces"]["audit_replay"]["ready"])
+        self.assertIn("no persisted Stage E record", shell["surfaces"]["query_action"]["failure_message"])
 
     def test_preserved_profile_missing_upstream_artifacts_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

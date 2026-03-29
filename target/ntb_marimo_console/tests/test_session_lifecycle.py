@@ -12,6 +12,7 @@ from ntb_marimo_console.session_lifecycle import (
     reload_current_profile,
     request_query_action,
     reset_session,
+    switch_profile,
 )
 
 
@@ -142,6 +143,82 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertEqual(refreshed.shell["runtime"]["session_state"], "LIVE_QUERY_ELIGIBLE")
         self.assertFalse(refreshed.shell["workflow"]["decision_review_ready"])
         self.assertFalse(refreshed.shell["workflow"]["audit_replay_ready"])
+
+    def test_profile_switch_success_path_es_to_zn_clears_stale_state(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+            queried = request_query_action(lifecycle)
+            switched = switch_profile(queried, "preserved_zn_phase1")
+
+        self.assertTrue(switched.ready)
+        self.assertEqual(switched.shell["startup"]["selected_profile_id"], "preserved_zn_phase1")
+        self.assertEqual(switched.shell["runtime"]["profile_id"], "preserved_zn_phase1")
+        self.assertEqual(switched.shell["surfaces"]["session_header"]["contract"], "ZN")
+        self.assertEqual(switched.shell["workflow"]["query_action_status"], "AVAILABLE")
+        self.assertFalse(switched.shell["workflow"]["decision_review_ready"])
+        self.assertFalse(switched.shell["workflow"]["audit_replay_ready"])
+        self.assertEqual(switched.shell["lifecycle"]["current_lifecycle_state"], "PROFILE_SWITCH_COMPLETED")
+        self.assertEqual(switched.shell["lifecycle"]["profile_switch_result"], "SWITCH_COMPLETED")
+        self.assertIn("PROFILE_SWITCH_REQUESTED", switched.shell["lifecycle"]["state_history"])
+        self.assertIn("PROFILE_SWITCH_VALIDATING", switched.shell["lifecycle"]["state_history"])
+        self.assertIn("PROFILE_SWITCH_COMPLETED", switched.shell["lifecycle"]["state_history"])
+
+    def test_profile_switch_success_path_zn_to_cl(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_zn_phase1"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+            switched = switch_profile(lifecycle, "preserved_cl_phase1")
+
+        self.assertTrue(switched.ready)
+        self.assertEqual(switched.shell["startup"]["selected_profile_id"], "preserved_cl_phase1")
+        self.assertEqual(switched.shell["runtime"]["profile_id"], "preserved_cl_phase1")
+        self.assertEqual(switched.shell["surfaces"]["session_header"]["contract"], "CL")
+        self.assertEqual(switched.shell["workflow"]["query_action_status"], "AVAILABLE")
+        self.assertFalse(switched.shell["workflow"]["decision_review_ready"])
+        self.assertFalse(switched.shell["workflow"]["audit_replay_ready"])
+
+    def test_profile_switch_success_path_cl_to_es(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_cl_phase1"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+            switched = switch_profile(lifecycle, "preserved_es_phase1")
+
+        self.assertTrue(switched.ready)
+        self.assertEqual(switched.shell["startup"]["selected_profile_id"], "preserved_es_phase1")
+        self.assertEqual(switched.shell["runtime"]["profile_id"], "preserved_es_phase1")
+        self.assertEqual(switched.shell["surfaces"]["session_header"]["contract"], "ES")
+
+    def test_profile_switch_to_blocked_candidate_fails_closed(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+            switched = switch_profile(lifecycle, "preserved_nq_phase1")
+
+        self.assertTrue(switched.ready)
+        self.assertEqual(switched.shell["startup"]["selected_profile_id"], "preserved_es_phase1")
+        self.assertEqual(switched.shell["runtime"]["profile_id"], "preserved_es_phase1")
+        self.assertEqual(switched.shell["lifecycle"]["current_lifecycle_state"], "PROFILE_SWITCH_BLOCKED")
+        self.assertEqual(switched.shell["lifecycle"]["profile_switch_result"], "SWITCH_BLOCKED")
+        self.assertEqual(switched.shell["lifecycle"]["profile_switch_target_id"], "preserved_nq_phase1")
+        self.assertIn("not currently supported", switched.shell["lifecycle"]["status_summary"])
+
+    def test_profile_switch_to_unknown_profile_fails_closed(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+            switched = switch_profile(lifecycle, "unsupported_profile")
+
+        self.assertTrue(switched.ready)
+        self.assertEqual(switched.shell["startup"]["selected_profile_id"], "preserved_es_phase1")
+        self.assertEqual(switched.shell["lifecycle"]["current_lifecycle_state"], "PROFILE_SWITCH_BLOCKED")
+        self.assertEqual(switched.shell["lifecycle"]["profile_switch_target_id"], "unsupported_profile")
+        self.assertIn("supported profile registry", switched.shell["lifecycle"]["status_summary"])
+
+    def test_profile_switch_from_blocked_startup_can_load_supported_profile(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "unsupported_demo"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+            switched = switch_profile(lifecycle, "preserved_cl_phase1")
+
+        self.assertTrue(switched.ready)
+        self.assertEqual(switched.shell["startup"]["selected_profile_id"], "preserved_cl_phase1")
+        self.assertEqual(switched.shell["runtime"]["profile_id"], "preserved_cl_phase1")
+        self.assertEqual(switched.shell["surfaces"]["session_header"]["contract"], "CL")
 
 
 if __name__ == "__main__":

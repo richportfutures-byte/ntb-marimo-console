@@ -42,8 +42,11 @@ class RunHistoryRowRecord(TypedDict):
     run_id: str
     logged_at: str
     contract: str
+    session_date: str | None
     run_type: str
-    final_decision: str
+    final_decision: str | None
+    termination_stage: str | None
+    stage_d_decision: str | None
     notes: str
 
 
@@ -85,6 +88,7 @@ class PipelineQueryRequest:
     contract: ContractSymbol
     packet: JsonDict
     evaluation_timestamp_iso: str | None = None
+    readiness_trigger: JsonDict | None = None
 
 
 @dataclass(frozen=True)
@@ -157,18 +161,12 @@ class PreMarketArtifactStore(Protocol):
 
 
 class RunHistoryStore(Protocol):
-    """Phase 1 run-history access.
-
-    Phase 1 requires fixture-backed/stubbed history, not live Stage E backend reads.
-    """
+    """Read-only access to bounded run-history rows."""
 
     def list_rows(self, session: SessionTarget) -> list[RunHistoryRowRecord]: ...
 
 
 class AuditReplayStore(Protocol):
-    """Phase 1 audit/replay retrieval boundary.
-
-    Phase 1 remains fixture-backed/stubbed and never pulls live Stage E backend records.
-    """
+    """Read-only access to bounded audit/replay state."""
 
     def load_replay(self, session: SessionTarget) -> AuditReplayRecord: ...

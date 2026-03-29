@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import cast
 
 from .contracts import (
@@ -10,6 +11,7 @@ from .contracts import (
     WatchmanContextLike,
     WatchmanSweepRequest,
 )
+from .stage_e_log import resolve_stage_e_log_path
 
 
 class PreservedEngineBackend(PipelineBackend):
@@ -18,8 +20,14 @@ class PreservedEngineBackend(PipelineBackend):
     No preserved-engine logic is copied or reimplemented here.
     """
 
-    def __init__(self, *, model_adapter: object) -> None:
+    def __init__(
+        self,
+        *,
+        model_adapter: object,
+        stage_e_log_root: str | Path | None = None,
+    ) -> None:
         self._model_adapter = model_adapter
+        self._stage_e_log_root = stage_e_log_root
         from ninjatradebuilder import execution_facade
 
         self._facade = execution_facade
@@ -34,6 +42,21 @@ class PreservedEngineBackend(PipelineBackend):
         )
 
     def run_pipeline(self, request: PipelineQueryRequest) -> object:
+        if request.readiness_trigger is not None:
+            result, _record = self._facade.run_pipeline_and_log(
+                request.packet,
+                request.contract,
+                request.readiness_trigger,
+                model_adapter=self._model_adapter,
+                trigger_family=str(request.readiness_trigger.get("trigger_family", "<unresolved>")),
+                evaluation_timestamp_iso=request.evaluation_timestamp_iso,
+                log_path=resolve_stage_e_log_path(
+                    request.contract,
+                    root=self._stage_e_log_root,
+                ),
+            )
+            return result
+
         return self._facade.run_pipeline(
             request.packet,
             request.contract,

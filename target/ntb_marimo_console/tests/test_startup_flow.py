@@ -8,7 +8,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ntb_marimo_console.launch_config import build_startup_artifacts_from_env
-from ntb_marimo_console.ui.marimo_phase1_renderer import build_startup_status_markdown
+from ntb_marimo_console.ui.marimo_phase1_renderer import (
+    build_profile_operations_markdown,
+    build_startup_status_markdown,
+)
 
 
 class StartupFlowTests(unittest.TestCase):
@@ -117,17 +120,39 @@ class StartupFlowTests(unittest.TestCase):
         self.assertFalse(startup.ready)
         self.assertEqual(startup.shell["startup"]["selected_profile_id"], "unsupported_demo")
         self.assertEqual(startup.shell["startup"]["readiness_state"], "BLOCKED")
-        self.assertIn("supported profile ids", startup.shell["startup"]["next_action"])
+        self.assertIn("Profile Selector", startup.shell["startup"]["next_action"])
 
     def test_operator_facing_startup_markdown_is_readable(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):
             startup = build_startup_artifacts_from_env()
 
         markdown = build_startup_status_markdown(startup.shell["startup"])
+        profile_markdown = build_profile_operations_markdown(startup.shell["startup"])
         self.assertIn("## Startup Status", markdown)
         self.assertIn("Supported Profiles", markdown)
         self.assertIn("Operator Ready", markdown)
         self.assertIn("Next Action", markdown)
+        self.assertIn("Supported Profile Operations", profile_markdown)
+        self.assertIn("Candidate Contract Status", profile_markdown)
+
+    def test_startup_payload_reports_supported_and_blocked_profile_sets(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
+            startup = build_startup_artifacts_from_env()
+
+        supported_ids = {item["profile_id"] for item in startup.shell["startup"]["supported_profiles"]}
+        blocked_contracts = {item["contract"] for item in startup.shell["startup"]["blocked_candidates"]}
+
+        self.assertEqual(
+            supported_ids,
+            {
+                "fixture_es_demo",
+                "preserved_cl_phase1",
+                "preserved_es_phase1",
+                "preserved_zn_phase1",
+            },
+        )
+        self.assertEqual(blocked_contracts, {"NQ", "6E", "MGC"})
+        self.assertTrue(startup.shell["startup"]["candidate_audit_available"])
 
 
 if __name__ == "__main__":

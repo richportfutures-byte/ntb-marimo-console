@@ -6,6 +6,9 @@ from typing import Any
 
 import marimo as mo
 
+from ..session_evidence import NO_RECENT_SESSION_EVIDENCE
+from ..watchman_gate import build_watchman_gate_markdown, watchman_gate_requires_stop
+
 FROZEN_SURFACE_KEYS: tuple[str, ...] = (
     "session_header",
     "pre_market_brief",
@@ -57,6 +60,8 @@ def render_phase1_console(
     mode_summary: str,
     query_action_control: Any | None = None,
     lifecycle_control_panel: Any | None = None,
+    profile_control_panel: Any | None = None,
+    evidence_control_panel: Any | None = None,
 ) -> Any:
     plan = build_phase1_render_plan(shell)
 
@@ -70,6 +75,9 @@ def render_phase1_console(
     if isinstance(startup, Mapping):
         operator_ready = startup.get("operator_ready") is True
         elements.append(mo.md(build_startup_status_markdown(startup)))
+        elements.append(mo.md(build_profile_operations_markdown(startup)))
+        if profile_control_panel is not None:
+            elements.append(profile_control_panel)
 
     runtime = shell.get("runtime")
     if isinstance(runtime, Mapping):
@@ -80,6 +88,12 @@ def render_phase1_console(
         elements.append(mo.md(build_session_lifecycle_markdown(lifecycle)))
         if lifecycle_control_panel is not None:
             elements.append(lifecycle_control_panel)
+
+    evidence = shell.get("evidence")
+    if isinstance(evidence, Mapping):
+        elements.append(mo.md(build_session_evidence_markdown(evidence)))
+        if evidence_control_panel is not None:
+            elements.append(evidence_control_panel)
 
     workflow = shell.get("workflow")
     if isinstance(workflow, Mapping):
@@ -107,18 +121,68 @@ def render_phase1_console(
             )
         )
 
-    elements.append(
-        mo.vstack(
-            [
-                mo.md("## Debug (Secondary)"),
-                mo.ui.code_editor(
-                    value=_as_str(plan["debug"].get("shell_json"), default="{}"),
-                    language="json",
-                    disabled=True,
-                ),
-            ]
-        )
-    )
+    elements.append(_render_debug_secondary(_as_str(plan["debug"].get("shell_json"), default="{}")))
+    return mo.vstack(elements)
+
+
+def render_watchman_gate_stop_output(
+    shell: Mapping[str, object],
+    *,
+    heading: str,
+    mode_summary: str,
+    lifecycle_control_panel: Any | None = None,
+    profile_control_panel: Any | None = None,
+    evidence_control_panel: Any | None = None,
+) -> Any | None:
+    if not watchman_gate_requires_stop(shell):
+        return None
+
+    elements: list[Any] = [
+        mo.md(f"# {heading}"),
+        mo.md(mode_summary),
+    ]
+
+    startup = shell.get("startup")
+    if isinstance(startup, Mapping):
+        elements.append(mo.md(build_startup_status_markdown(startup)))
+        elements.append(mo.md(build_profile_operations_markdown(startup)))
+        if profile_control_panel is not None:
+            elements.append(profile_control_panel)
+
+    runtime = shell.get("runtime")
+    if isinstance(runtime, Mapping):
+        elements.append(mo.md(build_runtime_identity_markdown(runtime)))
+
+    lifecycle = shell.get("lifecycle")
+    if isinstance(lifecycle, Mapping):
+        elements.append(mo.md(build_session_lifecycle_markdown(lifecycle)))
+        if lifecycle_control_panel is not None:
+            elements.append(lifecycle_control_panel)
+
+    evidence = shell.get("evidence")
+    if isinstance(evidence, Mapping):
+        elements.append(mo.md(build_session_evidence_markdown(evidence)))
+        if evidence_control_panel is not None:
+            elements.append(evidence_control_panel)
+
+    workflow = shell.get("workflow")
+    if isinstance(workflow, Mapping):
+        elements.append(mo.md(build_session_workflow_markdown(workflow)))
+
+    surfaces = shell.get("surfaces")
+    if isinstance(surfaces, Mapping):
+        session_header = surfaces.get("session_header")
+        if isinstance(session_header, Mapping):
+            elements.append(_render_surface_section("session_header", session_header))
+        readiness_matrix = surfaces.get("readiness_matrix")
+        if isinstance(readiness_matrix, Mapping):
+            elements.append(_render_surface_section("readiness_matrix", readiness_matrix))
+
+    gate = shell.get("watchman_gate")
+    if isinstance(gate, Mapping):
+        elements.append(mo.md(build_watchman_gate_markdown(gate)))
+
+    elements.append(_render_debug_secondary(json.dumps(dict(shell), indent=2)))
     return mo.vstack(elements)
 
 
@@ -167,6 +231,25 @@ def build_startup_status_markdown(startup: Mapping[str, object]) -> str:
     return "\n".join(lines)
 
 
+def build_profile_operations_markdown(startup: Mapping[str, object]) -> str:
+    supported_lines = _supported_profile_lines(startup.get("supported_profiles"))
+    candidate_lines = _candidate_profile_lines(startup.get("candidate_profiles"))
+    return "\n".join(
+        [
+            "## Supported Profile Operations",
+            f"- Active Profile: `{_as_str(startup.get('selected_profile_id'), default='<unresolved>')}`",
+            "- Selectable Profiles:",
+            supported_lines,
+            "- Candidate Contract Status:",
+            candidate_lines,
+            f"- Candidate Audit Available: `{_as_str(startup.get('candidate_audit_available'), default=False)}`",
+            f"- Candidate Audit Summary: {_as_str(startup.get('candidate_audit_summary'), default='<unavailable>')}",
+            "- Profile Switch Behavior: switching to another supported profile reruns preflight, reloads the declared artifacts for that profile, and clears session-specific query/review/replay state.",
+            "- Blocked candidate contracts remain visible here for operator awareness, but they do not become selectable until the audit no longer reports them as blocked.",
+        ]
+    )
+
+
 def build_runtime_identity_markdown(runtime: Mapping[str, object]) -> str:
     state = _as_str(runtime.get("session_state"), default="<unavailable>")
     state_history = runtime.get("state_history")
@@ -213,6 +296,7 @@ def build_session_workflow_markdown(workflow: Mapping[str, object]) -> str:
     lines = [
         "## Session Workflow",
         f"- Current State: `{_as_str(workflow.get('current_state'), default='<unavailable>')}`",
+        f"- Watchman Gate Status: `{_as_str(workflow.get('watchman_gate_status'), default='<unavailable>')}`",
         f"- Live Query Status: `{_as_str(workflow.get('live_query_status'), default='<unavailable>')}`",
         f"- Query Action Status: `{_as_str(workflow.get('query_action_status'), default='<unavailable>')}`",
         f"- Query Action Available: `{_as_str(workflow.get('query_action_available'), default=False)}`",
@@ -260,6 +344,9 @@ def build_session_lifecycle_markdown(lifecycle: Mapping[str, object]) -> str:
             f"- Preflight Reran: `{_as_str(lifecycle.get('preflight_reran'), default=False)}`",
             f"- Reset Available: `{_as_str(lifecycle.get('reset_available'), default=False)}`",
             f"- Reload Available: `{_as_str(lifecycle.get('reload_available'), default=False)}`",
+            f"- Profile Switch Available: `{_as_str(lifecycle.get('profile_switch_available'), default=False)}`",
+            f"- Profile Switch Target: `{_as_str(lifecycle.get('profile_switch_target_id'), default='<none>')}`",
+            f"- Profile Switch Result: `{_as_str(lifecycle.get('profile_switch_result'), default='NOT_RUN')}`",
             f"- Operator Ready: `{_as_str(lifecycle.get('operator_ready'), default=False)}`",
             f"- Query Action Status: `{_as_str(lifecycle.get('query_action_status'), default='<unavailable>')}`",
             f"- Decision Review Ready: `{_as_str(lifecycle.get('decision_review_ready'), default=False)}`",
@@ -269,6 +356,88 @@ def build_session_lifecycle_markdown(lifecycle: Mapping[str, object]) -> str:
             f"- Next Action: {_as_str(lifecycle.get('next_action'), default='<unavailable>')}",
         ]
     )
+
+
+def build_session_evidence_markdown(evidence: Mapping[str, object]) -> str:
+    recent_profiles = evidence.get("recent_profiles")
+    recent_profiles_text = "<none>"
+    if isinstance(recent_profiles, list):
+        recent_profiles_text = ", ".join(_as_str(item) for item in recent_profiles) if recent_profiles else "<none>"
+
+    lines = [
+        "## Recent Session Evidence",
+        f"- History Scope: `{_as_str(evidence.get('history_scope'), default='<unavailable>')}`",
+        f"- History Limit: `{_as_str(evidence.get('history_limit'), default='<unavailable>')}`",
+        f"- Persistence Path: `{_as_str(evidence.get('persistence_path'), default='<unavailable>')}`",
+        f"- Restore Status: `{_as_str(evidence.get('restore_status'), default='<unavailable>')}`",
+        f"- Restore Summary: {_as_str(evidence.get('restore_status_summary'), default='<unavailable>')}",
+        f"- Persistence Health: `{_as_str(evidence.get('persistence_health_status'), default='<unavailable>')}`",
+        f"- Last Persistence Status: `{_as_str(evidence.get('last_persistence_status'), default='<unavailable>')}`",
+        f"- Last Persistence At UTC: `{_as_str(evidence.get('last_persistence_at_utc'), default='<none>')}`",
+        f"- Last Persistence Summary: {_as_str(evidence.get('last_persistence_summary'), default='<unavailable>')}",
+        f"- Active Profile Now: `{_as_str(evidence.get('active_profile_id'), default='<unavailable>')}`",
+        f"- Current Session Events: `{_as_str(evidence.get('current_session_record_count'), default=0)}`",
+        f"- Restored Prior-Run Events: `{_as_str(evidence.get('restored_record_count'), default=0)}`",
+        f"- Recent Profiles: `{recent_profiles_text}`",
+        f"- Status Summary: {_as_str(evidence.get('status_summary'), default='<unavailable>')}",
+        "- Last Known Outcome By Supported Profile:",
+    ]
+
+    last_known_outcomes = evidence.get("last_known_outcomes")
+    if isinstance(last_known_outcomes, list) and last_known_outcomes:
+        for outcome in last_known_outcomes:
+            if not isinstance(outcome, Mapping):
+                continue
+            if outcome.get("has_recent_evidence") is not True:
+                lines.append(
+                    "  - "
+                    + f"{_as_str(outcome.get('profile_id'))}: "
+                    + _as_str(outcome.get("status_summary"), default=NO_RECENT_SESSION_EVIDENCE)
+                )
+                continue
+
+            decision_suffix = _ready_outcome_suffix(
+                outcome.get("decision_review_state"),
+                outcome.get("decision_review_outcome"),
+            )
+            audit_suffix = _ready_outcome_suffix(
+                outcome.get("audit_replay_state"),
+                outcome.get("audit_replay_outcome"),
+            )
+            lines.append(
+                "  - "
+                + f"{_as_str(outcome.get('profile_id'))}: "
+                + f"event=#{_as_str(outcome.get('event_index'))}, "
+                + f"source={_as_str(outcome.get('source_label'), default=outcome.get('source_scope'))}, "
+                + f"at={_as_str(outcome.get('recorded_at_utc'))}, "
+                + f"action={_as_str(outcome.get('last_action'))}, "
+                + f"preflight={_as_str(outcome.get('preflight_status'))}, "
+                + f"startup={_as_str(outcome.get('startup_outcome'))}, "
+                + f"live_query={_as_str(outcome.get('query_eligibility_state'))}, "
+                + f"query_action={_as_str(outcome.get('query_action_state'))}, "
+                + f"decision_review={decision_suffix}, "
+                + f"audit_replay={audit_suffix}"
+            )
+    else:
+        lines.append(f"  - {NO_RECENT_SESSION_EVIDENCE}")
+
+    lines.append("- Recent Activity:")
+    recent_activity = evidence.get("recent_activity")
+    if isinstance(recent_activity, list) and recent_activity:
+        for item in recent_activity:
+            if not isinstance(item, Mapping):
+                continue
+            lines.append(
+                "  - "
+                + f"#{_as_str(item.get('event_index'))} "
+                + f"[{_as_str(item.get('source_label'), default=item.get('source_scope'))}] "
+                + f"at `{_as_str(item.get('recorded_at_utc'))}` "
+                + f"{_as_str(item.get('active_profile_id'))}: "
+                + _as_str(item.get("summary"), default="<unavailable>")
+            )
+    else:
+        lines.append(f"  - {NO_RECENT_SESSION_EVIDENCE}")
+    return "\n".join(lines)
 
 
 def _render_surface_section(
@@ -350,6 +519,7 @@ def _render_surface_section(
     if key == "query_action":
         lines = [
             "## Live Query",
+            f"- Watchman Gate Status: `{_as_str(panel.get('watchman_gate_status'), default='<unavailable>')}`",
             f"- Trigger Gate: `{_as_str(panel.get('trigger_gate'))}`",
             f"- Readiness Gate: `{_as_str(panel.get('readiness_gate'))}`",
             f"- Query Enabled: `{_as_str(panel.get('query_enabled'))}`",
@@ -475,6 +645,19 @@ def _as_str(value: object, *, default: str = "<missing>") -> str:
     return str(value)
 
 
+def _render_debug_secondary(shell_json: str) -> Any:
+    return mo.vstack(
+        [
+            mo.md("## Debug (Secondary)"),
+            mo.ui.code_editor(
+                value=shell_json,
+                language="json",
+                disabled=True,
+            ),
+        ]
+    )
+
+
 def _safe_json(value: object) -> str:
     return json.dumps(value, indent=2)
 
@@ -521,8 +704,34 @@ def _supported_profile_lines(value: object) -> str:
         lines.append(
             "  - "
             + f"{_as_str(item.get('profile_id'))}: "
-            + f"mode={_as_str(item.get('runtime_mode'))}, "
+            + f"kind={_as_str(item.get('profile_kind'), default=_as_str(item.get('runtime_mode')))}, "
             + f"contract={_as_str(item.get('contract'))}, "
-            + f"session_date={_as_str(item.get('session_date'))}"
+            + f"session_date={_as_str(item.get('session_date'))}, "
+            + f"active={_as_str(item.get('active'), default=False)}"
         )
     return "\n".join(lines) if lines else "  - <none>"
+
+
+def _candidate_profile_lines(value: object) -> str:
+    if not isinstance(value, list):
+        return "  - <missing>"
+
+    lines: list[str] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        lines.append(
+            "  - "
+            + f"{_as_str(item.get('contract'))} -> {_as_str(item.get('profile_id'))}: "
+            + f"status={_as_str(item.get('status'))}, "
+            + f"reason={_as_str(item.get('reason_label'), default=_as_str(item.get('reason_category')))}"
+        )
+        lines.append("    Summary: " + _as_str(item.get("summary"), default="<unavailable>"))
+    return "\n".join(lines) if lines else "  - <none>"
+
+
+def _ready_outcome_suffix(state: object, outcome: object) -> str:
+    state_text = _as_str(state, default="<unavailable>")
+    if outcome is None:
+        return state_text
+    return f"{state_text} ({_as_str(outcome)})"

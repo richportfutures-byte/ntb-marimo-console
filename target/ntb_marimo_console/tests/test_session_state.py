@@ -74,6 +74,25 @@ class SessionStateTests(unittest.TestCase):
         self.assertIn(SessionState.REFRESH_REQUESTED, machine.state_history)
         self.assertIn(SessionState.REFRESH_COMPLETED, machine.state_history)
 
+    def test_profile_switch_transitions_are_explicit(self) -> None:
+        machine = OperatorSessionMachine()
+        machine.mark_startup_ready()
+        machine.mark_live_query_eligible()
+        machine.mark_query_action_requested()
+        machine.mark_query_action_completed()
+        machine.mark_decision_review_ready()
+        machine.mark_audit_replay_ready()
+        machine.mark_profile_switch_requested()
+        machine.mark_profile_switch_validating()
+        machine.mark_profile_switch_completed()
+        machine.mark_startup_ready()
+        machine.mark_live_query_eligible()
+
+        self.assertEqual(machine.state, SessionState.LIVE_QUERY_ELIGIBLE)
+        self.assertIn(SessionState.PROFILE_SWITCH_REQUESTED, machine.state_history)
+        self.assertIn(SessionState.PROFILE_SWITCH_VALIDATING, machine.state_history)
+        self.assertIn(SessionState.PROFILE_SWITCH_COMPLETED, machine.state_history)
+
     def test_machine_can_resume_from_existing_history(self) -> None:
         machine = OperatorSessionMachine()
         machine.mark_startup_ready()

@@ -69,6 +69,25 @@ def _es_fixture_analysis() -> dict[str, object]:
     )
 
 
+def _cl_fixture_analysis() -> dict[str, object]:
+    profile = get_runtime_profile("preserved_cl_phase1")
+    historical = _load_json_fixture("source/ntb_engine/tests/fixtures/compiler/cl_historical_input.valid.json")
+    extension = _load_json_fixture("source/ntb_engine/tests/fixtures/compiler/cl_extension.valid.json")
+    return _valid_contract_analysis_no_trade(
+        contract=profile.contract,
+        timestamp=profile.evaluation_timestamp_iso,
+        support_level=float(historical["current_session_val"]),
+        resistance_level=float(historical["prior_day_high"]),
+        pivot_level=float(historical["current_session_poc"]),
+        structural_notes=(
+            "EIA remains scheduled in "
+            f"{int(extension['eia_timing']['minutes_until'])} minutes with bid rebuilding near "
+            f"session VWAP {float(historical['vwap']):.2f}, but the bounded preserved fixture adapter "
+            "terminates at NO_TRADE."
+        ),
+    )
+
+
 def _zn_fixture_analysis() -> dict[str, object]:
     profile = get_runtime_profile("preserved_zn_phase1")
     historical = _load_json_fixture("source/ntb_engine/tests/fixtures/compiler/zn_historical_input.valid.json")
@@ -89,15 +108,19 @@ def _zn_fixture_analysis() -> dict[str, object]:
 
 def build_profile_fixture_adapter(profile_id: str = "preserved_es_phase1") -> InProcessStructuredAdapter:
     profile = get_runtime_profile(profile_id)
-    if profile.profile_id == "preserved_es_phase1":
-        analysis = _es_fixture_analysis()
-    elif profile.profile_id == "preserved_zn_phase1":
-        analysis = _zn_fixture_analysis()
-    else:
+    analysis_by_profile_id = {
+        "preserved_es_phase1": _es_fixture_analysis,
+        "preserved_cl_phase1": _cl_fixture_analysis,
+        "preserved_zn_phase1": _zn_fixture_analysis,
+    }
+    analysis_builder = analysis_by_profile_id.get(profile.profile_id)
+    if analysis_builder is None:
         raise RuntimeError(f"Unsupported preserved fixture adapter profile: {profile.profile_id}")
+    analysis = analysis_builder()
     return InProcessStructuredAdapter({STAGE_AB_PROMPT_BY_CONTRACT[profile.contract]: analysis})
 
 
 adapter_es = build_profile_fixture_adapter("preserved_es_phase1")
+adapter_cl = build_profile_fixture_adapter("preserved_cl_phase1")
 adapter_zn = build_profile_fixture_adapter("preserved_zn_phase1")
 adapter = adapter_es

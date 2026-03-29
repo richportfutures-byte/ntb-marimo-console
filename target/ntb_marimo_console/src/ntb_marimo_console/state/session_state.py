@@ -22,6 +22,11 @@ class SessionState(str, Enum):
     REFRESH_FAILED = "REFRESH_FAILED"
     SESSION_RESET_REQUESTED = "SESSION_RESET_REQUESTED"
     SESSION_RESET_COMPLETED = "SESSION_RESET_COMPLETED"
+    PROFILE_SWITCH_REQUESTED = "PROFILE_SWITCH_REQUESTED"
+    PROFILE_SWITCH_VALIDATING = "PROFILE_SWITCH_VALIDATING"
+    PROFILE_SWITCH_COMPLETED = "PROFILE_SWITCH_COMPLETED"
+    PROFILE_SWITCH_BLOCKED = "PROFILE_SWITCH_BLOCKED"
+    PROFILE_SWITCH_FAILED = "PROFILE_SWITCH_FAILED"
     ERROR = "ERROR"
 
 
@@ -33,6 +38,7 @@ _ALLOWED_TRANSITIONS: dict[SessionState, set[SessionState]] = {
     },
     SessionState.STARTUP_BLOCKED: {
         SessionState.REFRESH_REQUESTED,
+        SessionState.PROFILE_SWITCH_REQUESTED,
         SessionState.ERROR,
     },
     SessionState.STARTUP_READY: {
@@ -40,6 +46,7 @@ _ALLOWED_TRANSITIONS: dict[SessionState, set[SessionState]] = {
         SessionState.LIVE_QUERY_ELIGIBLE,
         SessionState.REFRESH_REQUESTED,
         SessionState.SESSION_RESET_REQUESTED,
+        SessionState.PROFILE_SWITCH_REQUESTED,
         SessionState.ERROR,
     },
     SessionState.LIVE_QUERY_BLOCKED: {
@@ -47,6 +54,7 @@ _ALLOWED_TRANSITIONS: dict[SessionState, set[SessionState]] = {
         SessionState.QUERY_ACTION_FAILED,
         SessionState.REFRESH_REQUESTED,
         SessionState.SESSION_RESET_REQUESTED,
+        SessionState.PROFILE_SWITCH_REQUESTED,
         SessionState.ERROR,
     },
     SessionState.LIVE_QUERY_ELIGIBLE: {
@@ -54,6 +62,7 @@ _ALLOWED_TRANSITIONS: dict[SessionState, set[SessionState]] = {
         SessionState.QUERY_ACTION_FAILED,
         SessionState.REFRESH_REQUESTED,
         SessionState.SESSION_RESET_REQUESTED,
+        SessionState.PROFILE_SWITCH_REQUESTED,
         SessionState.ERROR,
     },
     SessionState.QUERY_ACTION_REQUESTED: {
@@ -65,17 +74,20 @@ _ALLOWED_TRANSITIONS: dict[SessionState, set[SessionState]] = {
         SessionState.DECISION_REVIEW_READY,
         SessionState.REFRESH_REQUESTED,
         SessionState.SESSION_RESET_REQUESTED,
+        SessionState.PROFILE_SWITCH_REQUESTED,
         SessionState.ERROR,
     },
     SessionState.QUERY_ACTION_FAILED: {
         SessionState.REFRESH_REQUESTED,
         SessionState.SESSION_RESET_REQUESTED,
+        SessionState.PROFILE_SWITCH_REQUESTED,
         SessionState.ERROR,
     },
     SessionState.DECISION_REVIEW_READY: {
         SessionState.AUDIT_REPLAY_READY,
         SessionState.REFRESH_REQUESTED,
         SessionState.SESSION_RESET_REQUESTED,
+        SessionState.PROFILE_SWITCH_REQUESTED,
         SessionState.ERROR,
     },
     SessionState.AUDIT_REPLAY_READY: {
@@ -83,6 +95,7 @@ _ALLOWED_TRANSITIONS: dict[SessionState, set[SessionState]] = {
         SessionState.SESSION_RESET_REQUESTED,
         SessionState.LIVE_QUERY_BLOCKED,
         SessionState.LIVE_QUERY_ELIGIBLE,
+        SessionState.PROFILE_SWITCH_REQUESTED,
         SessionState.ERROR,
     },
     SessionState.REFRESH_REQUESTED: {
@@ -94,10 +107,12 @@ _ALLOWED_TRANSITIONS: dict[SessionState, set[SessionState]] = {
         SessionState.STARTUP_READY,
         SessionState.LIVE_QUERY_BLOCKED,
         SessionState.LIVE_QUERY_ELIGIBLE,
+        SessionState.PROFILE_SWITCH_REQUESTED,
         SessionState.ERROR,
     },
     SessionState.REFRESH_FAILED: {
         SessionState.REFRESH_REQUESTED,
+        SessionState.PROFILE_SWITCH_REQUESTED,
         SessionState.ERROR,
     },
     SessionState.SESSION_RESET_REQUESTED: {
@@ -108,11 +123,40 @@ _ALLOWED_TRANSITIONS: dict[SessionState, set[SessionState]] = {
         SessionState.STARTUP_READY,
         SessionState.LIVE_QUERY_BLOCKED,
         SessionState.LIVE_QUERY_ELIGIBLE,
+        SessionState.PROFILE_SWITCH_REQUESTED,
+        SessionState.ERROR,
+    },
+    SessionState.PROFILE_SWITCH_REQUESTED: {
+        SessionState.PROFILE_SWITCH_VALIDATING,
+        SessionState.ERROR,
+    },
+    SessionState.PROFILE_SWITCH_VALIDATING: {
+        SessionState.PROFILE_SWITCH_COMPLETED,
+        SessionState.PROFILE_SWITCH_BLOCKED,
+        SessionState.PROFILE_SWITCH_FAILED,
+        SessionState.ERROR,
+    },
+    SessionState.PROFILE_SWITCH_COMPLETED: {
+        SessionState.STARTUP_READY,
+        SessionState.LIVE_QUERY_BLOCKED,
+        SessionState.LIVE_QUERY_ELIGIBLE,
+        SessionState.ERROR,
+    },
+    SessionState.PROFILE_SWITCH_BLOCKED: {
+        SessionState.PROFILE_SWITCH_REQUESTED,
+        SessionState.REFRESH_REQUESTED,
+        SessionState.SESSION_RESET_REQUESTED,
+        SessionState.ERROR,
+    },
+    SessionState.PROFILE_SWITCH_FAILED: {
+        SessionState.PROFILE_SWITCH_REQUESTED,
+        SessionState.REFRESH_REQUESTED,
         SessionState.ERROR,
     },
     SessionState.ERROR: {
         SessionState.REFRESH_REQUESTED,
         SessionState.SESSION_RESET_REQUESTED,
+        SessionState.PROFILE_SWITCH_REQUESTED,
     },
 }
 
@@ -187,6 +231,21 @@ class OperatorSessionMachine:
 
     def mark_session_reset_completed(self) -> None:
         self.transition(SessionState.SESSION_RESET_COMPLETED)
+
+    def mark_profile_switch_requested(self) -> None:
+        self.transition(SessionState.PROFILE_SWITCH_REQUESTED)
+
+    def mark_profile_switch_validating(self) -> None:
+        self.transition(SessionState.PROFILE_SWITCH_VALIDATING)
+
+    def mark_profile_switch_completed(self) -> None:
+        self.transition(SessionState.PROFILE_SWITCH_COMPLETED)
+
+    def mark_profile_switch_blocked(self) -> None:
+        self.transition(SessionState.PROFILE_SWITCH_BLOCKED)
+
+    def mark_profile_switch_failed(self) -> None:
+        self.transition(SessionState.PROFILE_SWITCH_FAILED)
 
     def mark_error(self) -> None:
         if self.state == SessionState.ERROR:

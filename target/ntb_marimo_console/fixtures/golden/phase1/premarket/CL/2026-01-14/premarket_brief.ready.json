@@ -1,0 +1,50 @@
+{
+  "contract": "CL",
+  "session_date": "2026-01-14",
+  "status": "READY",
+  "version": "pmkt_brief_v1",
+  "structural_setups": [
+    {
+      "id": "cl_setup_1",
+      "summary": "CL remains queryable above developing value while EIA is scheduled but not yet locked out.",
+      "description": "Schema-anchored CL preserved profile narrative using EIA timing, volume pace, and explicit observable query conditions.",
+      "fields_used": [
+        "market.current_price",
+        "market.cumulative_delta",
+        "volatility_context.current_volume_vs_average",
+        "macro_context.eia_lockout_active"
+      ],
+      "contract_framework_labels": [
+        "volatility_primary",
+        "eia_timing",
+        "order_flow_confirmation"
+      ],
+      "stage_b_thesis_links": [
+        "cl_pre_eia_value_acceptance"
+      ],
+      "query_triggers": [
+        {
+          "id": "cl_trigger_pre_eia_acceptance",
+          "logic": "pre_eia_acceptance",
+          "description": "Trigger when CL is above developing value with positive delta, above-average volume, and no active EIA lockout.",
+          "observable_conditions": [
+            "market.current_price >= 73.35",
+            "market.cumulative_delta > 0",
+            "volatility_context.current_volume_vs_average >= 1.0",
+            "macro_context.eia_lockout_active == False"
+          ],
+          "fields_used": [
+            "market.current_price",
+            "market.cumulative_delta",
+            "volatility_context.current_volume_vs_average",
+            "macro_context.eia_lockout_active"
+          ]
+        }
+      ],
+      "warnings": [
+        "If the EIA lockout activates, keep the query blocked.",
+        "If delta weakens or volume pace drops below average, keep the query blocked."
+      ]
+    }
+  ]
+}
