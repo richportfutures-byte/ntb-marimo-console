@@ -19,7 +19,7 @@ SAFE_SOCKET_URL = "wss://streamer-api.schwab.com/ws?credential=hidden"
 
 
 class FakeUserPreferenceProvider:
-    def __init__(self, metadata: SchwabStreamerMetadata | None = None) -> None:
+    def __init__(self, metadata: SchwabStreamerMetadata | None = None, error: Exception | None = None) -> None:
         self.metadata = metadata or SchwabStreamerMetadata(
             streamer_socket_url=SAFE_SOCKET_URL,
             schwab_client_customer_id="raw-customer-id",
@@ -27,10 +27,13 @@ class FakeUserPreferenceProvider:
             schwab_client_channel="raw-channel",
             schwab_client_function_id="raw-function",
         )
+        self.error = error
         self.loaded_paths: list[Path] = []
 
     def load_streamer_metadata(self, token_path: Path) -> SchwabStreamerMetadata:
         self.loaded_paths.append(token_path)
+        if self.error is not None:
+            raise self.error
         return self.metadata
 
 
@@ -42,17 +45,23 @@ class FakeStreamerClient:
         subscription_code: int = 0,
         market_data: dict[int | str, object] | None = None,
         timeout: bool = False,
+        login_error: Exception | None = None,
+        subscription_error: Exception | None = None,
     ) -> None:
         self.login_code = login_code
         self.subscription_code = subscription_code
         self.market_data = market_data
         self.timeout = timeout
+        self.login_error = login_error
+        self.subscription_error = subscription_error
         self.calls: list[str] = []
         self.subscribed_symbol: str | None = None
         self.subscribed_field_ids: tuple[int, ...] | None = None
 
     def login(self, metadata: SchwabStreamerMetadata, *, timeout_seconds: float) -> int:
         self.calls.append("login")
+        if self.login_error is not None:
+            raise self.login_error
         if self.timeout:
             raise SchwabAdapterTimeoutError("timeout")
         return self.login_code
@@ -68,6 +77,8 @@ class FakeStreamerClient:
         self.calls.append("subscribe")
         self.subscribed_symbol = symbol
         self.subscribed_field_ids = field_ids
+        if self.subscription_error is not None:
+            raise self.subscription_error
         if self.timeout:
             raise SchwabAdapterTimeoutError("timeout")
         return SchwabLevelOneFuturesSubscription(
@@ -232,3 +243,48 @@ def test_missing_or_malformed_quote_fields_degrade_safely(target_root: Path) -> 
     assert result.last_quote_snapshot.bid_size is None
     assert result.last_quote_snapshot.ask_size is None
     assert dict(result.last_quote_snapshot.raw_fields) == {0: "/ESM26", 1: 7175, 8: 1000}
+
+
+def test_user_preference_exception_reports_safe_stage(target_root: Path) -> None:
+    provider = FakeUserPreferenceProvider(error=RuntimeError("secret-token-should-not-print"))
+    client = FakeStreamerClient(market_data={0: "/ESM26"})
+
+    result = adapter(target_root, provider=provider, client=client).fetch_once(request())
+
+    assert result.status == "error"
+    assert result.market_data_received is False
+    assert result.failure_reason == "user_preference_error:RuntimeError"
+    assert "secret-token-should-not-print" not in repr(result)
+    assert client.calls == []
+
+
+def test_login_exception_reports_safe_stage_and_host_only(target_root: Path) -> None:
+    client = FakeStreamerClient(
+        market_data={0: "/ESM26"},
+        login_error=RuntimeError("raw-customer-id secret-access-token"),
+    )
+
+    result = adapter(target_root, client=client).fetch_once(request())
+
+    assert result.status == "error"
+    assert result.streamer_socket_host == "streamer-api.schwab.com"
+    assert result.failure_reason == "login_error:RuntimeError"
+    assert "raw-customer-id" not in repr(result)
+    assert "secret-access-token" not in repr(result)
+    assert client.calls == ["login"]
+
+
+def test_subscription_exception_reports_safe_stage(target_root: Path) -> None:
+    client = FakeStreamerClient(
+        market_data={0: "/ESM26"},
+        subscription_error=RuntimeError("raw-correl-id secret-refresh-token"),
+    )
+
+    result = adapter(target_root, client=client).fetch_once(request())
+
+    assert result.status == "error"
+    assert result.login_response_code == 0
+    assert result.failure_reason == "subscription_error:RuntimeError"
+    assert "raw-correl-id" not in repr(result)
+    assert "secret-refresh-token" not in repr(result)
+    assert client.calls == ["login", "subscribe"]

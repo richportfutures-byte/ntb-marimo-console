@@ -144,84 +144,134 @@ class SchwabFuturesMarketDataAdapter:
 
         try:
             field_ids = _validate_field_ids(request.field_ids)
-            metadata = self._user_preference_provider.load_streamer_metadata(token_path_result.path)
-            streamer_socket_host = _streamer_socket_host(metadata.streamer_socket_url)
-            if not streamer_socket_host:
-                return _failure_result(
-                    request,
-                    status="error",
-                    field_ids=field_ids,
-                    failure_reason="invalid_streamer_socket_url",
-                )
+        except Exception:
+            return _failure_result(
+                request,
+                status="error",
+                field_ids=_safe_field_ids(request.field_ids),
+                failure_reason="field_validation_error",
+            )
 
+        try:
+            metadata = self._user_preference_provider.load_streamer_metadata(token_path_result.path)
+        except Exception as exc:
+            return _failure_result(
+                request,
+                status="error",
+                field_ids=field_ids,
+                failure_reason=_safe_failure_reason("user_preference_error", exc),
+            )
+
+        streamer_socket_host = _streamer_socket_host(metadata.streamer_socket_url)
+        if not streamer_socket_host:
+            return _failure_result(
+                request,
+                status="error",
+                field_ids=field_ids,
+                failure_reason="invalid_streamer_socket_url",
+            )
+
+        try:
             login_response_code = self._streamer_client.login(
                 metadata,
                 timeout_seconds=request.timeout_seconds,
             )
-            if login_response_code != 0:
-                return _failure_result(
-                    request,
-                    status="login_failed",
-                    field_ids=field_ids,
-                    streamer_socket_host=streamer_socket_host,
-                    login_response_code=login_response_code,
-                    failure_reason="login_response_code_nonzero",
-                )
+        except SchwabAdapterTimeoutError:
+            return _failure_result(
+                request,
+                status="timeout",
+                field_ids=field_ids,
+                streamer_socket_host=streamer_socket_host,
+                failure_reason="login_timeout",
+            )
+        except Exception as exc:
+            return _failure_result(
+                request,
+                status="error",
+                field_ids=field_ids,
+                streamer_socket_host=streamer_socket_host,
+                failure_reason=_safe_failure_reason("login_error", exc),
+            )
+        if login_response_code != 0:
+            return _failure_result(
+                request,
+                status="login_failed",
+                field_ids=field_ids,
+                streamer_socket_host=streamer_socket_host,
+                login_response_code=login_response_code,
+                failure_reason="login_response_code_nonzero",
+            )
 
+        try:
             subscription = self._streamer_client.subscribe_levelone_futures(
                 metadata,
                 symbol=request.symbol,
                 field_ids=field_ids,
                 timeout_seconds=request.timeout_seconds,
             )
-            if subscription.response_code != 0:
-                return _failure_result(
-                    request,
-                    status="subscription_failed",
-                    field_ids=field_ids,
-                    streamer_socket_host=streamer_socket_host,
-                    login_response_code=login_response_code,
-                    subscription_response_code=subscription.response_code,
-                    failure_reason="subscription_response_code_nonzero",
-                )
-            if not subscription.market_data:
-                return _failure_result(
-                    request,
-                    status="timeout",
-                    field_ids=field_ids,
-                    streamer_socket_host=streamer_socket_host,
-                    login_response_code=login_response_code,
-                    subscription_response_code=subscription.response_code,
-                    failure_reason="market_data_not_received",
-                )
-
-            snapshot = _quote_snapshot(subscription.market_data)
-            return SchwabFuturesMarketDataResult(
-                status="success",
-                symbol=snapshot.symbol or request.symbol,
-                field_ids=field_ids,
-                streamer_socket_host=streamer_socket_host,
-                login_response_code=login_response_code,
-                subscription_response_code=subscription.response_code,
-                market_data_received=True,
-                last_quote_snapshot=snapshot,
-                received_at=self._clock(),
-                failure_reason=None,
-            )
         except SchwabAdapterTimeoutError:
             return _failure_result(
                 request,
                 status="timeout",
-                field_ids=_safe_field_ids(request.field_ids),
-                failure_reason="timeout",
+                field_ids=field_ids,
+                streamer_socket_host=streamer_socket_host,
+                login_response_code=login_response_code,
+                failure_reason="subscription_timeout",
             )
-        except Exception:
+        except Exception as exc:
             return _failure_result(
                 request,
                 status="error",
-                field_ids=_safe_field_ids(request.field_ids),
-                failure_reason="adapter_error",
+                field_ids=field_ids,
+                streamer_socket_host=streamer_socket_host,
+                login_response_code=login_response_code,
+                failure_reason=_safe_failure_reason("subscription_error", exc),
             )
+        if subscription.response_code != 0:
+            return _failure_result(
+                request,
+                status="subscription_failed",
+                field_ids=field_ids,
+                streamer_socket_host=streamer_socket_host,
+                login_response_code=login_response_code,
+                subscription_response_code=subscription.response_code,
+                failure_reason="subscription_response_code_nonzero",
+            )
+        if not subscription.market_data:
+            return _failure_result(
+                request,
+                status="timeout",
+                field_ids=field_ids,
+                streamer_socket_host=streamer_socket_host,
+                login_response_code=login_response_code,
+                subscription_response_code=subscription.response_code,
+                failure_reason="market_data_not_received",
+            )
+
+        try:
+            snapshot = _quote_snapshot(subscription.market_data)
+        except Exception as exc:
+            return _failure_result(
+                request,
+                status="error",
+                field_ids=field_ids,
+                streamer_socket_host=streamer_socket_host,
+                login_response_code=login_response_code,
+                subscription_response_code=subscription.response_code,
+                failure_reason=_safe_failure_reason("result_mapping_error", exc),
+            )
+        return SchwabFuturesMarketDataResult(
+            status="success",
+            symbol=snapshot.symbol or request.symbol,
+            field_ids=field_ids,
+            streamer_socket_host=streamer_socket_host,
+            login_response_code=login_response_code,
+            subscription_response_code=subscription.response_code,
+            market_data_received=True,
+            last_quote_snapshot=snapshot,
+            received_at=self._clock(),
+            failure_reason=None,
+        )
 
 
 @dataclass(frozen=True)
@@ -267,6 +317,10 @@ def _safe_field_ids(field_ids: tuple[int, ...]) -> tuple[int, ...]:
         return tuple(int(field_id) for field_id in field_ids)
     except Exception:
         return ()
+
+
+def _safe_failure_reason(stage: str, exc: Exception) -> str:
+    return f"{stage}:{exc.__class__.__name__}"
 
 
 def _streamer_socket_host(streamer_socket_url: str) -> str:
