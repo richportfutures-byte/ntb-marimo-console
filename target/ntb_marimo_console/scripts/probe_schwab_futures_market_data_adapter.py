@@ -40,6 +40,7 @@ DEFAULT_TOKEN_PATH = ".state/schwab/token.json"
 DEFAULT_SYMBOL = "/ESM26"
 DEFAULT_TIMEOUT_SECONDS = 10.0
 LIVE_ENV_VAR = "SCHWAB_ADAPTER_SMOKE_LIVE"
+LOCAL_ENV_FILE_NAME = ".env"
 
 
 class SmokeConfigError(RuntimeError):
@@ -255,15 +256,53 @@ def _parse_timeout(raw_value: str) -> float:
 
 
 def _resolve_safe_token_path(raw_value: str, *, target_root: Path) -> Path:
+    raw_path = Path(raw_value).expanduser()
+    if not raw_path.is_absolute() and raw_path.parts[:2] == ("target", "ntb_marimo_console"):
+        raw_value = str(target_root.parents[1] / raw_path)
     token_path = schwab_token_utils.resolve_token_path(raw_value, target_root=target_root)
     schwab_token_utils.require_under_state(token_path, target_root=target_root)
     return token_path
 
 
+def _unquote_env_value(value: str) -> str:
+    stripped = value.strip()
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {"'", '"'}:
+        return stripped[1:-1]
+    return stripped
+
+
+def _load_local_env_file(target_root: Path) -> dict[str, str]:
+    env_path = target_root / LOCAL_ENV_FILE_NAME
+    if not env_path.exists():
+        return {}
+    values: dict[str, str] = {}
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        values[key] = _unquote_env_value(value)
+    return values
+
+
+def _effective_env(*, target_root: Path, env: dict[str, str] | None) -> dict[str, str]:
+    values = _load_local_env_file(target_root)
+    shell_values = os.environ if env is None else env
+    for key, value in shell_values.items():
+        values[key] = value
+    return values
+
+
 def load_config(args: argparse.Namespace, *, env: dict[str, str] | None = None) -> AdapterSmokeConfig:
-    values = os.environ if env is None else env
     target_root = TARGET_ROOT
+    values = _effective_env(target_root=target_root, env=env)
     token_path = _resolve_safe_token_path(args.token_path, target_root=target_root)
+    env_token_path = values.get("SCHWAB_TOKEN_PATH", "").strip()
+    if env_token_path:
+        token_path = _resolve_safe_token_path(env_token_path, target_root=target_root)
     field_ids = _parse_field_ids(args.fields)
     timeout_seconds = _parse_timeout(args.timeout_seconds)
     live = args.live or values.get(LIVE_ENV_VAR, "").strip() == "true"

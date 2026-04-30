@@ -28,6 +28,11 @@ class FakeAdapter:
         return self.result
 
 
+def write_local_env(target_root: Path, content: str) -> None:
+    target_root.mkdir(parents=True, exist_ok=True)
+    (target_root / ".env").write_text(content, encoding="utf-8")
+
+
 def test_live_smoke_script_requires_explicit_opt_in(capsys) -> None:
     exit_code = probe.run([], env={})
 
@@ -35,6 +40,103 @@ def test_live_smoke_script_requires_explicit_opt_in(capsys) -> None:
     assert exit_code == 1
     assert "SCHWAB_FUTURES_MARKET_DATA_ADAPTER_FAIL" in output
     assert "live smoke disabled" in output
+
+
+def test_local_env_values_are_loaded_when_shell_env_is_absent(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    target_root = tmp_path / "target" / "ntb_marimo_console"
+    write_local_env(
+        target_root,
+        "\n".join(
+            (
+                "# local operator env",
+                "SCHWAB_APP_KEY='env-file-key'",
+                'SCHWAB_APP_SECRET="env-file-secret"',
+                "SCHWAB_TOKEN_PATH=target/ntb_marimo_console/.state/schwab/token.json",
+                "",
+            )
+        ),
+    )
+    monkeypatch.setattr(probe, "TARGET_ROOT", target_root)
+    result = probe.SchwabFuturesMarketDataResult(
+        status="timeout",
+        symbol="/ESM26",
+        field_ids=(0, 1),
+        streamer_socket_host=None,
+        login_response_code=None,
+        subscription_response_code=None,
+        market_data_received=False,
+        last_quote_snapshot=None,
+        received_at=None,
+        failure_reason="market_data_not_received",
+    )
+    seen_configs: list[object] = []
+
+    def adapter_factory(config: object) -> FakeAdapter:
+        seen_configs.append(config)
+        return FakeAdapter(result)
+
+    exit_code = probe.run(["--live", "--fields", "0,1"], env={}, adapter_factory=adapter_factory)
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert len(seen_configs) == 1
+    assert seen_configs[0].app_key == "env-file-key"
+    assert seen_configs[0].app_secret == "env-file-secret"
+    assert seen_configs[0].token_path == target_root / ".state" / "schwab" / "token.json"
+    assert "env-file-key" not in output
+    assert "env-file-secret" not in output
+
+
+def test_shell_env_overrides_local_env_values(tmp_path: Path, monkeypatch) -> None:
+    target_root = tmp_path / "target" / "ntb_marimo_console"
+    write_local_env(
+        target_root,
+        "\n".join(
+            (
+                "SCHWAB_APP_KEY=env-file-key",
+                "SCHWAB_APP_SECRET=env-file-secret",
+            )
+        ),
+    )
+    monkeypatch.setattr(probe, "TARGET_ROOT", target_root)
+    args = probe.build_parser().parse_args(["--live"])
+
+    config = probe.load_config(
+        args,
+        env={"SCHWAB_APP_KEY": "shell-key", "SCHWAB_APP_SECRET": "shell-secret"},
+    )
+
+    assert config.app_key == "shell-key"
+    assert config.app_secret == "shell-secret"
+
+
+def test_missing_local_env_preserves_current_missing_credential_behavior(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(probe, "TARGET_ROOT", tmp_path / "target" / "ntb_marimo_console")
+
+    exit_code = probe.run(["--live"], env={})
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "SCHWAB_FUTURES_MARKET_DATA_ADAPTER_FAIL" in output
+    assert "SCHWAB_APP_KEY and SCHWAB_APP_SECRET are required for live smoke" in output
+
+
+def test_env_example_contains_placeholders_only() -> None:
+    example_path = Path(__file__).resolve().parents[1] / ".env.example"
+    contents = example_path.read_text(encoding="utf-8")
+
+    assert "SCHWAB_APP_KEY=" in contents
+    assert "SCHWAB_APP_SECRET=" in contents
+    assert "SCHWAB_CALLBACK_URL=https://127.0.0.1" in contents
+    assert "SCHWAB_TOKEN_PATH=target/ntb_marimo_console/.state/schwab/token.json" in contents
+    assert "PASTE" not in contents
+    assert "secret-" not in contents
+    assert "access_token" not in contents
+    assert "refresh_token" not in contents
 
 
 def test_live_smoke_script_prints_safe_success_only(capsys) -> None:
