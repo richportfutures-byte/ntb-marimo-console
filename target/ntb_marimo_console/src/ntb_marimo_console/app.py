@@ -14,6 +14,7 @@ from .adapters.contracts import (
     WatchmanContextLike,
 )
 from .adapters.trigger_evaluator import TriggerEvaluator
+from .market_data import FuturesQuoteService
 from .adapters.trigger_specs import trigger_specs_from_brief
 from .state.session_state import OperatorSessionMachine, SessionState
 from .ui.app_shell import AppShellPayload, build_app_shell
@@ -36,6 +37,7 @@ class Phase1AppDependencies:
     run_history_store: RunHistoryStore
     audit_replay_store: AuditReplayStore
     trigger_evaluator: TriggerEvaluator
+    market_data_service: FuturesQuoteService | None = None
 
 
 @dataclass(frozen=True)

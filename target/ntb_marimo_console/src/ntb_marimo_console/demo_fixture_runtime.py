@@ -22,6 +22,7 @@ from .adapters.contracts import (
     WatchmanSweepRequest,
 )
 from .app import Phase1AppDependencies, build_phase1_app
+from .market_data import build_futures_quote_service, resolve_futures_quote_service_config
 from .runtime_profiles import RuntimeProfile, default_profile_id_for_mode, get_runtime_profile
 
 
@@ -105,6 +106,12 @@ def build_phase1_dependencies(
         run_history_store=run_history_store,
         audit_replay_store=audit_replay_store,
         trigger_evaluator=TriggerEvaluator(),
+        market_data_service=build_futures_quote_service(
+            resolve_futures_quote_service_config(
+                {},
+                target_root=_market_data_target_root(),
+            )
+        ),
     )
 
 
@@ -179,3 +186,7 @@ def load_json_object(path: Path) -> dict[str, object]:
     if not isinstance(parsed, dict):
         raise ValueError(f"Expected object JSON at {path}")
     return parsed
+
+
+def _market_data_target_root() -> Path:
+    return Path(__file__).resolve().parents[2]
