@@ -74,14 +74,14 @@ def __(
         for item in supported_profiles:
             if not isinstance(item, _Mapping):
                 continue
-            profile_id = str(item.get("profile_id", "<unresolved>"))
+            _option_profile_id = str(item.get("profile_id", "<unresolved>"))
             label = (
-                f"{profile_id} | {item.get('profile_kind', item.get('runtime_mode', '<unresolved>'))} | "
+                f"{_option_profile_id} | {item.get('profile_kind', item.get('runtime_mode', '<unresolved>'))} | "
                 f"{item.get('contract', '<unresolved>')} | {item.get('session_date', '<unresolved>')}"
             )
-            profile_options[label] = profile_id
-            if profile_id not in profile_label_by_id:
-                profile_label_by_id[profile_id] = label
+            profile_options[label] = _option_profile_id
+            if _option_profile_id not in profile_label_by_id:
+                profile_label_by_id[_option_profile_id] = label
 
     pending_profile_id = get_pending_profile_id()
     if pending_profile_id not in profile_label_by_id:

@@ -299,8 +299,8 @@ class EntrypointSharedRendererTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("profile_options[label] = profile_id", source)
-        self.assertIn("profile_label_by_id[profile_id] = label", source)
+        self.assertIn("profile_options[label] = _option_profile_id", source)
+        self.assertIn("profile_label_by_id[_option_profile_id] = label", source)
         self.assertIn("pending_profile_label = profile_label_by_id.get(pending_profile_id)", source)
         self.assertIn("value=pending_profile_label", source)
         self.assertIn("on_change=set_pending_profile_id", source)
