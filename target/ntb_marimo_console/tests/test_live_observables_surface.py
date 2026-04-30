@@ -3,17 +3,32 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ntb_marimo_console.adapters.schwab_futures_market_data import (
+    SchwabFuturesMarketDataResult,
+    SchwabFuturesQuoteSnapshot,
+)
 from ntb_marimo_console.market_data.futures_quote_service import (
     FixtureFuturesQuoteProvider,
     FuturesQuote,
     FuturesQuoteService,
     NullFuturesQuoteProvider,
+    SchwabAdapterFuturesQuoteProvider,
 )
 from ntb_marimo_console.ui.surfaces.live_observables import render_live_observables_panel
 from ntb_marimo_console.viewmodels.mappers import live_observable_vm_from_snapshot
 
 
 NOW = datetime(2026, 4, 30, 12, 0, 0, tzinfo=timezone.utc)
+
+
+class FakeSchwabAdapter:
+    def __init__(self, result: SchwabFuturesMarketDataResult) -> None:
+        self.result = result
+        self.requests: list[object] = []
+
+    def fetch_once(self, request: object) -> SchwabFuturesMarketDataResult:
+        self.requests.append(request)
+        return self.result
 
 
 def _quote(
@@ -133,3 +148,42 @@ def test_surface_projection_does_not_import_probe_or_launch_profile_modules() ->
     assert "launch_config" not in mapper_source
     assert "runtime_profiles" not in mapper_source
     assert "probe_schwab_futures_market_data_adapter" not in surface_source
+
+
+def test_schwab_service_renders_bid_ask_last_with_schwab_status() -> None:
+    adapter = FakeSchwabAdapter(
+        SchwabFuturesMarketDataResult(
+            status="success",
+            symbol="ES",
+            field_ids=(0, 1, 2, 3, 4, 5),
+            streamer_socket_host="streamer-api.schwab.com",
+            login_response_code=0,
+            subscription_response_code=0,
+            market_data_received=True,
+            last_quote_snapshot=SchwabFuturesQuoteSnapshot(
+                raw_fields=((0, "ES"), (1, 7175), (2, 7175.5), (3, 7175.25), (4, 19), (5, 14)),
+                symbol="ES",
+                bid_price=7175,
+                ask_price=7175.5,
+                last_price=7175.25,
+                bid_size=19,
+                ask_size=14,
+            ),
+            received_at="2026-04-30T11:59:58+00:00",
+            failure_reason=None,
+        )
+    )
+    panel = _panel(
+        FuturesQuoteService(
+            SchwabAdapterFuturesQuoteProvider(adapter=adapter),
+            clock=lambda: NOW,
+        )
+    )
+
+    market_data = panel["market_data"]
+    assert market_data["bid"] == "7175"
+    assert market_data["ask"] == "7175.5"
+    assert market_data["last"] == "7175.25"
+    assert market_data["quote_time"] == "2026-04-30T11:59:58+00:00"
+    assert market_data["status"] == "Schwab quote"
+    assert len(adapter.requests) == 1

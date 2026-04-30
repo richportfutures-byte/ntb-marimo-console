@@ -5,6 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 
+from .adapters.schwab_futures_market_data import SchwabFuturesMarketDataAdapter
 from .adapters.audit_replay_store import FixtureAuditReplayStore
 from .adapters.premarket_store import FixturePreMarketArtifactStore
 from .adapters.run_history_store import FixtureRunHistoryStore, JsonlRunHistoryStore
@@ -33,6 +34,7 @@ from .runtime_profiles import RuntimeProfile, default_profile_id_for_mode, get_r
 
 
 FixtureQuoteFactory = Callable[[FuturesQuoteServiceConfig], FuturesQuote | None]
+SchwabAdapterFactory = Callable[[FuturesQuoteServiceConfig], SchwabFuturesMarketDataAdapter]
 
 
 class FixturePipelineBackend(PipelineBackend):
@@ -105,6 +107,8 @@ def build_phase1_dependencies(
     market_data_config: FuturesQuoteServiceConfig | None = None,
     market_data_fixture_quote: FuturesQuote | None = None,
     market_data_fixture_quote_factory: FixtureQuoteFactory | None = None,
+    market_data_schwab_adapter: SchwabFuturesMarketDataAdapter | None = None,
+    market_data_schwab_adapter_factory: SchwabAdapterFactory | None = None,
 ) -> Phase1AppDependencies:
     root = Path(fixtures_root)
     if profile is not None and profile.runtime_mode == "preserved_engine":
@@ -122,6 +126,8 @@ def build_phase1_dependencies(
             market_data_config=market_data_config,
             fixture_quote=market_data_fixture_quote,
             fixture_quote_factory=market_data_fixture_quote_factory,
+            schwab_adapter=market_data_schwab_adapter,
+            schwab_adapter_factory=market_data_schwab_adapter_factory,
         ),
     )
 
@@ -208,6 +214,8 @@ def _build_market_data_service(
     market_data_config: FuturesQuoteServiceConfig | None,
     fixture_quote: FuturesQuote | None,
     fixture_quote_factory: FixtureQuoteFactory | None,
+    schwab_adapter: SchwabFuturesMarketDataAdapter | None,
+    schwab_adapter_factory: SchwabAdapterFactory | None,
 ):
     disabled_config = resolve_futures_quote_service_config(
         {},
@@ -219,7 +227,15 @@ def _build_market_data_service(
         return build_futures_quote_service(config)
 
     if config.provider != "fixture":
-        return build_futures_quote_service(disabled_config)
+        if config.provider != "schwab":
+            return build_futures_quote_service(disabled_config)
+        if schwab_adapter is None and schwab_adapter_factory is None:
+            return build_futures_quote_service(disabled_config)
+        return build_futures_quote_service(
+            config,
+            schwab_adapter=schwab_adapter,
+            schwab_adapter_factory=schwab_adapter_factory,
+        )
 
     if fixture_quote is None and fixture_quote_factory is None:
         return build_futures_quote_service(disabled_config)

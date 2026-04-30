@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Callable
 from typing import cast
 
+from .adapters.schwab_futures_market_data import SchwabFuturesMarketDataAdapter
 from .adapters import PreservedEngineBackend
 from .adapters.contracts import OperatorRuntimeInputs, PipelineBackend, RuntimeMode
 from .app import Phase1AppDependencies, build_phase1_app
@@ -29,6 +30,7 @@ class RuntimeDataUnavailableError(RuntimeError):
 
 
 FixtureQuoteFactory = Callable[[FuturesQuoteServiceConfig], FuturesQuote | None]
+SchwabAdapterFactory = Callable[[FuturesQuoteServiceConfig], SchwabFuturesMarketDataAdapter]
 
 
 @dataclass(frozen=True)
@@ -165,6 +167,8 @@ def build_app_shell_for_profile(
     market_data_config: FuturesQuoteServiceConfig | None = None,
     market_data_fixture_quote: FuturesQuote | None = None,
     market_data_fixture_quote_factory: FixtureQuoteFactory | None = None,
+    market_data_schwab_adapter: SchwabFuturesMarketDataAdapter | None = None,
+    market_data_schwab_adapter_factory: SchwabAdapterFactory | None = None,
     query_action_requested: bool = True,
 ) -> dict[str, object]:
     assembly = assemble_runtime_for_profile(
@@ -175,6 +179,8 @@ def build_app_shell_for_profile(
         market_data_config=market_data_config,
         market_data_fixture_quote=market_data_fixture_quote,
         market_data_fixture_quote_factory=market_data_fixture_quote_factory,
+        market_data_schwab_adapter=market_data_schwab_adapter,
+        market_data_schwab_adapter_factory=market_data_schwab_adapter_factory,
     )
     return build_app_shell_from_assembly(
         assembly,
@@ -191,6 +197,8 @@ def assemble_runtime_for_profile(
     market_data_config: FuturesQuoteServiceConfig | None = None,
     market_data_fixture_quote: FuturesQuote | None = None,
     market_data_fixture_quote_factory: FixtureQuoteFactory | None = None,
+    market_data_schwab_adapter: SchwabFuturesMarketDataAdapter | None = None,
+    market_data_schwab_adapter_factory: SchwabAdapterFactory | None = None,
 ) -> RuntimeAssembly:
     base_root = Path(fixtures_root) if fixtures_root is not None else default_fixtures_root()
     artifacts_root = profile.resolve_artifact_root(base_root)
@@ -224,6 +232,8 @@ def assemble_runtime_for_profile(
         market_data_config=market_data_config,
         market_data_fixture_quote=market_data_fixture_quote,
         market_data_fixture_quote_factory=market_data_fixture_quote_factory,
+        market_data_schwab_adapter=market_data_schwab_adapter,
+        market_data_schwab_adapter_factory=market_data_schwab_adapter_factory,
     )
     return RuntimeAssembly(
         profile=profile,
@@ -256,6 +266,8 @@ def build_app_shell_for_profile_id(
     market_data_config: FuturesQuoteServiceConfig | None = None,
     market_data_fixture_quote: FuturesQuote | None = None,
     market_data_fixture_quote_factory: FixtureQuoteFactory | None = None,
+    market_data_schwab_adapter: SchwabFuturesMarketDataAdapter | None = None,
+    market_data_schwab_adapter_factory: SchwabAdapterFactory | None = None,
     query_action_requested: bool = True,
 ) -> dict[str, object]:
     profile = get_runtime_profile(profile_id)
@@ -267,6 +279,8 @@ def build_app_shell_for_profile_id(
         market_data_config=market_data_config,
         market_data_fixture_quote=market_data_fixture_quote,
         market_data_fixture_quote_factory=market_data_fixture_quote_factory,
+        market_data_schwab_adapter=market_data_schwab_adapter,
+        market_data_schwab_adapter_factory=market_data_schwab_adapter_factory,
         query_action_requested=query_action_requested,
     )
 
@@ -280,6 +294,8 @@ def build_app_shell_for_mode(
     market_data_config: FuturesQuoteServiceConfig | None = None,
     market_data_fixture_quote: FuturesQuote | None = None,
     market_data_fixture_quote_factory: FixtureQuoteFactory | None = None,
+    market_data_schwab_adapter: SchwabFuturesMarketDataAdapter | None = None,
+    market_data_schwab_adapter_factory: SchwabAdapterFactory | None = None,
     query_action_requested: bool = True,
 ) -> dict[str, object]:
     profile = get_runtime_profile(default_profile_id_for_mode(mode))
@@ -291,6 +307,8 @@ def build_app_shell_for_mode(
         market_data_config=market_data_config,
         market_data_fixture_quote=market_data_fixture_quote,
         market_data_fixture_quote_factory=market_data_fixture_quote_factory,
+        market_data_schwab_adapter=market_data_schwab_adapter,
+        market_data_schwab_adapter_factory=market_data_schwab_adapter_factory,
         query_action_requested=query_action_requested,
     )
 
@@ -304,6 +322,8 @@ def build_es_app_shell_for_mode(
     market_data_config: FuturesQuoteServiceConfig | None = None,
     market_data_fixture_quote: FuturesQuote | None = None,
     market_data_fixture_quote_factory: FixtureQuoteFactory | None = None,
+    market_data_schwab_adapter: SchwabFuturesMarketDataAdapter | None = None,
+    market_data_schwab_adapter_factory: SchwabAdapterFactory | None = None,
     query_action_requested: bool = True,
 ) -> dict[str, object]:
     """Backward-compatible Phase 1 ES alias."""
@@ -316,5 +336,7 @@ def build_es_app_shell_for_mode(
         market_data_config=market_data_config,
         market_data_fixture_quote=market_data_fixture_quote,
         market_data_fixture_quote_factory=market_data_fixture_quote_factory,
+        market_data_schwab_adapter=market_data_schwab_adapter,
+        market_data_schwab_adapter_factory=market_data_schwab_adapter_factory,
         query_action_requested=query_action_requested,
     )

@@ -111,15 +111,16 @@ def _market_data_display_vm(
 
 def _market_data_display_vm_from_result(result: FuturesQuoteServiceResult) -> LiveObservableMarketDataVM:
     quote = result.quote
-    if result.provider_name != "fixture" or result.status not in {"connected", "stale"} or quote is None:
+    if result.provider_name not in {"fixture", "schwab"} or result.status not in {"connected", "stale"} or quote is None:
         return unavailable_live_observable_market_data_vm()
 
+    status_prefix = "Schwab quote" if result.provider_name == "schwab" else "Fixture quote"
     return LiveObservableMarketDataVM(
         bid=_quote_value_text(quote.bid_price),
         ask=_quote_value_text(quote.ask_price),
         last=_quote_value_text(quote.last_price),
         quote_time=quote.received_at.strip() or "unknown",
-        status="Fixture quote (stale)" if result.status == "stale" else "Fixture quote",
+        status=f"{status_prefix} (stale)" if result.status == "stale" else status_prefix,
     )
 
 

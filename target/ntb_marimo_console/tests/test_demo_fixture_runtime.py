@@ -3,6 +3,10 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+from ntb_marimo_console.adapters.schwab_futures_market_data import (
+    SchwabFuturesMarketDataResult,
+    SchwabFuturesQuoteSnapshot,
+)
 from ntb_marimo_console.demo_fixture_runtime import (
     build_phase1_dependencies,
     default_fixtures_root,
@@ -18,6 +22,16 @@ from ntb_marimo_console.runtime_modes import (
     build_es_app_shell_for_mode,
 )
 from ntb_marimo_console.runtime_profiles import get_runtime_profile
+
+
+class FakeSchwabAdapter:
+    def __init__(self, result: SchwabFuturesMarketDataResult) -> None:
+        self.result = result
+        self.requests: list[object] = []
+
+    def fetch_once(self, request: object) -> SchwabFuturesMarketDataResult:
+        self.requests.append(request)
+        return self.result
 
 
 class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
@@ -181,6 +195,114 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
 
         self.assertIsInstance(provider, NullFuturesQuoteProvider)
         self.assertEqual(result.status, "disabled")
+
+    def test_schwab_market_data_display_uses_explicit_prebuilt_adapter_only(self) -> None:
+        market_data_config = resolve_futures_quote_service_config(
+            {
+                "NTB_MARKET_DATA_PROVIDER": "schwab",
+                "NTB_MARKET_DATA_SYMBOL": "ES",
+            },
+            target_root=Path(__file__).resolve().parents[1],
+        )
+        baseline_shell = build_es_app_shell_for_mode(mode="fixture_demo")
+        adapter = FakeSchwabAdapter(
+            SchwabFuturesMarketDataResult(
+                status="success",
+                symbol="ES",
+                field_ids=(0, 1, 2, 3, 4, 5),
+                streamer_socket_host="streamer-api.schwab.com",
+                login_response_code=0,
+                subscription_response_code=0,
+                market_data_received=True,
+                last_quote_snapshot=SchwabFuturesQuoteSnapshot(
+                    raw_fields=((0, "ES"), (1, 7175), (2, 7175.5), (3, 7175.25), (4, 19), (5, 14)),
+                    symbol="ES",
+                    bid_price=7175,
+                    ask_price=7175.5,
+                    last_price=7175.25,
+                    bid_size=19,
+                    ask_size=14,
+                ),
+                received_at="2026-04-30T11:59:58+00:00",
+                failure_reason=None,
+            )
+        )
+
+        schwab_shell = build_es_app_shell_for_mode(
+            mode="fixture_demo",
+            market_data_config=market_data_config,
+            market_data_schwab_adapter=adapter,
+        )
+
+        self.assertEqual(schwab_shell["surfaces"]["query_action"], baseline_shell["surfaces"]["query_action"])
+        self.assertEqual(schwab_shell["workflow"], baseline_shell["workflow"])
+        self.assertEqual(schwab_shell["runtime"], baseline_shell["runtime"])
+        market_data = schwab_shell["surfaces"]["live_observables"]["market_data"]
+        self.assertEqual(market_data["status"], "Schwab quote")
+        self.assertEqual(market_data["bid"], "7175")
+        self.assertEqual(market_data["ask"], "7175.5")
+        self.assertEqual(market_data["last"], "7175.25")
+        self.assertEqual(market_data["quote_time"], "2026-04-30T11:59:58+00:00")
+        self.assertEqual(len(adapter.requests), 1)
+
+    def test_runtime_assembly_accepts_explicit_schwab_adapter_factory(self) -> None:
+        profile = get_runtime_profile("fixture_es_demo")
+        market_data_config = resolve_futures_quote_service_config(
+            {
+                "NTB_MARKET_DATA_PROVIDER": "schwab",
+                "NTB_MARKET_DATA_SYMBOL": "ES",
+            },
+            target_root=Path(__file__).resolve().parents[1],
+        )
+        seen_configs: list[object] = []
+        adapter = FakeSchwabAdapter(
+            SchwabFuturesMarketDataResult(
+                status="success",
+                symbol="ES",
+                field_ids=(0, 1, 2, 3, 4, 5),
+                streamer_socket_host="streamer-api.schwab.com",
+                login_response_code=0,
+                subscription_response_code=0,
+                market_data_received=True,
+                last_quote_snapshot=SchwabFuturesQuoteSnapshot(
+                    raw_fields=((0, "ES"), (1, 7175), (2, 7175.5), (3, 7175.25), (4, 19), (5, 14)),
+                    symbol="ES",
+                    bid_price=7175,
+                    ask_price=7175.5,
+                    last_price=7175.25,
+                    bid_size=19,
+                    ask_size=14,
+                ),
+                received_at="2026-04-30T11:59:58+00:00",
+                failure_reason=None,
+            )
+        )
+
+        assembly = assemble_runtime_for_profile(
+            profile=profile,
+            market_data_config=market_data_config,
+            market_data_schwab_adapter_factory=lambda cfg: seen_configs.append(cfg) or adapter,
+        )
+        shell = build_app_shell_from_assembly(assembly)
+
+        self.assertTrue(seen_configs)
+        self.assertEqual(seen_configs[0].provider, "schwab")
+        self.assertEqual(
+            shell["surfaces"]["live_observables"]["market_data"]["status"],
+            "Schwab quote",
+        )
+        self.assertEqual(shell["runtime"]["session_state"], "AUDIT_REPLAY_READY")
+        self.assertEqual(len(adapter.requests), 1)
+
+    def test_runtime_market_data_paths_do_not_import_probe_logic(self) -> None:
+        source_root = Path(__file__).resolve().parents[1] / "src" / "ntb_marimo_console"
+        runtime_modes_source = (source_root / "runtime_modes.py").read_text(encoding="utf-8")
+        demo_runtime_source = (source_root / "demo_fixture_runtime.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("probe_schwab_futures_market_data_adapter", runtime_modes_source)
+        self.assertNotIn("probe_schwab_futures_market_data_adapter", demo_runtime_source)
+        self.assertNotIn(".env", runtime_modes_source)
+        self.assertNotIn(".env", demo_runtime_source)
 
 
 if __name__ == "__main__":
