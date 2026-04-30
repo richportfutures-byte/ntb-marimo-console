@@ -75,6 +75,7 @@ def __(
     selected_profile_id = str(startup_panel.get("selected_profile_id", "<unresolved>"))
     supported_profiles = startup_panel.get("supported_profiles")
     profile_options: dict[str, str] = {}
+    profile_label_by_id: dict[str, str] = {}
     if isinstance(supported_profiles, list):
         for item in supported_profiles:
             if not isinstance(item, _Mapping):
@@ -85,16 +86,19 @@ def __(
                 f"{item.get('contract', '<unresolved>')} | {item.get('session_date', '<unresolved>')}"
             )
             profile_options[label] = profile_id
+            if profile_id not in profile_label_by_id:
+                profile_label_by_id[profile_id] = label
 
     pending_profile_id = get_pending_profile_id()
-    if pending_profile_id not in profile_options.values():
-        pending_profile_id = selected_profile_id if selected_profile_id in profile_options.values() else None
+    if pending_profile_id not in profile_label_by_id:
+        pending_profile_id = selected_profile_id if selected_profile_id in profile_label_by_id else None
         if pending_profile_id is not None:
             set_pending_profile_id(pending_profile_id)
+    pending_profile_label = profile_label_by_id.get(pending_profile_id) if pending_profile_id is not None else None
 
     profile_selector = mo.ui.dropdown(
         options=profile_options,
-        value=pending_profile_id,
+        value=pending_profile_label,
         label="Supported Profile",
         on_change=set_pending_profile_id,
         full_width=True,

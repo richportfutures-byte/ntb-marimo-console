@@ -294,6 +294,31 @@ class EntrypointSharedRendererTests(unittest.TestCase):
         self.assertIn("Switch To Selected Profile", source)
         self.assertIn("switch_profile", source)
 
+    def test_operator_profile_dropdown_uses_label_value_with_raw_profile_state(self) -> None:
+        source = (PACKAGE_ROOT / "src" / "ntb_marimo_console" / "operator_console_app.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("profile_options[label] = profile_id", source)
+        self.assertIn("profile_label_by_id[profile_id] = label", source)
+        self.assertIn("pending_profile_label = profile_label_by_id.get(pending_profile_id)", source)
+        self.assertIn("value=pending_profile_label", source)
+        self.assertIn("on_change=set_pending_profile_id", source)
+        self.assertIn("switch_target = profile_selector.value", source)
+        self.assertNotIn("value=pending_profile_id", source)
+
+    def test_marimo_dropdown_accepts_display_label_and_returns_raw_profile_id(self) -> None:
+        import marimo as mo
+
+        option_label = "fixture_es_demo | Demo | ES | 2026-03-25"
+        options = {option_label: "fixture_es_demo"}
+
+        profile_selector = mo.ui.dropdown(options=options, value=option_label)
+
+        self.assertEqual(profile_selector.value, "fixture_es_demo")
+        with self.assertRaises(ValueError):
+            mo.ui.dropdown(options=options, value="fixture_es_demo")
+
     def test_demo_entrypoint_uses_shared_renderer(self) -> None:
         source = (PACKAGE_ROOT / "src" / "ntb_marimo_console" / "demo_fixture_app.py").read_text(encoding="utf-8")
         self.assertIn("render_phase1_console", source)
