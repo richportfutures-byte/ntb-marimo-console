@@ -17,6 +17,9 @@ from ntb_marimo_console.ui.marimo_phase1_renderer import (
 )
 
 
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+
+
 class MarimoPhase1RendererTests(unittest.TestCase):
     def test_renderer_smoke_from_fixture_shell(self) -> None:
         shell = build_es_app_shell_for_mode(mode="fixture_demo")
@@ -46,7 +49,9 @@ class MarimoPhase1RendererTests(unittest.TestCase):
         self.assertIn('"surfaces"', plan["debug"]["shell_json"])
 
     def test_runtime_identity_is_available_without_raw_json_primary_surface(self) -> None:
-        source = Path("src/ntb_marimo_console/ui/marimo_phase1_renderer.py").read_text(encoding="utf-8")
+        source = (PACKAGE_ROOT / "src" / "ntb_marimo_console" / "ui" / "marimo_phase1_renderer.py").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("## Runtime Identity", source)
         self.assertIn("## Startup Status", source)
@@ -57,7 +62,9 @@ class MarimoPhase1RendererTests(unittest.TestCase):
         self.assertIn("Preflight Status", source)
 
     def test_primary_surfaces_do_not_use_code_editor_json(self) -> None:
-        source = Path("src/ntb_marimo_console/ui/marimo_phase1_renderer.py").read_text(encoding="utf-8")
+        source = (PACKAGE_ROOT / "src" / "ntb_marimo_console" / "ui" / "marimo_phase1_renderer.py").read_text(
+            encoding="utf-8"
+        )
 
         self.assertEqual(source.count("mo.ui.code_editor("), 1)
         self.assertIn('mo.md("## Debug (Secondary)")', source)
@@ -275,7 +282,9 @@ class MarimoPhase1RendererTests(unittest.TestCase):
 
 class EntrypointSharedRendererTests(unittest.TestCase):
     def test_operator_console_entrypoint_uses_startup_builder(self) -> None:
-        source = Path("src/ntb_marimo_console/operator_console_app.py").read_text(encoding="utf-8")
+        source = (PACKAGE_ROOT / "src" / "ntb_marimo_console" / "operator_console_app.py").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("load_session_lifecycle_from_env", source)
         self.assertIn("mo.ui.run_button", source)
         self.assertIn("mo.ui.dropdown", source)
@@ -286,12 +295,14 @@ class EntrypointSharedRendererTests(unittest.TestCase):
         self.assertIn("switch_profile", source)
 
     def test_demo_entrypoint_uses_shared_renderer(self) -> None:
-        source = Path("src/ntb_marimo_console/demo_fixture_app.py").read_text(encoding="utf-8")
+        source = (PACKAGE_ROOT / "src" / "ntb_marimo_console" / "demo_fixture_app.py").read_text(encoding="utf-8")
         self.assertIn("render_phase1_console", source)
         self.assertNotIn("mo.ui.code_editor(", source)
 
     def test_preserved_entrypoint_uses_shared_renderer(self) -> None:
-        source = Path("src/ntb_marimo_console/preserved_engine_es_app.py").read_text(encoding="utf-8")
+        source = (PACKAGE_ROOT / "src" / "ntb_marimo_console" / "preserved_engine_es_app.py").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("render_phase1_console", source)
         self.assertNotIn("mo.ui.code_editor(", source)
 

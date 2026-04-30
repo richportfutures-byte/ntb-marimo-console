@@ -1,6 +1,6 @@
 import marimo
 
-app = marimo.App()
+app = marimo.App(width="full")
 
 
 @app.cell
@@ -204,15 +204,22 @@ def __(
         ]
     )
 
+    mode = str(startup_panel.get("runtime_mode", "<unresolved>"))
+    profile_id = selected_profile_id
+    contract = str(startup_panel.get("contract", "<unresolved>"))
+    readiness_state = str(startup_panel.get("readiness_state", "<unresolved>"))
+    running_as = str(startup_panel.get("running_as", "<unresolved>"))
+    lifecycle_controls = mo.hstack([reload_button, reset_button], widths="equal")
+
     return (
         shell,
-        str(startup_panel.get("runtime_mode", "<unresolved>")),
-        selected_profile_id,
-        str(startup_panel.get("contract", "<unresolved>")),
-        str(startup_panel.get("readiness_state", "<unresolved>")),
-        str(startup_panel.get("running_as", "<unresolved>")),
+        mode,
+        profile_id,
+        contract,
+        readiness_state,
+        running_as,
         query_button,
-        mo.hstack([reload_button, reset_button], widths="equal"),
+        lifecycle_controls,
         profile_controls,
         evidence_controls,
     )
@@ -227,7 +234,7 @@ def __(shell, mode, profile_id, contract, readiness_state, running_as, lifecycle
 
     stop_output = render_watchman_gate_stop_output(
         shell,
-        heading=f"NTB Marimo Console | {profile_id} | {contract} | {readiness_state}",
+        heading="NTB Marimo Operator Console",
         mode_summary=(
             "Explicit profile-driven operator console with startup preflight, in-session workflow gating, "
             "and repeatable manual lifecycle controls.\n\n"
@@ -255,7 +262,7 @@ def __(shell, mode, profile_id, contract, readiness_state, running_as, lifecycle
 
     rendered = render_phase1_console(
         shell,
-        heading=f"NTB Marimo Console | {profile_id} | {contract} | {readiness_state}",
+        heading="NTB Marimo Operator Console",
         mode_summary=(
             "Explicit profile-driven operator console with startup preflight, in-session workflow gating, "
             "and repeatable manual lifecycle controls.\n\n"

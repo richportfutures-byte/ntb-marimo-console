@@ -1,6 +1,6 @@
 import marimo
 
-app = marimo.App()
+app = marimo.App(width="full")
 
 
 @app.cell
@@ -11,11 +11,15 @@ def __():
         default_mode="fixture_demo",
         default_profile_id="fixture_es_demo",
     )
+    shell = launch.shell
+    mode = launch.config.mode
+    profile_id = launch.config.profile.profile_id
+    contract = launch.config.profile.contract
     return (
-        launch.shell,
-        launch.config.mode,
-        launch.config.profile.profile_id,
-        launch.config.profile.contract,
+        shell,
+        mode,
+        profile_id,
+        contract,
     )
 
 

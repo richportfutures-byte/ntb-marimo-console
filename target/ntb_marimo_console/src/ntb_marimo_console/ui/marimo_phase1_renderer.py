@@ -21,6 +21,43 @@ FROZEN_SURFACE_KEYS: tuple[str, ...] = (
     "run_history",
 )
 
+_CONSOLE_STACK_STYLE = {
+    "gap": "14px",
+    "padding": "12px",
+    "background": "var(--md-sys-color-surface, #f8fafc)",
+}
+
+_HEADER_STYLE = {
+    "border": "1px solid var(--md-sys-color-outline-variant, #d5dbe3)",
+    "borderRadius": "8px",
+    "padding": "14px 16px",
+    "background": "var(--md-sys-color-surface-container-low, #ffffff)",
+    "boxShadow": "0 1px 2px rgba(15, 23, 42, 0.04)",
+}
+
+_CARD_STYLE = {
+    "border": "1px solid var(--md-sys-color-outline-variant, #d5dbe3)",
+    "borderRadius": "8px",
+    "padding": "12px 14px",
+    "background": "var(--md-sys-color-surface-container-lowest, #ffffff)",
+    "boxShadow": "0 1px 2px rgba(15, 23, 42, 0.035)",
+}
+
+_CONTROL_CARD_STYLE = {
+    "border": "1px solid var(--md-sys-color-outline-variant, #d5dbe3)",
+    "borderRadius": "8px",
+    "padding": "12px",
+    "background": "var(--md-sys-color-surface-container-low, #f8fafc)",
+}
+
+_DEBUG_CARD_STYLE = {
+    "border": "1px dashed var(--md-sys-color-outline-variant, #d5dbe3)",
+    "borderRadius": "8px",
+    "padding": "10px 12px",
+    "background": "var(--md-sys-color-surface-container-lowest, #ffffff)",
+    "opacity": "0.86",
+}
+
 
 def build_phase1_render_plan(shell: Mapping[str, object]) -> dict[str, object]:
     warnings: list[str] = []
@@ -66,42 +103,41 @@ def render_phase1_console(
     plan = build_phase1_render_plan(shell)
 
     elements: list[Any] = [
-        mo.md(f"# {heading}"),
-        mo.md(mode_summary),
+        _render_console_header(shell, heading=heading, mode_summary=mode_summary),
     ]
 
     startup = shell.get("startup")
     operator_ready = True
     if isinstance(startup, Mapping):
         operator_ready = startup.get("operator_ready") is True
-        elements.append(mo.md(build_startup_status_markdown(startup)))
-        elements.append(mo.md(build_profile_operations_markdown(startup)))
+        elements.append(_render_markdown_card(build_startup_status_markdown(startup)))
+        elements.append(_render_markdown_card(build_profile_operations_markdown(startup)))
         if profile_control_panel is not None:
-            elements.append(profile_control_panel)
+            elements.append(_render_control_card(profile_control_panel))
 
     runtime = shell.get("runtime")
     if isinstance(runtime, Mapping):
-        elements.append(mo.md(build_runtime_identity_markdown(runtime)))
+        elements.append(_render_markdown_card(build_runtime_identity_markdown(runtime)))
 
     lifecycle = shell.get("lifecycle")
     if isinstance(lifecycle, Mapping):
-        elements.append(mo.md(build_session_lifecycle_markdown(lifecycle)))
+        elements.append(_render_markdown_card(build_session_lifecycle_markdown(lifecycle)))
         if lifecycle_control_panel is not None:
-            elements.append(lifecycle_control_panel)
+            elements.append(_render_control_card(lifecycle_control_panel))
 
     evidence = shell.get("evidence")
     if isinstance(evidence, Mapping):
-        elements.append(mo.md(build_session_evidence_markdown(evidence)))
+        elements.append(_render_markdown_card(build_session_evidence_markdown(evidence)))
         if evidence_control_panel is not None:
-            elements.append(evidence_control_panel)
+            elements.append(_render_control_card(evidence_control_panel))
 
     workflow = shell.get("workflow")
     if isinstance(workflow, Mapping):
-        elements.append(mo.md(build_session_workflow_markdown(workflow)))
+        elements.append(_render_markdown_card(build_session_workflow_markdown(workflow)))
 
     if operator_ready:
         for warning in plan["warnings"]:
-            elements.append(mo.md(f"**Warning:** {warning}"))
+            elements.append(_render_markdown_card(f"**Warning:** {warning}"))
 
         for section in plan["sections"]:
             key = _as_str(section.get("key"), default="unknown")
@@ -110,7 +146,7 @@ def render_phase1_console(
             elements.append(_render_surface_section(key, panel, query_action_control=query_action_control))
     else:
         elements.append(
-            mo.md(
+            _render_markdown_card(
                 "\n".join(
                     [
                         "## Operator Surfaces",
@@ -122,7 +158,7 @@ def render_phase1_console(
         )
 
     elements.append(_render_debug_secondary(_as_str(plan["debug"].get("shell_json"), default="{}")))
-    return mo.vstack(elements)
+    return mo.vstack(elements, gap=0.75).style(_CONSOLE_STACK_STYLE)
 
 
 def render_watchman_gate_stop_output(
@@ -138,36 +174,35 @@ def render_watchman_gate_stop_output(
         return None
 
     elements: list[Any] = [
-        mo.md(f"# {heading}"),
-        mo.md(mode_summary),
+        _render_console_header(shell, heading=heading, mode_summary=mode_summary),
     ]
 
     startup = shell.get("startup")
     if isinstance(startup, Mapping):
-        elements.append(mo.md(build_startup_status_markdown(startup)))
-        elements.append(mo.md(build_profile_operations_markdown(startup)))
+        elements.append(_render_markdown_card(build_startup_status_markdown(startup)))
+        elements.append(_render_markdown_card(build_profile_operations_markdown(startup)))
         if profile_control_panel is not None:
-            elements.append(profile_control_panel)
+            elements.append(_render_control_card(profile_control_panel))
 
     runtime = shell.get("runtime")
     if isinstance(runtime, Mapping):
-        elements.append(mo.md(build_runtime_identity_markdown(runtime)))
+        elements.append(_render_markdown_card(build_runtime_identity_markdown(runtime)))
 
     lifecycle = shell.get("lifecycle")
     if isinstance(lifecycle, Mapping):
-        elements.append(mo.md(build_session_lifecycle_markdown(lifecycle)))
+        elements.append(_render_markdown_card(build_session_lifecycle_markdown(lifecycle)))
         if lifecycle_control_panel is not None:
-            elements.append(lifecycle_control_panel)
+            elements.append(_render_control_card(lifecycle_control_panel))
 
     evidence = shell.get("evidence")
     if isinstance(evidence, Mapping):
-        elements.append(mo.md(build_session_evidence_markdown(evidence)))
+        elements.append(_render_markdown_card(build_session_evidence_markdown(evidence)))
         if evidence_control_panel is not None:
-            elements.append(evidence_control_panel)
+            elements.append(_render_control_card(evidence_control_panel))
 
     workflow = shell.get("workflow")
     if isinstance(workflow, Mapping):
-        elements.append(mo.md(build_session_workflow_markdown(workflow)))
+        elements.append(_render_markdown_card(build_session_workflow_markdown(workflow)))
 
     surfaces = shell.get("surfaces")
     if isinstance(surfaces, Mapping):
@@ -180,10 +215,10 @@ def render_watchman_gate_stop_output(
 
     gate = shell.get("watchman_gate")
     if isinstance(gate, Mapping):
-        elements.append(mo.md(build_watchman_gate_markdown(gate)))
+        elements.append(_render_markdown_card(build_watchman_gate_markdown(gate)))
 
     elements.append(_render_debug_secondary(json.dumps(dict(shell), indent=2)))
-    return mo.vstack(elements)
+    return mo.vstack(elements, gap=0.75).style(_CONSOLE_STACK_STYLE)
 
 
 def build_startup_status_markdown(startup: Mapping[str, object]) -> str:
@@ -449,23 +484,25 @@ def _render_surface_section(
     if key == "session_header":
         contract = _as_str(panel.get("contract"))
         session_date = _as_str(panel.get("session_date"))
-        return mo.md(f"## Session Header\n- Contract: `{contract}`\n- Session Date: `{session_date}`")
+        return _render_surface_card(mo.md(f"## Session Header\n- Contract: `{contract}`\n- Session Date: `{session_date}`"))
 
     if key == "pre_market_brief":
         setup_lines = _bullet_lines(panel.get("setup_summaries"))
         warning_lines = _bullet_lines(panel.get("warnings"))
-        return mo.md(
-            "\n".join(
-                [
-                    "## Pre-Market Brief",
-                    f"- Contract: `{_as_str(panel.get('contract'))}`",
-                    f"- Session Date: `{_as_str(panel.get('session_date'))}`",
-                    f"- Status: `{_as_str(panel.get('status'))}`",
-                    "- Setup Summaries:",
-                    setup_lines,
-                    "- Warnings:",
-                    warning_lines,
-                ]
+        return _render_surface_card(
+            mo.md(
+                "\n".join(
+                    [
+                        "## Pre-Market Brief",
+                        f"- Contract: `{_as_str(panel.get('contract'))}`",
+                        f"- Session Date: `{_as_str(panel.get('session_date'))}`",
+                        f"- Status: `{_as_str(panel.get('status'))}`",
+                        "- Setup Summaries:",
+                        setup_lines,
+                        "- Warnings:",
+                        warning_lines,
+                    ]
+                )
             )
         )
 
@@ -481,7 +518,7 @@ def _render_surface_section(
                         + f"event_risk={_as_str(row.get('event_risk'))}, "
                         + f"hard_lockouts={_safe_json(row.get('hard_lockouts'))}"
                     )
-        return mo.md("## Readiness Matrix\n" + ("\n".join(row_lines) if row_lines else "- unavailable"))
+        return _render_surface_card(mo.md("## Readiness Matrix\n" + ("\n".join(row_lines) if row_lines else "- unavailable")))
 
     if key == "live_observables":
         snapshot = panel.get("snapshot")
@@ -493,14 +530,14 @@ def _render_surface_section(
         ]
         if not isinstance(snapshot, Mapping):
             lines.append("  - <unavailable>")
-            return mo.md("\n".join(lines))
+            return _render_surface_card(mo.md("\n".join(lines)))
 
         flattened = _flatten_mapping_lines(snapshot)
         if flattened:
             lines.extend([f"  - `{field}`: `{value}`" for field, value in flattened])
         else:
             lines.append("  - <unavailable>")
-        return mo.md("\n".join(lines))
+        return _render_surface_card(mo.md("\n".join(lines)))
 
     if key == "trigger_table":
         rows = panel.get("rows")
@@ -514,7 +551,7 @@ def _render_surface_section(
                         + f"true={_as_str(row.get('is_true'))}, "
                         + f"missing={_safe_json(row.get('missing_fields'))}"
                     )
-        return mo.md("## Trigger Table\n" + ("\n".join(row_lines) if row_lines else "- unavailable"))
+        return _render_surface_card(mo.md("## Trigger Table\n" + ("\n".join(row_lines) if row_lines else "- unavailable")))
 
     if key == "query_action":
         lines = [
@@ -543,35 +580,39 @@ def _render_surface_section(
             content.append(mo.md(f"**Failure:** {_as_str(failure_message)}"))
         if panel.get("action_available") is True and query_action_control is not None:
             content.append(query_action_control)
-        return mo.vstack(content)
+        return _render_surface_card(mo.vstack(content, gap=0.5))
 
     if key == "decision_review":
         if panel.get("has_result") is True:
-            return mo.md(
+            return _render_surface_card(
+                mo.md(
+                    "\n".join(
+                        [
+                            "## Decision Review",
+                            f"- Ready: `{_as_str(panel.get('ready'), default=True)}`",
+                            f"- Status: `{_as_str(panel.get('status'), default='READY')}`",
+                            f"- Message: {_as_str(panel.get('message'), default='Decision Review is ready.')}",
+                            f"- Contract: `{_as_str(panel.get('contract'))}`",
+                            f"- Termination Stage: `{_as_str(panel.get('termination_stage'))}`",
+                            f"- Final Decision: `{_as_str(panel.get('final_decision'))}`",
+                            f"- Stage A: `{_as_str(panel.get('stage_a_status'))}`",
+                            f"- Stage B: `{_as_str(panel.get('stage_b_outcome'))}`",
+                            f"- Stage C: `{_as_str(panel.get('stage_c_outcome'))}`",
+                            f"- Stage D: `{_as_str(panel.get('stage_d_decision'))}`",
+                        ]
+                    )
+                )
+            )
+        return _render_surface_card(
+            mo.md(
                 "\n".join(
                     [
                         "## Decision Review",
-                        f"- Ready: `{_as_str(panel.get('ready'), default=True)}`",
-                        f"- Status: `{_as_str(panel.get('status'), default='READY')}`",
-                        f"- Message: {_as_str(panel.get('message'), default='Decision Review is ready.')}",
-                        f"- Contract: `{_as_str(panel.get('contract'))}`",
-                        f"- Termination Stage: `{_as_str(panel.get('termination_stage'))}`",
-                        f"- Final Decision: `{_as_str(panel.get('final_decision'))}`",
-                        f"- Stage A: `{_as_str(panel.get('stage_a_status'))}`",
-                        f"- Stage B: `{_as_str(panel.get('stage_b_outcome'))}`",
-                        f"- Stage C: `{_as_str(panel.get('stage_c_outcome'))}`",
-                        f"- Stage D: `{_as_str(panel.get('stage_d_decision'))}`",
+                        f"- Ready: `{_as_str(panel.get('ready'), default=False)}`",
+                        f"- Status: `{_as_str(panel.get('status'), default='NOT_READY')}`",
+                        f"- Message: {_as_str(panel.get('message'), default='Decision Review is not ready yet.')}",
                     ]
                 )
-            )
-        return mo.md(
-            "\n".join(
-                [
-                    "## Decision Review",
-                    f"- Ready: `{_as_str(panel.get('ready'), default=False)}`",
-                    f"- Status: `{_as_str(panel.get('status'), default='NOT_READY')}`",
-                    f"- Message: {_as_str(panel.get('message'), default='Decision Review is not ready yet.')}",
-                ]
             )
         )
 
@@ -584,7 +625,7 @@ def _render_surface_section(
         ]
         if not isinstance(rows, list):
             lines.append("  - <unavailable>")
-            return mo.md("\n".join(lines))
+            return _render_surface_card(mo.md("\n".join(lines)))
 
         rendered_rows = 0
         preferred_fields = (
@@ -612,7 +653,7 @@ def _render_surface_section(
 
         if rendered_rows == 0:
             lines.append("  - <unavailable>")
-        return mo.md("\n".join(lines))
+        return _render_surface_card(mo.md("\n".join(lines)))
 
     if key == "audit_replay":
         lines = [
@@ -634,9 +675,74 @@ def _render_surface_section(
             )
         else:
             lines.append("- Trace Summary: `<unavailable>`")
-        return mo.md("\n".join(lines))
+        return _render_surface_card(mo.md("\n".join(lines)))
 
-    return mo.md(f"## {key}\n- unavailable")
+    return _render_surface_card(mo.md(f"## {key}\n- unavailable"))
+
+
+def _render_console_header(shell: Mapping[str, object], *, heading: str, mode_summary: str) -> Any:
+    return mo.vstack(
+        [
+            mo.md(f"# {heading}"),
+            mo.md(_build_context_summary_markdown(shell)),
+            mo.md(mode_summary),
+        ],
+        gap=0.45,
+    ).style(_HEADER_STYLE)
+
+
+def _build_context_summary_markdown(shell: Mapping[str, object]) -> str:
+    startup = shell.get("startup")
+    runtime = shell.get("runtime")
+    startup_map = startup if isinstance(startup, Mapping) else {}
+    runtime_map = runtime if isinstance(runtime, Mapping) else {}
+
+    mode = _first_value(startup_map, runtime_map, "runtime_mode_label", "runtime_mode")
+    profile_id = _first_value(startup_map, runtime_map, "selected_profile_id", "profile_id")
+    contract = _first_value(startup_map, runtime_map, "contract")
+    readiness = _first_value(startup_map, runtime_map, "readiness_state", "startup_readiness_state")
+    session_state = _first_value(startup_map, runtime_map, "current_session_state", "session_state")
+    running_as = _first_value(startup_map, runtime_map, "running_as", "runtime_backend")
+
+    return "\n".join(
+        [
+            "### Operating Context",
+            "",
+            "| Mode | Profile | Contract | Readiness | Session | Running As |",
+            "| --- | --- | --- | --- | --- | --- |",
+            (
+                f"| `{_table_value(mode)}` | `{_table_value(profile_id)}` | `{_table_value(contract)}` | "
+                f"`{_table_value(readiness)}` | `{_table_value(session_state)}` | `{_table_value(running_as)}` |"
+            ),
+        ]
+    )
+
+
+def _render_markdown_card(markdown: str) -> Any:
+    return mo.md(markdown).style(_CARD_STYLE)
+
+
+def _render_control_card(control_panel: Any) -> Any:
+    return mo.vstack([control_panel], gap=0.35).style(_CONTROL_CARD_STYLE)
+
+
+def _render_surface_card(element: Any) -> Any:
+    return element.style(_CARD_STYLE)
+
+
+def _first_value(primary: Mapping[str, object], secondary: Mapping[str, object], *keys: str) -> str:
+    for key in keys:
+        value = primary.get(key)
+        if value is not None:
+            return _as_str(value, default="<unavailable>")
+        value = secondary.get(key)
+        if value is not None:
+            return _as_str(value, default="<unavailable>")
+    return "<unavailable>"
+
+
+def _table_value(value: object) -> str:
+    return _as_str(value, default="<unavailable>").replace("|", "\\|")
 
 
 def _as_str(value: object, *, default: str = "<missing>") -> str:
@@ -654,8 +760,9 @@ def _render_debug_secondary(shell_json: str) -> Any:
                 language="json",
                 disabled=True,
             ),
-        ]
-    )
+        ],
+        gap=0.4,
+    ).style(_DEBUG_CARD_STYLE)
 
 
 def _safe_json(value: object) -> str:

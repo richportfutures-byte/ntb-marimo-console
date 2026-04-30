@@ -24,6 +24,9 @@ from ntb_marimo_console.runtime_modes import (
 from ntb_marimo_console.runtime_profiles import get_runtime_profile
 
 
+TEST_MARKET_DATA_MAX_AGE_SECONDS = "3600"
+
+
 class FakeSchwabAdapter:
     def __init__(self, result: SchwabFuturesMarketDataResult) -> None:
         self.result = result
@@ -96,6 +99,7 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
             {
                 "NTB_MARKET_DATA_PROVIDER": "fixture",
                 "NTB_MARKET_DATA_SYMBOL": "ES",
+                "NTB_MARKET_DATA_MAX_QUOTE_AGE_SECONDS": TEST_MARKET_DATA_MAX_AGE_SECONDS,
             },
             target_root=Path(__file__).resolve().parents[1],
         )
@@ -133,6 +137,7 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
             {
                 "NTB_MARKET_DATA_PROVIDER": "fixture",
                 "NTB_MARKET_DATA_SYMBOL": "ES",
+                "NTB_MARKET_DATA_MAX_QUOTE_AGE_SECONDS": TEST_MARKET_DATA_MAX_AGE_SECONDS,
             },
             target_root=Path(__file__).resolve().parents[1],
         )
@@ -163,6 +168,7 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
             {
                 "NTB_MARKET_DATA_PROVIDER": "fixture",
                 "NTB_MARKET_DATA_SYMBOL": "ES",
+                "NTB_MARKET_DATA_MAX_QUOTE_AGE_SECONDS": TEST_MARKET_DATA_MAX_AGE_SECONDS,
             },
             target_root=Path(__file__).resolve().parents[1],
         )
@@ -182,6 +188,7 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
             {
                 "NTB_MARKET_DATA_PROVIDER": "schwab",
                 "NTB_MARKET_DATA_SYMBOL": "ES",
+                "NTB_MARKET_DATA_MAX_QUOTE_AGE_SECONDS": TEST_MARKET_DATA_MAX_AGE_SECONDS,
             },
             target_root=Path(__file__).resolve().parents[1],
         )
@@ -201,6 +208,7 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
             {
                 "NTB_MARKET_DATA_PROVIDER": "schwab",
                 "NTB_MARKET_DATA_SYMBOL": "ES",
+                "NTB_MARKET_DATA_MAX_QUOTE_AGE_SECONDS": TEST_MARKET_DATA_MAX_AGE_SECONDS,
             },
             target_root=Path(__file__).resolve().parents[1],
         )
@@ -251,6 +259,7 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
             {
                 "NTB_MARKET_DATA_PROVIDER": "schwab",
                 "NTB_MARKET_DATA_SYMBOL": "ES",
+                "NTB_MARKET_DATA_MAX_QUOTE_AGE_SECONDS": TEST_MARKET_DATA_MAX_AGE_SECONDS,
             },
             target_root=Path(__file__).resolve().parents[1],
         )
