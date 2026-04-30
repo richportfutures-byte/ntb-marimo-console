@@ -46,34 +46,28 @@ def __():
 def __(
     lifecycle,
     mo,
-    reload_current_profile,
-    request_query_action,
-    reset_session,
-    set_lifecycle,
     get_pending_profile_id,
     set_pending_profile_id,
-    clear_retained_evidence,
-    switch_profile,
 ):
     from collections.abc import Mapping as _Mapping
 
-    shell = lifecycle.shell
-    startup_panel = shell.get("startup")
-    workflow_panel = shell.get("workflow")
-    lifecycle_panel = shell.get("lifecycle")
+    controls_shell = lifecycle.shell
+    controls_startup_panel = controls_shell.get("startup")
+    controls_workflow_panel = controls_shell.get("workflow")
+    controls_lifecycle_panel = controls_shell.get("lifecycle")
 
-    if not isinstance(startup_panel, _Mapping):
-        startup_panel = {}
-    if not isinstance(workflow_panel, _Mapping):
-        workflow_panel = {}
-    if not isinstance(lifecycle_panel, _Mapping):
-        lifecycle_panel = {}
+    if not isinstance(controls_startup_panel, _Mapping):
+        controls_startup_panel = {}
+    if not isinstance(controls_workflow_panel, _Mapping):
+        controls_workflow_panel = {}
+    if not isinstance(controls_lifecycle_panel, _Mapping):
+        controls_lifecycle_panel = {}
 
-    query_available = workflow_panel.get("query_action_available") is True
-    reset_available = lifecycle_panel.get("reset_available") is True
-    reload_available = lifecycle_panel.get("reload_available") is True
-    selected_profile_id = str(startup_panel.get("selected_profile_id", "<unresolved>"))
-    supported_profiles = startup_panel.get("supported_profiles")
+    query_available = controls_workflow_panel.get("query_action_available") is True
+    reset_available = controls_lifecycle_panel.get("reset_available") is True
+    reload_available = controls_lifecycle_panel.get("reload_available") is True
+    selected_profile_id = str(controls_startup_panel.get("selected_profile_id", "<unresolved>"))
+    supported_profiles = controls_startup_panel.get("supported_profiles")
     profile_options: dict[str, str] = {}
     profile_label_by_id: dict[str, str] = {}
     if isinstance(supported_profiles, list):
@@ -103,8 +97,7 @@ def __(
         on_change=set_pending_profile_id,
         full_width=True,
     )
-    switch_target = profile_selector.value
-    switch_available = bool(profile_options) and switch_target is not None and switch_target != selected_profile_id
+    switch_available = bool(profile_options) and pending_profile_id is not None and pending_profile_id != selected_profile_id
 
     query_button = mo.ui.run_button(
         label="Run bounded query for loaded snapshot",
@@ -160,23 +153,6 @@ def __(
         full_width=True,
     )
 
-    if switch_button.value and switch_available:
-        switched = switch_profile(lifecycle, str(switch_target))
-        set_lifecycle(switched)
-        startup_after_switch = switched.shell.get("startup", {})
-        if isinstance(startup_after_switch, _Mapping):
-            pending_after_switch = startup_after_switch.get("selected_profile_id")
-            if pending_after_switch is not None:
-                set_pending_profile_id(str(pending_after_switch))
-    elif clear_retained_button.value:
-        set_lifecycle(clear_retained_evidence(lifecycle))
-    elif reload_button.value and reload_available:
-        set_lifecycle(reload_current_profile(lifecycle))
-    elif reset_button.value and reset_available:
-        set_lifecycle(reset_session(lifecycle))
-    elif query_button.value and query_available:
-        set_lifecycle(request_query_action(lifecycle))
-
     profile_controls = mo.vstack(
         [
             mo.md(
@@ -208,12 +184,82 @@ def __(
         ]
     )
 
-    mode = str(startup_panel.get("runtime_mode", "<unresolved>"))
-    profile_id = selected_profile_id
-    contract = str(startup_panel.get("contract", "<unresolved>"))
-    readiness_state = str(startup_panel.get("readiness_state", "<unresolved>"))
-    running_as = str(startup_panel.get("running_as", "<unresolved>"))
     lifecycle_controls = mo.hstack([reload_button, reset_button], widths="equal")
+
+    return (
+        controls_shell,
+        controls_startup_panel,
+        query_available,
+        reset_available,
+        reload_available,
+        selected_profile_id,
+        switch_available,
+        profile_selector,
+        query_button,
+        reset_button,
+        reload_button,
+        switch_button,
+        clear_retained_button,
+        lifecycle_controls,
+        profile_controls,
+        evidence_controls,
+    )
+
+
+@app.cell
+def __(
+    clear_retained_button,
+    clear_retained_evidence,
+    controls_shell,
+    controls_startup_panel,
+    evidence_controls,
+    lifecycle,
+    lifecycle_controls,
+    profile_controls,
+    profile_selector,
+    query_available,
+    query_button,
+    reload_available,
+    reload_button,
+    reload_current_profile,
+    reset_available,
+    reset_button,
+    reset_session,
+    request_query_action,
+    selected_profile_id,
+    set_lifecycle,
+    set_pending_profile_id,
+    switch_available,
+    switch_button,
+    switch_profile,
+):
+    from collections.abc import Mapping as _Mapping
+
+    switch_target = profile_selector.value
+
+    if switch_button.value and switch_available and switch_target is not None:
+        switched = switch_profile(lifecycle, str(switch_target))
+        set_lifecycle(switched)
+        startup_after_switch = switched.shell.get("startup", {})
+        if isinstance(startup_after_switch, _Mapping):
+            pending_after_switch = startup_after_switch.get("selected_profile_id")
+            if pending_after_switch is not None:
+                set_pending_profile_id(str(pending_after_switch))
+    elif clear_retained_button.value:
+        set_lifecycle(clear_retained_evidence(lifecycle))
+    elif reload_button.value and reload_available:
+        set_lifecycle(reload_current_profile(lifecycle))
+    elif reset_button.value and reset_available:
+        set_lifecycle(reset_session(lifecycle))
+    elif query_button.value and query_available:
+        set_lifecycle(request_query_action(lifecycle))
+
+    shell = controls_shell
+    mode = str(controls_startup_panel.get("runtime_mode", "<unresolved>"))
+    profile_id = selected_profile_id
+    contract = str(controls_startup_panel.get("contract", "<unresolved>"))
+    readiness_state = str(controls_startup_panel.get("readiness_state", "<unresolved>"))
+    running_as = str(controls_startup_panel.get("running_as", "<unresolved>"))
 
     return (
         shell,
@@ -222,10 +268,10 @@ def __(
         contract,
         readiness_state,
         running_as,
-        query_button,
         lifecycle_controls,
         profile_controls,
         evidence_controls,
+        query_button,
     )
 
 

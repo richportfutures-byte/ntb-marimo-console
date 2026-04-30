@@ -307,6 +307,21 @@ class EntrypointSharedRendererTests(unittest.TestCase):
         self.assertIn("switch_target = profile_selector.value", source)
         self.assertNotIn("value=pending_profile_id", source)
 
+    def test_operator_ui_elements_are_not_read_in_creator_cell(self) -> None:
+        from ntb_marimo_console import operator_console_app
+
+        cell_codes = [cell._cell.code for _, cell in operator_console_app.app._cell_manager.valid_cells()]
+        creator_code = next(code for code in cell_codes if "profile_selector = mo.ui.dropdown(" in code)
+        action_code = next(code for code in cell_codes if "switch_target = profile_selector.value" in code)
+
+        self.assertNotIn(".value", creator_code)
+        self.assertIn("switch_target = profile_selector.value", action_code)
+        self.assertIn("switch_button.value", action_code)
+        self.assertIn("clear_retained_button.value", action_code)
+        self.assertIn("reload_button.value", action_code)
+        self.assertIn("reset_button.value", action_code)
+        self.assertIn("query_button.value", action_code)
+
     def test_marimo_dropdown_accepts_display_label_and_returns_raw_profile_id(self) -> None:
         import marimo as mo
 
