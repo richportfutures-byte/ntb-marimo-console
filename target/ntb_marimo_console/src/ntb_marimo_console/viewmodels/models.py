@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+MARKET_DATA_INFORMATIONAL_DISCLAIMER = (
+    "Informational only. Quote values do not affect readiness, trigger validity, "
+    "query availability, risk, or execution."
+)
 
 
 @dataclass(frozen=True)
@@ -41,10 +47,31 @@ class TriggerStatusVM:
 
 
 @dataclass(frozen=True)
+class LiveObservableMarketDataVM:
+    bid: str
+    ask: str
+    last: str
+    quote_time: str
+    status: str
+    disclaimer: str = MARKET_DATA_INFORMATIONAL_DISCLAIMER
+
+
+def unavailable_live_observable_market_data_vm() -> LiveObservableMarketDataVM:
+    return LiveObservableMarketDataVM(
+        bid="N/A",
+        ask="N/A",
+        last="N/A",
+        quote_time="unknown",
+        status="Market data unavailable",
+    )
+
+
+@dataclass(frozen=True)
 class LiveObservableVM:
     contract: str
     timestamp_et: str
     snapshot: dict[str, object]
+    market_data: LiveObservableMarketDataVM = field(default_factory=unavailable_live_observable_market_data_vm)
 
 
 @dataclass(frozen=True)

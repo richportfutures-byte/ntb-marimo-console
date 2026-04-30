@@ -207,7 +207,11 @@ def build_phase1_payload(
             premarket.brief,
             status_override=watchman_validator.status,
         ),
-        live_observable=live_observable_vm_from_snapshot(inputs.live_snapshot),
+        live_observable=live_observable_vm_from_snapshot(
+            inputs.live_snapshot,
+            market_data_service=dependencies.market_data_service,
+            market_data_symbol=session_target.contract,
+        ),
         readiness_cards=(readiness_card_vm_from_context(watchman_context),),
         trigger_rows=trigger_vms,
         pipeline_trace=pipeline_vm,

@@ -3,14 +3,17 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from ..adapters.contracts import PipelineSummary, RunHistoryRowRecord, TriggerEvaluation, WatchmanContextLike
+from ..market_data.futures_quote_service import FuturesQuoteService, FuturesQuoteServiceResult
 from .models import (
     LiveObservableVM,
+    LiveObservableMarketDataVM,
     PipelineTraceVM,
     PreMarketBriefVM,
     ReadinessCardVM,
     RunHistoryRowVM,
     SessionHeaderVM,
     TriggerStatusVM,
+    unavailable_live_observable_market_data_vm,
 )
 
 
@@ -71,14 +74,57 @@ def trigger_status_vm_from_eval(evaluation: TriggerEvaluation) -> TriggerStatusV
     )
 
 
-def live_observable_vm_from_snapshot(snapshot: Mapping[str, object]) -> LiveObservableVM:
+def live_observable_vm_from_snapshot(
+    snapshot: Mapping[str, object],
+    *,
+    market_data_service: FuturesQuoteService | None = None,
+    market_data_symbol: str | None = None,
+) -> LiveObservableVM:
     contract = str(snapshot.get("contract", "UNKNOWN"))
     timestamp_et = str(snapshot.get("timestamp_et", ""))
     return LiveObservableVM(
         contract=contract,
         timestamp_et=timestamp_et,
         snapshot=dict(snapshot),
+        market_data=_market_data_display_vm(
+            market_data_service=market_data_service,
+            market_data_symbol=market_data_symbol or contract,
+        ),
     )
+
+
+def _market_data_display_vm(
+    *,
+    market_data_service: FuturesQuoteService | None,
+    market_data_symbol: str,
+) -> LiveObservableMarketDataVM:
+    symbol = market_data_symbol.strip()
+    if market_data_service is None or not symbol:
+        return unavailable_live_observable_market_data_vm()
+
+    try:
+        result = market_data_service.get_quote(symbol)
+    except Exception:
+        return unavailable_live_observable_market_data_vm()
+    return _market_data_display_vm_from_result(result)
+
+
+def _market_data_display_vm_from_result(result: FuturesQuoteServiceResult) -> LiveObservableMarketDataVM:
+    quote = result.quote
+    if result.provider_name != "fixture" or result.status not in {"connected", "stale"} or quote is None:
+        return unavailable_live_observable_market_data_vm()
+
+    return LiveObservableMarketDataVM(
+        bid=_quote_value_text(quote.bid_price),
+        ask=_quote_value_text(quote.ask_price),
+        last=_quote_value_text(quote.last_price),
+        quote_time=quote.received_at.strip() or "unknown",
+        status="Fixture quote (stale)" if result.status == "stale" else "Fixture quote",
+    )
+
+
+def _quote_value_text(value: object) -> str:
+    return "N/A" if value is None else str(value)
 
 
 def pipeline_trace_vm_from_summary(summary: PipelineSummary) -> PipelineTraceVM:

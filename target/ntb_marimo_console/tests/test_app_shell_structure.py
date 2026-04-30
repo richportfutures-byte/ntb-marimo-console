@@ -91,6 +91,12 @@ class AppShellStructureTests(unittest.TestCase):
                 "run_history",
             },
         )
+        market_data = app["surfaces"]["live_observables"]["market_data"]
+        self.assertEqual(market_data["status"], "Market data unavailable")
+        self.assertEqual(market_data["bid"], "N/A")
+        self.assertEqual(market_data["ask"], "N/A")
+        self.assertEqual(market_data["last"], "N/A")
+        self.assertEqual(market_data["quote_time"], "unknown")
 
 
 if __name__ == "__main__":
