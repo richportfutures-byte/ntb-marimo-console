@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 from typing import cast
 
 from .adapters import PreservedEngineBackend
@@ -15,6 +16,7 @@ from .demo_fixture_runtime import (
     default_fixtures_root,
     load_json_object,
 )
+from .market_data import FuturesQuote, FuturesQuoteServiceConfig
 from .runtime_profiles import RuntimeProfile, default_profile_id_for_mode, get_runtime_profile
 
 
@@ -24,6 +26,9 @@ class PreservedModeInitializationError(RuntimeError):
 
 class RuntimeDataUnavailableError(RuntimeError):
     pass
+
+
+FixtureQuoteFactory = Callable[[FuturesQuoteServiceConfig], FuturesQuote | None]
 
 
 @dataclass(frozen=True)
@@ -157,6 +162,9 @@ def build_app_shell_for_profile(
     fixtures_root: str | Path | None = None,
     lockout: bool = False,
     model_adapter: object | None = None,
+    market_data_config: FuturesQuoteServiceConfig | None = None,
+    market_data_fixture_quote: FuturesQuote | None = None,
+    market_data_fixture_quote_factory: FixtureQuoteFactory | None = None,
     query_action_requested: bool = True,
 ) -> dict[str, object]:
     assembly = assemble_runtime_for_profile(
@@ -164,6 +172,9 @@ def build_app_shell_for_profile(
         fixtures_root=fixtures_root,
         lockout=lockout,
         model_adapter=model_adapter,
+        market_data_config=market_data_config,
+        market_data_fixture_quote=market_data_fixture_quote,
+        market_data_fixture_quote_factory=market_data_fixture_quote_factory,
     )
     return build_app_shell_from_assembly(
         assembly,
@@ -177,6 +188,9 @@ def assemble_runtime_for_profile(
     fixtures_root: str | Path | None = None,
     lockout: bool = False,
     model_adapter: object | None = None,
+    market_data_config: FuturesQuoteServiceConfig | None = None,
+    market_data_fixture_quote: FuturesQuote | None = None,
+    market_data_fixture_quote_factory: FixtureQuoteFactory | None = None,
 ) -> RuntimeAssembly:
     base_root = Path(fixtures_root) if fixtures_root is not None else default_fixtures_root()
     artifacts_root = profile.resolve_artifact_root(base_root)
@@ -207,6 +221,9 @@ def assemble_runtime_for_profile(
     dependencies = build_phase1_dependencies(
         artifacts_root,
         profile=profile,
+        market_data_config=market_data_config,
+        market_data_fixture_quote=market_data_fixture_quote,
+        market_data_fixture_quote_factory=market_data_fixture_quote_factory,
     )
     return RuntimeAssembly(
         profile=profile,
@@ -236,6 +253,9 @@ def build_app_shell_for_profile_id(
     fixtures_root: str | Path | None = None,
     lockout: bool = False,
     model_adapter: object | None = None,
+    market_data_config: FuturesQuoteServiceConfig | None = None,
+    market_data_fixture_quote: FuturesQuote | None = None,
+    market_data_fixture_quote_factory: FixtureQuoteFactory | None = None,
     query_action_requested: bool = True,
 ) -> dict[str, object]:
     profile = get_runtime_profile(profile_id)
@@ -244,6 +264,9 @@ def build_app_shell_for_profile_id(
         fixtures_root=fixtures_root,
         lockout=lockout,
         model_adapter=model_adapter,
+        market_data_config=market_data_config,
+        market_data_fixture_quote=market_data_fixture_quote,
+        market_data_fixture_quote_factory=market_data_fixture_quote_factory,
         query_action_requested=query_action_requested,
     )
 
@@ -254,6 +277,9 @@ def build_app_shell_for_mode(
     fixtures_root: str | Path | None = None,
     lockout: bool = False,
     model_adapter: object | None = None,
+    market_data_config: FuturesQuoteServiceConfig | None = None,
+    market_data_fixture_quote: FuturesQuote | None = None,
+    market_data_fixture_quote_factory: FixtureQuoteFactory | None = None,
     query_action_requested: bool = True,
 ) -> dict[str, object]:
     profile = get_runtime_profile(default_profile_id_for_mode(mode))
@@ -262,6 +288,9 @@ def build_app_shell_for_mode(
         fixtures_root=fixtures_root,
         lockout=lockout,
         model_adapter=model_adapter,
+        market_data_config=market_data_config,
+        market_data_fixture_quote=market_data_fixture_quote,
+        market_data_fixture_quote_factory=market_data_fixture_quote_factory,
         query_action_requested=query_action_requested,
     )
 
@@ -272,6 +301,9 @@ def build_es_app_shell_for_mode(
     fixtures_root: str | Path | None = None,
     lockout: bool = False,
     model_adapter: object | None = None,
+    market_data_config: FuturesQuoteServiceConfig | None = None,
+    market_data_fixture_quote: FuturesQuote | None = None,
+    market_data_fixture_quote_factory: FixtureQuoteFactory | None = None,
     query_action_requested: bool = True,
 ) -> dict[str, object]:
     """Backward-compatible Phase 1 ES alias."""
@@ -281,5 +313,8 @@ def build_es_app_shell_for_mode(
         fixtures_root=fixtures_root,
         lockout=lockout,
         model_adapter=model_adapter,
+        market_data_config=market_data_config,
+        market_data_fixture_quote=market_data_fixture_quote,
+        market_data_fixture_quote_factory=market_data_fixture_quote_factory,
         query_action_requested=query_action_requested,
     )

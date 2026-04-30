@@ -1,22 +1,22 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from pathlib import Path
 
-from ntb_marimo_console.app import Phase1AppDependencies, build_phase1_app
 from ntb_marimo_console.demo_fixture_runtime import (
-    FixturePipelineBackend,
     build_phase1_dependencies,
-    build_runtime_inputs_for_profile,
     default_fixtures_root,
 )
+from ntb_marimo_console.market_data.config import resolve_futures_quote_service_config
 from ntb_marimo_console.market_data.futures_quote_service import (
-    FixtureFuturesQuoteProvider,
     FuturesQuote,
-    FuturesQuoteService,
     NullFuturesQuoteProvider,
 )
-from ntb_marimo_console.runtime_modes import assemble_runtime_for_profile, build_es_app_shell_for_mode
+from ntb_marimo_console.runtime_modes import (
+    assemble_runtime_for_profile,
+    build_app_shell_from_assembly,
+    build_es_app_shell_for_mode,
+)
 from ntb_marimo_console.runtime_profiles import get_runtime_profile
 
 
@@ -78,41 +78,26 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
 
     def test_fixture_market_data_display_does_not_change_workflow_or_runtime(self) -> None:
         profile = get_runtime_profile("fixture_es_demo")
-        base_root = default_fixtures_root()
-        artifacts_root = profile.resolve_artifact_root(base_root)
-        inputs = build_runtime_inputs_for_profile(artifacts_root, profile=profile)
-        baseline_dependencies = build_phase1_dependencies(artifacts_root, profile=profile)
-        baseline_shell = build_phase1_app(
-            backend=FixturePipelineBackend(artifacts_root, profile=profile),
-            inputs=inputs,
-            dependencies=baseline_dependencies,
+        market_data_config = resolve_futures_quote_service_config(
+            {
+                "NTB_MARKET_DATA_PROVIDER": "fixture",
+                "NTB_MARKET_DATA_SYMBOL": "ES",
+            },
+            target_root=Path(__file__).resolve().parents[1],
         )
-
-        fixture_service = FuturesQuoteService(
-            FixtureFuturesQuoteProvider(
-                FuturesQuote(
-                    symbol="ES",
-                    bid_price=7175,
-                    ask_price=7175.5,
-                    last_price=7175.25,
-                    bid_size=19,
-                    ask_size=14,
-                    received_at="2026-04-30T11:59:58+00:00",
-                )
+        baseline_shell = build_es_app_shell_for_mode(mode="fixture_demo")
+        fixture_shell = build_es_app_shell_for_mode(
+            mode="fixture_demo",
+            market_data_config=market_data_config,
+            market_data_fixture_quote=FuturesQuote(
+                symbol="ES",
+                bid_price=7175,
+                ask_price=7175.5,
+                last_price=7175.25,
+                bid_size=19,
+                ask_size=14,
+                received_at="2026-04-30T11:59:58+00:00",
             ),
-            clock=lambda: datetime(2026, 4, 30, 12, 0, 0, tzinfo=timezone.utc),
-        )
-        fixture_dependencies = Phase1AppDependencies(
-            premarket_store=baseline_dependencies.premarket_store,
-            run_history_store=baseline_dependencies.run_history_store,
-            audit_replay_store=baseline_dependencies.audit_replay_store,
-            trigger_evaluator=baseline_dependencies.trigger_evaluator,
-            market_data_service=fixture_service,
-        )
-        fixture_shell = build_phase1_app(
-            backend=FixturePipelineBackend(artifacts_root, profile=profile),
-            inputs=inputs,
-            dependencies=fixture_dependencies,
         )
 
         self.assertEqual(
@@ -127,6 +112,75 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
         self.assertEqual(market_data["ask"], "7175.5")
         self.assertEqual(market_data["last"], "7175.25")
         self.assertEqual(market_data["quote_time"], "2026-04-30T11:59:58+00:00")
+
+    def test_runtime_assembly_passes_fixture_market_data_config_and_injection_through_composition(self) -> None:
+        profile = get_runtime_profile("fixture_es_demo")
+        market_data_config = resolve_futures_quote_service_config(
+            {
+                "NTB_MARKET_DATA_PROVIDER": "fixture",
+                "NTB_MARKET_DATA_SYMBOL": "ES",
+            },
+            target_root=Path(__file__).resolve().parents[1],
+        )
+
+        assembly = assemble_runtime_for_profile(
+            profile=profile,
+            market_data_config=market_data_config,
+            market_data_fixture_quote=FuturesQuote(
+                symbol="ES",
+                bid_price=7175,
+                ask_price=7175.5,
+                last_price=7175.25,
+                bid_size=19,
+                ask_size=14,
+                received_at="2026-04-30T11:59:58+00:00",
+            ),
+        )
+        shell = build_app_shell_from_assembly(assembly)
+
+        self.assertIsNotNone(assembly.dependencies.market_data_service)
+        result = assembly.dependencies.market_data_service.get_quote("ES")
+        self.assertEqual(result.status, "connected")
+        self.assertEqual(result.provider_name, "fixture")
+        self.assertEqual(shell["surfaces"]["live_observables"]["market_data"]["status"], "Fixture quote")
+
+    def test_fixture_market_data_config_without_explicit_quote_stays_unavailable(self) -> None:
+        market_data_config = resolve_futures_quote_service_config(
+            {
+                "NTB_MARKET_DATA_PROVIDER": "fixture",
+                "NTB_MARKET_DATA_SYMBOL": "ES",
+            },
+            target_root=Path(__file__).resolve().parents[1],
+        )
+
+        shell = build_es_app_shell_for_mode(
+            mode="fixture_demo",
+            market_data_config=market_data_config,
+        )
+
+        market_data = shell["surfaces"]["live_observables"]["market_data"]
+        self.assertEqual(market_data["status"], "Market data unavailable")
+        self.assertEqual(market_data["bid"], "N/A")
+        self.assertTrue(shell["surfaces"]["query_action"]["query_enabled"])
+
+    def test_schwab_market_data_config_remains_blocked_and_unavailable(self) -> None:
+        market_data_config = resolve_futures_quote_service_config(
+            {
+                "NTB_MARKET_DATA_PROVIDER": "schwab",
+                "NTB_MARKET_DATA_SYMBOL": "ES",
+            },
+            target_root=Path(__file__).resolve().parents[1],
+        )
+
+        dependencies = build_phase1_dependencies(
+            default_fixtures_root(),
+            market_data_config=market_data_config,
+        )
+        provider = getattr(dependencies.market_data_service, "_provider", None)
+        result = dependencies.market_data_service.get_quote("ES")
+
+        self.assertIsInstance(provider, NullFuturesQuoteProvider)
+        self.assertEqual(result.status, "disabled")
 
 
 if __name__ == "__main__":

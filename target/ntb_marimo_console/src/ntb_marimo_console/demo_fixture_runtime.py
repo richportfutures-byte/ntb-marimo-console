@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -22,8 +23,16 @@ from .adapters.contracts import (
     WatchmanSweepRequest,
 )
 from .app import Phase1AppDependencies, build_phase1_app
-from .market_data import build_futures_quote_service, resolve_futures_quote_service_config
+from .market_data import (
+    FuturesQuote,
+    FuturesQuoteServiceConfig,
+    build_futures_quote_service,
+    resolve_futures_quote_service_config,
+)
 from .runtime_profiles import RuntimeProfile, default_profile_id_for_mode, get_runtime_profile
+
+
+FixtureQuoteFactory = Callable[[FuturesQuoteServiceConfig], FuturesQuote | None]
 
 
 class FixturePipelineBackend(PipelineBackend):
@@ -93,6 +102,9 @@ def build_phase1_dependencies(
     fixtures_root: str | Path,
     *,
     profile: RuntimeProfile | None = None,
+    market_data_config: FuturesQuoteServiceConfig | None = None,
+    market_data_fixture_quote: FuturesQuote | None = None,
+    market_data_fixture_quote_factory: FixtureQuoteFactory | None = None,
 ) -> Phase1AppDependencies:
     root = Path(fixtures_root)
     if profile is not None and profile.runtime_mode == "preserved_engine":
@@ -106,11 +118,10 @@ def build_phase1_dependencies(
         run_history_store=run_history_store,
         audit_replay_store=audit_replay_store,
         trigger_evaluator=TriggerEvaluator(),
-        market_data_service=build_futures_quote_service(
-            resolve_futures_quote_service_config(
-                {},
-                target_root=_market_data_target_root(),
-            )
+        market_data_service=_build_market_data_service(
+            market_data_config=market_data_config,
+            fixture_quote=market_data_fixture_quote,
+            fixture_quote_factory=market_data_fixture_quote_factory,
         ),
     )
 
@@ -190,3 +201,31 @@ def load_json_object(path: Path) -> dict[str, object]:
 
 def _market_data_target_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _build_market_data_service(
+    *,
+    market_data_config: FuturesQuoteServiceConfig | None,
+    fixture_quote: FuturesQuote | None,
+    fixture_quote_factory: FixtureQuoteFactory | None,
+):
+    disabled_config = resolve_futures_quote_service_config(
+        {},
+        target_root=_market_data_target_root(),
+    )
+    config = market_data_config or disabled_config
+
+    if config.failure_reason is not None or config.provider == "disabled":
+        return build_futures_quote_service(config)
+
+    if config.provider != "fixture":
+        return build_futures_quote_service(disabled_config)
+
+    if fixture_quote is None and fixture_quote_factory is None:
+        return build_futures_quote_service(disabled_config)
+
+    return build_futures_quote_service(
+        config,
+        fixture_quote=fixture_quote,
+        fixture_quote_factory=fixture_quote_factory,
+    )

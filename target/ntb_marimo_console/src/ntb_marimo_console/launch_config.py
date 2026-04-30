@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .adapters.contracts import RuntimeMode
+from .market_data import FuturesQuoteServiceConfig, resolve_futures_quote_service_config
 from .runtime_diagnostics import (
     DIAG_INCOMPLETE_PROFILE_DEFINITION,
     DIAG_LAUNCH_PREFLIGHT_MISMATCH,
@@ -36,6 +37,7 @@ class LaunchConfig:
     fixtures_root: Path | None
     adapter_binding: str | None
     model_adapter: object | None
+    market_data_config: FuturesQuoteServiceConfig
     preflight: PreflightReport
 
 
@@ -144,6 +146,7 @@ def load_launch_config_from_env(
         fixtures_root=request.fixtures_root,
         adapter_binding=request.adapter_binding,
         model_adapter=report.resolved_adapter,
+        market_data_config=_resolve_market_data_config_from_env(),
         preflight=report,
     )
 
@@ -341,6 +344,7 @@ def _build_startup_artifacts_from_report(
         fixtures_root=request.fixtures_root,
         adapter_binding=request.adapter_binding,
         model_adapter=report.resolved_adapter,
+        market_data_config=_resolve_market_data_config_from_env(),
         preflight=report,
     )
 
@@ -350,6 +354,7 @@ def _build_startup_artifacts_from_report(
             fixtures_root=config.fixtures_root,
             lockout=config.lockout,
             model_adapter=config.model_adapter,
+            market_data_config=config.market_data_config,
             query_action_requested=query_action_requested,
         )
     except Exception as exc:
@@ -398,3 +403,30 @@ def _fixtures_root_from_env() -> Path | None:
 
 def _lockout_from_env() -> bool:
     return _parse_bool_env(os.getenv("NTB_FIXTURE_LOCKOUT"), default=False)
+
+
+def _resolve_market_data_config_from_env() -> FuturesQuoteServiceConfig:
+    return resolve_futures_quote_service_config(
+        _market_data_env_values(),
+        target_root=_market_data_target_root(),
+    )
+
+
+def _market_data_env_values() -> dict[str, str]:
+    values: dict[str, str] = {}
+    for key in (
+        "NTB_MARKET_DATA_PROVIDER",
+        "NTB_MARKET_DATA_SYMBOL",
+        "NTB_MARKET_DATA_FIELD_IDS",
+        "NTB_MARKET_DATA_MAX_QUOTE_AGE_SECONDS",
+        "NTB_MARKET_DATA_TIMEOUT_SECONDS",
+        "SCHWAB_TOKEN_PATH",
+    ):
+        value = os.getenv(key)
+        if value is not None:
+            values[key] = value
+    return values
+
+
+def _market_data_target_root() -> Path:
+    return Path(__file__).resolve().parents[2]

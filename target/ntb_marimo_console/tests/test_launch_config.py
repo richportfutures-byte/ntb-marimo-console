@@ -28,7 +28,25 @@ class LaunchConfigTests(unittest.TestCase):
         self.assertIsNone(config.fixtures_root)
         self.assertEqual(config.adapter_binding, None)
         self.assertIsNone(config.model_adapter)
+        self.assertEqual(config.market_data_config.provider, "disabled")
+        self.assertEqual(config.market_data_config.symbol, "")
+        self.assertIsNone(config.market_data_config.failure_reason)
         self.assertTrue(config.preflight.passed)
+
+    def test_fixture_market_data_launch_settings_are_carried_as_safe_config_only(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "NTB_MARKET_DATA_PROVIDER": "fixture",
+                "NTB_MARKET_DATA_SYMBOL": "ES",
+            },
+            clear=True,
+        ):
+            config = load_launch_config_from_env()
+
+        self.assertEqual(config.market_data_config.provider, "fixture")
+        self.assertEqual(config.market_data_config.symbol, "ES")
+        self.assertIsNone(config.market_data_config.failure_reason)
 
     def test_profile_only_selection_is_sufficient_for_supported_preserved_profile(self) -> None:
         engine_src = str((Path("../../source/ntb_engine/src")).resolve())
@@ -172,6 +190,26 @@ class LaunchConfigTests(unittest.TestCase):
         self.assertIsNotNone(artifacts.config)
         self.assertEqual(artifacts.shell["startup"]["selected_profile_id"], "fixture_es_demo")
         self.assertEqual(artifacts.shell["startup"]["readiness_state"], "OPERATOR_SURFACES_READY")
+        self.assertEqual(artifacts.shell["surfaces"]["live_observables"]["market_data"]["status"], "Market data unavailable")
+
+    def test_fixture_market_data_provider_without_quote_injection_stays_safe_and_unavailable(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "NTB_MARKET_DATA_PROVIDER": "fixture",
+                "NTB_MARKET_DATA_SYMBOL": "ES",
+            },
+            clear=True,
+        ):
+            artifacts = build_startup_artifacts_from_env()
+
+        self.assertIsInstance(artifacts, StartupArtifacts)
+        self.assertTrue(artifacts.ready)
+        self.assertIsNotNone(artifacts.config)
+        self.assertEqual(artifacts.config.market_data_config.provider, "fixture")
+        self.assertEqual(artifacts.shell["surfaces"]["live_observables"]["market_data"]["status"], "Market data unavailable")
+        self.assertEqual(artifacts.shell["runtime"]["runtime_mode"], "fixture_demo")
+        self.assertEqual(artifacts.shell["runtime"]["session_state"], "LIVE_QUERY_ELIGIBLE")
 
     def test_build_startup_artifacts_blocks_unsupported_profile_without_crashing(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "unknown_profile"}, clear=True):
