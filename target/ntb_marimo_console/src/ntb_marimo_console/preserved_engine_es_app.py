@@ -43,6 +43,7 @@ def __(shell: dict[str, object], mode: str, profile_id: str, contract: str) -> t
             "- No manual override and no live-backed Stage E ingestion."
         ),
     )
+    rendered
     return (rendered,)
 
 

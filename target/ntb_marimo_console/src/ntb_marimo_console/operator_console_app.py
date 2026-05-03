@@ -268,15 +268,11 @@ def __(
         contract,
         readiness_state,
         running_as,
-        lifecycle_controls,
-        profile_controls,
-        evidence_controls,
-        query_button,
     )
 
 
 @app.cell
-def __(shell, mode, profile_id, contract, readiness_state, running_as, lifecycle_controls, profile_controls, evidence_controls, query_button):
+def __(mo, shell, mode, profile_id, contract, readiness_state, running_as, lifecycle_controls, profile_controls, evidence_controls, query_button):
     from ntb_marimo_console.ui.marimo_phase1_renderer import (
         render_phase1_console,
         render_watchman_gate_stop_output,
@@ -337,6 +333,7 @@ def __(shell, mode, profile_id, contract, readiness_state, running_as, lifecycle
         profile_control_panel=profile_controls,
         evidence_control_panel=evidence_controls,
     )
+    rendered
     return (rendered,)
 
 

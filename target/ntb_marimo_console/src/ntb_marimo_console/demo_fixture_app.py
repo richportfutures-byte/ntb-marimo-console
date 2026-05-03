@@ -40,6 +40,7 @@ def __(shell, mode, profile_id, contract):
             "- Stubbed/frozen: no manual override, no live Stage E audit backend."
         ),
     )
+    rendered
     return (rendered,)
 
 
