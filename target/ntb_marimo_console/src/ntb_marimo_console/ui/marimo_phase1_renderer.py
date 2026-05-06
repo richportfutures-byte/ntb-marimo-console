@@ -268,13 +268,16 @@ def build_startup_status_markdown(startup: Mapping[str, object]) -> str:
 
 def build_profile_operations_markdown(startup: Mapping[str, object]) -> str:
     supported_lines = _supported_profile_lines(startup.get("supported_profiles"))
+    legacy_lines = _supported_profile_lines(startup.get("legacy_historical_profiles"))
     candidate_lines = _candidate_profile_lines(startup.get("candidate_profiles"))
     return "\n".join(
         [
             "## Supported Profile Operations",
             f"- Active Profile: `{_as_str(startup.get('selected_profile_id'), default='<unresolved>')}`",
-            "- Selectable Profiles:",
+            "- Final-Target Selectable Profiles:",
             supported_lines,
+            "- Legacy/Historical Runtime Profiles:",
+            legacy_lines,
             "- Candidate Contract Status:",
             candidate_lines,
             f"- Candidate Audit Available: `{_as_str(startup.get('candidate_audit_available'), default=False)}`",

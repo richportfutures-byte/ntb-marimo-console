@@ -25,6 +25,10 @@ class ProfileOperationsTests(unittest.TestCase):
         self.assertEqual(supported["fixture_es_demo"].profile_kind, "Demo")
         self.assertEqual(supported["preserved_cl_phase1"].profile_kind, "Preserved")
         self.assertTrue(supported["preserved_es_phase1"].active)
+        self.assertTrue(supported["preserved_es_phase1"].operator_selectable)
+        self.assertFalse(supported["preserved_zn_phase1"].operator_selectable)
+        self.assertEqual(supported["preserved_zn_phase1"].contract_policy, "legacy_historical_excluded")
+        self.assertNotIn("preserved_zn_phase1", snapshot.selectable_profile_ids)
 
     def test_blocked_candidate_visibility_reports_reason_labels(self) -> None:
         snapshot = build_profile_operations_snapshot()
@@ -43,12 +47,24 @@ class ProfileOperationsTests(unittest.TestCase):
 
     def test_supported_profile_switch_evaluation_is_selectable(self) -> None:
         evaluation = evaluate_profile_switch(
-            "preserved_zn_phase1",
+            "preserved_cl_phase1",
             current_profile_id="preserved_es_phase1",
         )
 
         self.assertEqual(evaluation.status, "supported")
         self.assertIn("supported and selectable", evaluation.summary)
+
+    def test_legacy_historical_profile_switch_is_runtime_loadable_but_not_operator_selectable(self) -> None:
+        evaluation = evaluate_profile_switch(
+            "preserved_zn_phase1",
+            current_profile_id="preserved_es_phase1",
+        )
+
+        self.assertEqual(evaluation.status, "supported")
+        self.assertIsNotNone(evaluation.selected_profile)
+        self.assertFalse(evaluation.selected_profile.operator_selectable)
+        self.assertIn("legacy historical profile", evaluation.summary)
+        self.assertIn("excluded from final target operator selector surfaces", evaluation.summary)
 
     def test_blocked_candidate_profile_switch_fails_closed(self) -> None:
         evaluation = evaluate_profile_switch(

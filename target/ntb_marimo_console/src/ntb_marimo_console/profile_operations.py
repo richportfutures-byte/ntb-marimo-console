@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final, Literal
 
+from .contract_universe import contract_policy_label, is_final_target_contract
 from .runtime_profiles import list_runtime_profiles
 
 ProfileSwitchStatus = Literal["supported", "blocked", "unsupported", "already_active"]
@@ -37,6 +38,9 @@ class SupportedProfileDescriptor:
     contract: str
     session_date: str
     active: bool
+    final_target_contract: bool
+    operator_selectable: bool
+    contract_policy: str
 
     @property
     def selection_label(self) -> str:
@@ -67,7 +71,15 @@ class ProfileOperationsSnapshot:
 
     @property
     def selectable_profile_ids(self) -> tuple[str, ...]:
-        return tuple(profile.profile_id for profile in self.supported_profiles)
+        return tuple(profile.profile_id for profile in self.operator_selectable_profiles)
+
+    @property
+    def operator_selectable_profiles(self) -> tuple[SupportedProfileDescriptor, ...]:
+        return tuple(profile for profile in self.supported_profiles if profile.operator_selectable)
+
+    @property
+    def legacy_historical_profiles(self) -> tuple[SupportedProfileDescriptor, ...]:
+        return tuple(profile for profile in self.supported_profiles if not profile.operator_selectable)
 
 
 @dataclass(frozen=True)
@@ -94,6 +106,9 @@ def build_profile_operations_snapshot(
             contract=profile.contract,
             session_date=profile.session_date,
             active=profile.profile_id == current_profile_id,
+            final_target_contract=is_final_target_contract(profile.contract),
+            operator_selectable=is_final_target_contract(profile.contract),
+            contract_policy=contract_policy_label(profile.contract),
         )
         for profile in list_runtime_profiles()
     )
@@ -153,6 +168,18 @@ def evaluate_profile_switch(
 
     for profile in snapshot.supported_profiles:
         if profile.profile_id == requested_profile_id:
+            if not profile.operator_selectable:
+                return ProfileSwitchEvaluation(
+                    requested_profile_id=requested_profile_id,
+                    current_profile_id=current_profile_id,
+                    status="supported",
+                    summary=(
+                        f"Profile {requested_profile_id} is runtime-loadable as a legacy historical profile, "
+                        "but it is excluded from final target operator selector surfaces."
+                    ),
+                    next_action="Use this profile only for legacy/historical verification, not final target operation.",
+                    selected_profile=profile,
+                )
             return ProfileSwitchEvaluation(
                 requested_profile_id=requested_profile_id,
                 current_profile_id=current_profile_id,

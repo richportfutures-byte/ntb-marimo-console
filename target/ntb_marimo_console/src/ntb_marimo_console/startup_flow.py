@@ -46,9 +46,26 @@ def build_startup_payload(
             "contract": profile.contract,
             "session_date": profile.session_date,
             "active": profile.active,
-            "selectable": True,
+            "final_target_contract": profile.final_target_contract,
+            "contract_policy": profile.contract_policy,
+            "selectable": profile.operator_selectable,
         }
-        for profile in profile_operations.supported_profiles
+        for profile in profile_operations.operator_selectable_profiles
+    ]
+    legacy_profiles = [
+        {
+            "profile_id": profile.profile_id,
+            "runtime_mode": profile.runtime_mode,
+            "runtime_mode_label": profile.runtime_mode_label,
+            "profile_kind": profile.profile_kind,
+            "contract": profile.contract,
+            "session_date": profile.session_date,
+            "active": profile.active,
+            "final_target_contract": profile.final_target_contract,
+            "contract_policy": profile.contract_policy,
+            "selectable": profile.operator_selectable,
+        }
+        for profile in profile_operations.legacy_historical_profiles
     ]
     candidate_profiles = [
         {
@@ -72,6 +89,8 @@ def build_startup_payload(
         "selected_profile_id": identity.get("profile_id", "<unresolved>"),
         "supported_profiles": supported_profiles,
         "supported_profile_ids": [profile["profile_id"] for profile in supported_profiles],
+        "legacy_historical_profiles": legacy_profiles,
+        "legacy_historical_profile_ids": [profile["profile_id"] for profile in legacy_profiles],
         "candidate_profiles": candidate_profiles,
         "blocked_candidates": blocked_candidates,
         "candidate_audit_available": profile_operations.audit_available,

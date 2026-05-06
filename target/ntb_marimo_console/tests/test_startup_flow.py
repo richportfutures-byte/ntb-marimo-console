@@ -140,6 +140,7 @@ class StartupFlowTests(unittest.TestCase):
             startup = build_startup_artifacts_from_env()
 
         supported_ids = {item["profile_id"] for item in startup.shell["startup"]["supported_profiles"]}
+        legacy_ids = {item["profile_id"] for item in startup.shell["startup"]["legacy_historical_profiles"]}
         blocked_contracts = {item["contract"] for item in startup.shell["startup"]["blocked_candidates"]}
 
         self.assertEqual(
@@ -148,9 +149,10 @@ class StartupFlowTests(unittest.TestCase):
                 "fixture_es_demo",
                 "preserved_cl_phase1",
                 "preserved_es_phase1",
-                "preserved_zn_phase1",
             },
         )
+        self.assertEqual(legacy_ids, {"preserved_zn_phase1"})
+        self.assertNotIn("preserved_zn_phase1", startup.shell["startup"]["supported_profile_ids"])
         self.assertEqual(blocked_contracts, {"NQ", "6E", "MGC"})
         self.assertTrue(startup.shell["startup"]["candidate_audit_available"])
 

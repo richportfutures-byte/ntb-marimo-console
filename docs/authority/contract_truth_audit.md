@@ -61,6 +61,8 @@ Runtime profiles currently include:
 
 `NQ`, `6E`, and `MGC` profile onboarding remains future work. They require onboarding rather than engine creation.
 
+R02 adds a target-owned final contract universe guard. That guard does not delete runtime profiles; it separates final-target operator selection from legacy/historical runtime availability.
+
 ## Live Gating Finding
 
 Current app/live gating is not complete for the final universe.
@@ -71,7 +73,7 @@ Known blockers, stated at the level already present in code and authority docs:
 - `6E` requires numeric DXY and session-sequence support.
 - `MGC` requires numeric DXY and yield context.
 
-These blockers are not implemented by R01, and this audit does not claim they are implemented.
+These blockers are not implemented by R02, and this audit does not claim they are implemented.
 
 ## ZN and GC Boundary
 
@@ -79,8 +81,10 @@ These blockers are not implemented by R01, and this audit does not claim they ar
 
 `GC` is not present as an engine schema literal, Stage A/B prompt, system-spec target, runtime profile, or current app/live-gating target. `GC` must not be added or conflated with `MGC`.
 
+R02 executable guard status: `ZN` is classified as legacy/historical and excluded from final-target operator selector surfaces. `GC` is classified as never-supported/excluded. `MGC` remains the only gold final target contract and is not mapped to `GC`.
+
 ## Next Roadmap Justification
 
-R02 is justified only as scoped `ZN`/`GC` exclusion cleanup planning or implementation.
+After R02, additional `ZN`/`GC` cleanup is justified only if it is scoped to preserving historical truth while removing remaining final-target ambiguity.
 
-Stream manager and live runtime work are premature until this truth audit is committed.
+Stream manager and live runtime work remain premature until the final-target onboarding step is explicitly opened.

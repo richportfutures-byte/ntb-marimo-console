@@ -37,7 +37,10 @@ class PreservedContractOnboardingTests(unittest.TestCase):
         report = render_contract_eligibility_report(snapshot)
         self.assertIn("Supported Now:", report)
         self.assertIn("Blocked:", report)
-        self.assertIn("NQ -> preserved_nq_phase1", report)
+        self.assertIn("Final Target Contracts: ES, NQ, CL, 6E, MGC", report)
+        self.assertIn("Excluded Final Target Contracts: ZN, GC", report)
+        self.assertIn("ZN -> preserved_zn_phase1: legacy_historical", report)
+        self.assertIn("NQ -> preserved_nq_phase1: final_target", report)
 
     def test_profile_template_checklist_is_readable_and_complete(self) -> None:
         template = validate_profile_template(build_candidate_profile_template("CL"))

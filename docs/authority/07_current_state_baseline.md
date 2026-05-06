@@ -29,6 +29,8 @@
 - current final target mismatch: `NQ`, `6E`, and `MGC` are required final target onboarding contracts but do not yet have app-profile support
 - `ZN`: current preserved profile exists, but it is now excluded from final target support
 - `GC`: not present and excluded
+- target-owned `contract_universe.py` now encodes final target contracts, legacy/historical contracts, and never-supported contracts
+- final-target operator selector surfaces exclude the legacy `ZN` profile while preserving direct legacy runtime availability
 
 ### Windows Runtime Ownership
 
@@ -93,8 +95,8 @@
 | `MGC` app-profile support | Not implemented |
 | Future live workstation upgrades for current `ES` support | Not implemented in R00 |
 | Future live workstation upgrades for current `CL` support | Not implemented in R00 |
-| `ZN` exclusion cleanup | Not implemented in R00 |
-| `GC` exclusion guard beyond authority docs | Not implemented in R00 |
+| Additional `ZN` exclusion cleanup beyond selector/final-target guard | Not implemented |
+| Additional `GC` exclusion guard beyond target-owned contract universe | Not implemented |
 
 ## Docs vs Code Delta
 
@@ -105,6 +107,7 @@
 | Earlier authority set treated NQ, 6E, and MGC as deferred/non-target for phase closure | NQ, 6E, and MGC are engine-supported but not app-profile-supported | Reclassified as required onboarding targets |
 | Earlier authority set treated ZN as required current support | ZN runtime profile exists today | Reclassified as excluded/historical for final target support |
 | Earlier docs did not explicitly guard GC | GC is not present in engine or target contract typing | GC is explicitly excluded and not a synonym for MGC |
+| R01 documented ZN/GC exclusion but had no target-owned executable guard | `contract_universe.py` now classifies final, legacy, and never-supported contracts | Final-target selector/report surfaces can use executable policy without deleting engine/runtime history |
 | Earlier authority set required full Stage E audit schema completeness in this phase | Frozen engine writes a bounded JSONL run-history record shape | Full Stage E schema expansion deferred |
 | Earlier authority set required engine-owned `post_entry_management` output | Frozen engine schemas do not expose that output | Requirement deferred |
 

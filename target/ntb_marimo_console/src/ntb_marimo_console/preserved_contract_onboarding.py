@@ -9,6 +9,13 @@ from typing import Literal
 from ninjatradebuilder.pipeline import STAGE_AB_PROMPT_BY_CONTRACT
 
 from .adapters.contracts import ContractSymbol, JsonDict, LIVE_OBSERVABLE_FIELD_PATHS
+from .contract_universe import (
+    excluded_final_target_contracts,
+    final_target_contracts,
+    is_final_target_contract,
+    legacy_historical_contracts,
+    never_supported_contracts,
+)
 from .preserved_fixture_artifacts import write_preserved_fixture_artifacts
 from .runtime_diagnostics import LaunchRequest, build_preflight_report
 from .runtime_modes import build_app_shell_for_profile
@@ -426,7 +433,13 @@ def select_single_new_preserved_contract(
 
 
 def render_contract_eligibility_report(snapshot: ContractEligibilitySnapshot) -> str:
-    lines: list[str] = ["Preserved Contract Eligibility Audit"]
+    lines: list[str] = [
+        "Preserved Contract Eligibility Audit",
+        "Final Target Contracts: " + ", ".join(final_target_contracts()),
+        "Excluded Final Target Contracts: " + ", ".join(excluded_final_target_contracts()),
+        "Legacy/Historical Contracts: " + ", ".join(legacy_historical_contracts()),
+        "Never Supported Contracts: " + ", ".join(never_supported_contracts()),
+    ]
     lines.extend(_render_group("Supported Now", snapshot.supported_now))
     lines.extend(_render_group("Viable To Onboard Now", snapshot.viable_to_onboard_now))
     lines.extend(_render_group("Blocked", snapshot.blocked))
@@ -868,8 +881,9 @@ def _render_group(title: str, results: tuple[ContractEligibilityResult, ...]) ->
         lines.append("- none")
         return lines
     for result in results:
+        final_target_label = "final_target" if is_final_target_contract(result.contract) else "legacy_historical"
         lines.append(
-            f"- {result.contract} -> {result.profile_id}: {result.reason_category} | {result.summary}"
+            f"- {result.contract} -> {result.profile_id}: {final_target_label} | {result.reason_category} | {result.summary}"
         )
     return lines
 
