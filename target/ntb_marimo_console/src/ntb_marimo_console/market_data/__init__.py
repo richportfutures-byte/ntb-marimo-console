@@ -1,6 +1,22 @@
 from __future__ import annotations
 
 from .config import FuturesQuoteServiceConfig, resolve_futures_quote_service_config
+from .bar_builder import ChartFuturesBarBuilder
+from .bar_quality import (
+    BarFactResult,
+    BarQuality,
+    basic_range_state_from_completed_bars,
+    count_completed_five_minute_closes_at_or_beyond_level,
+    latest_completed_close_relative_to_level,
+    volume_velocity_state_from_completed_bars,
+)
+from .chart_bars import (
+    BarIngestionResult,
+    BuildingFiveMinuteBar,
+    ContractBarState,
+    FiveMinuteBar,
+    OneMinuteBar,
+)
 from .factory import (
     FuturesQuoteProviderFactoryError,
     build_futures_quote_provider,
@@ -30,6 +46,13 @@ from .stream_manager import (
 )
 
 __all__ = [
+    "BarFactResult",
+    "BarIngestionResult",
+    "BarQuality",
+    "BuildingFiveMinuteBar",
+    "ChartFuturesBarBuilder",
+    "ContractBarState",
+    "FiveMinuteBar",
     "FixtureFuturesQuoteProvider",
     "FuturesQuoteServiceConfig",
     "FuturesQuote",
@@ -40,6 +63,7 @@ __all__ = [
     "FuturesQuoteServiceResult",
     "NullFuturesQuoteProvider",
     "NormalizedStreamMessage",
+    "OneMinuteBar",
     "MIN_STREAM_REFRESH_FLOOR_SECONDS",
     "STREAM_EVENT_TYPES",
     "STREAM_LIFECYCLE_STATES",
@@ -55,8 +79,12 @@ __all__ = [
     "StreamLifecycleState",
     "StreamManagerSnapshot",
     "StreamSubscriptionRequest",
+    "basic_range_state_from_completed_bars",
     "build_futures_quote_provider",
     "build_futures_quote_service",
+    "count_completed_five_minute_closes_at_or_beyond_level",
+    "latest_completed_close_relative_to_level",
     "redact_sensitive_text",
     "resolve_futures_quote_service_config",
+    "volume_velocity_state_from_completed_bars",
 ]

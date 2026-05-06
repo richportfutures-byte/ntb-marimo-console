@@ -157,3 +157,20 @@ The target project added a fixture-tested Live Observable Snapshot v2 contract u
 ### Explicit Non-Implementation Boundary
 
 R04 does not implement real Schwab networking, `CHART_FUTURES` bar aggregation, trigger-state engine states, pipeline query enablement, broker/order/execution/account/fill/P&L behavior, or runtime profile onboarding for `NQ`, `6E`, or `MGC`.
+
+## 2026-05-06 R05 CHART_FUTURES Bar Builder Foundation
+
+The target project added a fixture-tested CHART_FUTURES bar builder foundation under `market_data/` without changing launch behavior, engine code, Schwab adapter code, runtime profiles, trigger-state authorization, query authorization, or UI wiring.
+
+### Scope Changes
+
+- added deterministic one-minute bar, five-minute completed bar, building five-minute bar, per-contract state, ingestion result, and quality contracts
+- validates fixture-normalized CHART_FUTURES-style messages for contract, symbol, timestamp, OHLCV, completion flag, and basic OHLC coherence
+- rejects or blocks `ZN`, `GC`, malformed records, symbol mismatches, gaps, stale bar state, and out-of-order input
+- aggregates completed one-minute bars into five-minute bars only when all five bars for the bucket are present
+- keeps partial/building five-minute bars separate from completed confirmation
+- adds bar-fact helpers for completed close counts, latest close relation, basic range state, and volume velocity from completed bars only
+
+### Explicit Non-Implementation Boundary
+
+R05 does not implement real Schwab WebSocket networking, trigger-state engine states, pipeline query enablement, broker/order/execution/account/fill/P&L behavior, UI redesign, or runtime profile onboarding for `NQ`, `6E`, or `MGC`.

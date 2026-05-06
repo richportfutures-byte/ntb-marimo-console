@@ -80,6 +80,15 @@
 - missing required quote fields, stale timestamps, provider block states, and symbol mismatch fail closed through blocking reasons
 - R04 does not implement `CHART_FUTURES` bars, trigger-state logic, pipeline query authorization, or UI redesign
 
+### CHART_FUTURES Bar Builder Foundation
+
+- target-owned CHART_FUTURES bar builder foundation exists under `market_data/`
+- fixture-normalized one-minute bars can be validated and aggregated into deterministic completed five-minute bars
+- current building five-minute bars remain separate from completed five-minute bars
+- partial bars, gaps, malformed records, stale data, out-of-order input, symbol mismatch, and excluded contracts fail closed through explicit blocking reasons
+- `ZN` and `GC` are excluded from final target bar state, and `GC` is not aliased to `MGC`
+- R05 does not wire bar state into trigger-state logic, pipeline query authorization, live networking, or UI redesign
+
 ### Primary App Surface
 
 - startup, workflow, profile, and evidence surfaces render readably
@@ -116,7 +125,7 @@
 | Additional `ZN` exclusion cleanup beyond selector/final-target guard | Not implemented |
 | Additional `GC` exclusion guard beyond target-owned contract universe | Not implemented |
 | Wiring persistent stream manager into live workstation startup | Not implemented |
-| CHART_FUTURES bar aggregation and trigger-state gate wiring | Not implemented |
+| Trigger-state gate wiring from completed bar facts | Not implemented |
 
 ## Docs vs Code Delta
 
