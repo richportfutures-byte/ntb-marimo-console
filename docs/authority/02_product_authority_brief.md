@@ -7,7 +7,19 @@
 
 ## One-Sentence Product Definition
 
-NinjaTradeBuilder is a disciplined, contract-aware decision partner that tells the operator exactly what the market needs to show before a trade is worth taking, and exactly why it is not when it is not.
+NinjaTradeBuilder is a disciplined, Schwab-backed Marimo futures workstation and contract-aware decision partner that tells the operator exactly what the market needs to show before a trade is worth taking, and exactly why it is not when it is not.
+
+## Final Product Target
+
+The final target support universe is:
+
+- `ES`
+- `NQ`
+- `CL`
+- `6E`
+- `MGC`
+
+`ZN` is excluded from final target support and may remain only as historical or legacy implementation evidence until explicit cleanup work removes or quarantines it. `GC` is excluded entirely and must not be used as a synonym, alias, display label, or onboarding shortcut for `MGC`. `MGC` is the gold contract for this application.
 
 ## Operator Profile
 

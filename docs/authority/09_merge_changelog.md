@@ -70,3 +70,36 @@ The single-entry Windows acceptance harness was tightened so it now directly exe
 - the retained-evidence regression slice
 
 This closes the gap between the amended acceptance matrix and the actual one-command acceptance path.
+
+## 2026-05-06 R00 Authority Contract Universe Reset
+
+The authority set was amended to reset the final product contract universe.
+
+### Scope Changes
+
+- replaced the stale ES/ZN/CL final-target framing
+- established the final target support universe as:
+  - `ES`
+  - `NQ`
+  - `CL`
+  - `6E`
+  - `MGC`
+- classified `ZN` as excluded/historical rather than final target support
+- classified `GC` as excluded
+- stated that `MGC` is the gold contract for this application and that `GC` must not be used as a synonym for `MGC`
+- reclassified `NQ`, `6E`, and `MGC` as required onboarding targets rather than generic deferred/non-target contracts
+
+### Explicit Non-Implementation Boundary
+
+R00 is documentation/authority reset only. It does not implement runtime profile changes, Schwab adapter changes, stream manager behavior, broker/order/execution/account/fill/P&L behavior, or engine changes.
+
+### Doctrine Retained
+
+The reset retains:
+
+- engine as sole decision authority
+- pre-market brief is not a signal
+- manual-only trade execution
+- fail-closed behavior
+- no fixture fallback after live failure
+- 15-second minimum refresh floor

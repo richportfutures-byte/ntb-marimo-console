@@ -7,51 +7,59 @@
 
 ## Executive Reality Check
 
-The authority set is now aligned to a frozen-engine phase that can close truthfully.
+R00 resolves the authority contradiction between the stale ES/ZN/CL phase-support framing and the new final product target universe.
 
-The major contradiction that previously made the phase unfinishable has been resolved:
+The active final target support universe is now:
 
-- engine-blocked Watchman, Stage E, post-entry-management, and six-contract requirements no longer remain falsely tagged as THIS PHASE
+- `ES`
+- `NQ`
+- `CL`
+- `6E`
+- `MGC`
+
+`ZN` is excluded/historical. `GC` is excluded and must not be used as a synonym for `MGC`.
 
 This report now focuses on:
 
-1. confirming that the amended scope matches the frozen-engine build
+1. confirming that the authority reset distinguishes final target support from current runtime profiles
 2. keeping terminology and boundaries normalized
-3. recording any remaining delivery deltas inside the amended scope
+3. recording remaining implementation deltas without claiming they are complete in R00
 
 ## Resolved Contradictions Register
 
 | ID | Conflict | Resolution | Canonical Rule |
 |---|---|---|---|
-| CD-01 | Pre-market / Watchman was first deferred, then required | Resolved earlier and retained | Pre-market brief and Watchman gating remain in scope for the phase. |
-| CD-02 | Bounded target looked narrower than later requirements | Resolved by amendment | The phase is bounded to the commissionable frozen-engine console, not to engine reopening. |
-| CD-03 | Six-contract phase closure was required even though the engine freeze blocked truthful completion | Resolved by amendment | ES, ZN, and CL are the supported preserved profiles for this phase; NQ, 6E, and MGC are deferred. |
-| CD-04 | Broader Watchman generation/scoring was marked THIS PHASE even though no frozen-engine path could satisfy it | Resolved by amendment | This phase includes only the target-owned app-surface Watchman validator and hard gate. |
-| CD-05 | Full Stage E audit-schema completeness was marked THIS PHASE even though the frozen engine writer does not emit that shape | Resolved by amendment | This phase accepts the frozen engine writer plus target-owned JSONL-backed Run History / Audit Replay surfaces. |
-| CD-06 | Engine-authored `post_entry_management` was required even though the frozen engine schemas do not expose it | Resolved by amendment | Engine-authored `post_entry_management` is deferred. |
+| CD-01 | Pre-market / Watchman was first deferred, then required | Resolved earlier and retained | Pre-market brief and Watchman gating remain governed by fail-closed Validator output when runtime work is in scope. |
+| CD-02 | Bounded target looked narrower than later requirements | Resolved by amendment | R00 is authority reset only; future runtime/profile/live-gating work must be separately scoped. |
+| CD-03 | Six-contract phase closure was required even though the engine freeze blocked truthful completion | Superseded by R00 | Final target support is `ES`, `NQ`, `CL`, `6E`, and `MGC`; current app-profile support remains separate. |
+| CD-04 | Broader Watchman generation/scoring was marked THIS PHASE even though no frozen-engine path could satisfy it | Resolved earlier and retained | R00 does not implement engine-owned Watchman generation/scoring. |
+| CD-05 | Full Stage E audit-schema completeness was marked THIS PHASE even though the frozen engine writer does not emit that shape | Resolved earlier and retained | R00 does not expand the frozen engine writer. |
+| CD-06 | Engine-authored `post_entry_management` was required even though the frozen engine schemas do not expose it | Resolved earlier and retained | Engine-authored `post_entry_management` remains deferred. |
 | CD-07 | "Console" was used ambiguously | Resolved and retained | Terms remain locked: Engine, App surface / operator workspace, Console. |
+| CD-08 | Authority docs bound final support to ES/ZN/CL while the new target universe is ES/NQ/CL/6E/MGC | Resolved by R00 authority reset | `ZN` is excluded/historical; `NQ`, `6E`, and `MGC` are required onboarding targets. |
+| CD-09 | Gold support could be confused between `GC` and `MGC` | Resolved by R00 authority reset | `MGC` is the gold contract for this application; `GC` is excluded and not a synonym. |
 
 ## Structural Contradiction Checks
 
-### Check 1 - Does the phase definition match the amended THIS PHASE items?
+### Check 1 - Does the phase definition match R00?
 
-**Assessment:** Clean. The phase definition now matches the actual frozen-engine commissioning target.
+**Assessment:** Clean. The phase definition now states that R00 is documentation/authority reset only and does not claim runtime implementation.
 
 ### Check 2 - Does the support matrix match the phase scope contract?
 
-**Assessment:** Clean. ES, ZN, and CL are required; NQ, 6E, and MGC are deferred and blocked truthfully.
+**Assessment:** Clean. Both documents bind final target support to `ES`, `NQ`, `CL`, `6E`, and `MGC`; classify `ZN` as excluded/historical; and classify `GC` as excluded.
 
-### Check 3 - Does the acceptance matrix test only the amended phase target?
+### Check 3 - Does the acceptance matrix test only the R00 target?
 
-**Assessment:** Clean. Acceptance now proves the bounded operator console, not impossible engine-owned outputs.
+**Assessment:** Clean. R00 acceptance checks authority reset, current-state truthfulness, and doctrine preservation. Runtime checks are retained only as current-state factual regression slices.
 
-### Check 4 - Does the deferred register capture the previously impossible engine-blocked work?
+### Check 4 - Does the deferred register distinguish required onboarding from deferred work?
 
-**Assessment:** Clean. The deferred register now holds the engine-blocked Watchman, Stage E, post-entry-management, and future-contract items.
+**Assessment:** Clean. `NQ`, `6E`, and `MGC` are required onboarding targets, while engine-owned Watchman, Stage E expansion, and other future items remain deferred.
 
-### Check 5 - Is anything still tagged THIS PHASE that would require reopening `ntb_engine`?
+### Check 5 - Is anything still tagged R00 that would require reopening `ntb_engine`?
 
-**Assessment:** Clean. The amended THIS PHASE scope is finishable under the engine freeze.
+**Assessment:** Clean. R00 acceptance can be achieved without engine, runtime profile, Schwab adapter, or stream manager changes.
 
 ## Normalization Actions
 
@@ -65,20 +73,30 @@ All docs must use:
 
 ### ND-02 - Baseline remains descriptive only
 
-The baseline still records what exists. It does not redefine the amended scope.
+The baseline records what exists. It does not redefine the final target or imply that current `ZN` runtime support is final target support.
 
 ### ND-03 - Deferred does not mean secretly in progress
 
-Engine-blocked items moved to the deferred register may not reappear in target code as partial stand-ins, shadow systems, or presentation-only claims.
+Engine-blocked items in the deferred register may not reappear in target code as partial stand-ins, shadow systems, or presentation-only claims.
+
+### ND-04 - Required onboarding is not optional
+
+`NQ`, `6E`, and `MGC` are required final-target onboarding work. They are not generic deferred extras, and they are not engine-missing contracts.
+
+### ND-05 - Gold naming remains exact
+
+`MGC` must be used for the application's gold contract. `GC` is excluded and must not be introduced as an alias or supported label.
 
 ## Implementation Deltas, Not Contradictions
 
 | ID | Current-State Finding | Authority Requirement | Classification |
 |---|---|---|---|
-| ID-01 | ES, ZN, and CL are operational preserved profiles | Required preserved profiles are commissionable in this phase | Delivery target |
-| ID-02 | NQ, 6E, and MGC remain blocked | Deferred contracts must stay blocked and be surfaced truthfully | Boundary enforcement |
-| ID-03 | Recent-session evidence, Run History, and Audit / Replay are real and local | Evidence/history must remain truthful and fail-closed | Delivery target |
-| ID-04 | Manual verification items are still outstanding | Operator sign-off is still required for phase closure | Acceptance follow-through |
+| ID-01 | ES and CL are current app-profile-supported contracts | Final target requires ES and CL plus future live workstation upgrades | Required onboarding |
+| ID-02 | NQ, 6E, and MGC are engine-supported but not app-profile-supported | Final target requires onboarding for all three | Required onboarding |
+| ID-03 | ZN is an operational preserved profile today | ZN is excluded from final target support | Required scope cleanup |
+| ID-04 | GC is not present today | GC must remain excluded and not alias MGC | Required scope cleanup |
+| ID-05 | Recent-session evidence, Run History, and Audit / Replay are real and local | Evidence/history must remain truthful and fail-closed | Doctrine preservation |
+| ID-06 | Manual verification items are still outstanding | Operator sign-off is still required for closure | Acceptance follow-through |
 
 ## Review Loop Use
 
@@ -86,11 +104,12 @@ Run this report before any serious implementation cycle and whenever the authori
 
 The contradiction review is complete only when:
 
-1. no THIS PHASE item requires reopening `ntb_engine`
+1. no R00 item requires reopening `ntb_engine`
 2. no support-matrix item conflicts with the current phase contract
-3. the acceptance matrix still proves the amended phase honestly
+3. the acceptance matrix still proves the authority reset honestly
 4. the baseline still distinguishes authority from current code reality
+5. `MGC` remains the only gold contract in the final target universe
 
 ## Final Canonical Position
 
-The active target is a bounded Marimo app surface that truthfully commissions the preserved engine for ES, ZN, and CL, enforces a validator-driven Watchman gate with `mo.stop()`, reads real local JSONL-backed operator evidence, and remains fail-closed under the engine freeze.
+The final product target is a Schwab-backed Marimo futures workstation for `ES`, `NQ`, `CL`, `6E`, and `MGC`. `ZN` is excluded/historical, `GC` is excluded, the engine remains sole decision authority, execution remains manual-only, and runtime behavior must remain fail-closed.
