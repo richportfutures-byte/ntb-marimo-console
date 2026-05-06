@@ -138,3 +138,22 @@ The target project added a fixture-tested Schwab stream manager foundation under
 ### Explicit Non-Implementation Boundary
 
 R03 does not implement real Schwab WebSocket networking, does not require credentials for CI/default tests, does not add broker/order/execution/account/fill/P&L behavior, does not onboard `NQ`, `6E`, or `MGC` runtime profiles, and does not re-promote `ZN` or `GC`.
+
+## 2026-05-06 R04 Live Observable Snapshot v2
+
+The target project added a fixture-tested Live Observable Snapshot v2 contract under `live_observables/` without changing launch behavior, engine code, Schwab adapter code, runtime profiles, query authorization, or UI wiring.
+
+### Scope Changes
+
+- added a deterministic JSON-serializable `live_observable_snapshot_v2` schema
+- builds from R03 stream-cache snapshots only
+- emits primary contract rows for `ES`, `NQ`, `CL`, `6E`, and `MGC`
+- keeps `ZN` and `GC` out of the primary contract map
+- labels `MGC` as Micro Gold where label metadata is present and does not alias it to `GC`
+- computes required-field quality, freshness, symbol matching, mid, and spread ticks
+- keeps 5-minute bar fields, trigger distance, range expansion, and volume velocity null for R04
+- propagates provider/cache/symbol/field/timestamp blocking reasons fail-closed
+
+### Explicit Non-Implementation Boundary
+
+R04 does not implement real Schwab networking, `CHART_FUTURES` bar aggregation, trigger-state engine states, pipeline query enablement, broker/order/execution/account/fill/P&L behavior, or runtime profile onboarding for `NQ`, `6E`, or `MGC`.

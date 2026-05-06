@@ -71,6 +71,15 @@
 - tests cover idempotent start, one-login discipline, fail-closed event/cache states, and redaction
 - R03 does not implement default real Schwab WebSocket networking or execution/account/order behavior
 
+### Live Observable Snapshot v2
+
+- target-owned live observable snapshot v2 contract exists under `live_observables/`
+- snapshot v2 reads R03 stream-cache snapshots and does not start login, subscription, or networking
+- primary contract map is limited to `ES`, `NQ`, `CL`, `6E`, and `MGC`
+- `ZN` and `GC` are excluded from snapshot v2 primary contract output
+- missing required quote fields, stale timestamps, provider block states, and symbol mismatch fail closed through blocking reasons
+- R04 does not implement `CHART_FUTURES` bars, trigger-state logic, pipeline query authorization, or UI redesign
+
 ### Primary App Surface
 
 - startup, workflow, profile, and evidence surfaces render readably
@@ -107,6 +116,7 @@
 | Additional `ZN` exclusion cleanup beyond selector/final-target guard | Not implemented |
 | Additional `GC` exclusion guard beyond target-owned contract universe | Not implemented |
 | Wiring persistent stream manager into live workstation startup | Not implemented |
+| CHART_FUTURES bar aggregation and trigger-state gate wiring | Not implemented |
 
 ## Docs vs Code Delta
 
