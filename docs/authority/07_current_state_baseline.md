@@ -62,6 +62,15 @@
 - retained recent-session evidence can be cleared explicitly
 - current-session evidence and restored-prior-run evidence remain distinct in the UI
 
+### Stream Manager Foundation
+
+- target-owned stream manager foundation exists under `market_data/`
+- default launch remains non-live and disabled
+- live start requires explicit opt-in and an injected client
+- Marimo refresh is modeled as a cache snapshot read, not login or subscription
+- tests cover idempotent start, one-login discipline, fail-closed event/cache states, and redaction
+- R03 does not implement default real Schwab WebSocket networking or execution/account/order behavior
+
 ### Primary App Surface
 
 - startup, workflow, profile, and evidence surfaces render readably
@@ -97,6 +106,7 @@
 | Future live workstation upgrades for current `CL` support | Not implemented in R00 |
 | Additional `ZN` exclusion cleanup beyond selector/final-target guard | Not implemented |
 | Additional `GC` exclusion guard beyond target-owned contract universe | Not implemented |
+| Wiring persistent stream manager into live workstation startup | Not implemented |
 
 ## Docs vs Code Delta
 

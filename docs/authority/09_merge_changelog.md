@@ -120,3 +120,21 @@ The target project added executable final-contract policy without changing engin
 ### Explicit Non-Implementation Boundary
 
 R02 does not onboard `NQ`, `6E`, or `MGC`; does not implement streaming; does not modify `source/ntb_engine`; and does not change Schwab adapter behavior.
+
+## 2026-05-06 R03 Stream Manager Foundation
+
+The target project added a fixture-tested Schwab stream manager foundation under `market_data/` without changing default launch behavior, engine code, Schwab adapter code, or runtime profiles.
+
+### Scope Changes
+
+- added explicit stream manager config, lifecycle states, event types, cache snapshots, and client protocol
+- kept default stream startup non-live and disabled
+- required explicit live opt-in before any injected client login can be attempted
+- modeled Marimo refresh as cache reads only
+- added idempotent start behavior so an active manager does not open a second login/subscription
+- added fail-closed handling for login failure, subscription failure, stale heartbeat, malformed data, symbol mismatch, missing data, and excluded contracts
+- added redaction for public stream events, summaries, snapshots, and errors
+
+### Explicit Non-Implementation Boundary
+
+R03 does not implement real Schwab WebSocket networking, does not require credentials for CI/default tests, does not add broker/order/execution/account/fill/P&L behavior, does not onboard `NQ`, `6E`, or `MGC` runtime profiles, and does not re-promote `ZN` or `GC`.
