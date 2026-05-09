@@ -87,7 +87,7 @@ class StartupFlowTests(unittest.TestCase):
 
     def test_blocked_startup_on_failed_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            source_root = Path("fixtures/golden/phase1")
+            source_root = Path(__file__).resolve().parents[1] / "fixtures" / "golden" / "phase1"
             artifact_root = Path(temp_dir) / "phase1"
             shutil.copytree(source_root, artifact_root)
             (artifact_root / "premarket" / "ES" / "2026-03-25" / "premarket_packet.json").unlink()
