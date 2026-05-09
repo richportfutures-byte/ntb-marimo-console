@@ -156,3 +156,196 @@ def test_get_prompt_asset_returns_expected_prompt() -> None:
 
     assert asset.name == "CL Sufficiency + Market Read"
     assert asset.contract_scope == "CL"
+
+
+def test_stage_b_structural_notes_synthesis_contract_renders_in_all_contract_prompts() -> None:
+    """structural_notes is the trader-facing market read.
+
+    Every Stage A+B contract prompt (ES, NQ, CL, ZN, 6E, MGC) must carry the synthesis
+    mandate: directional_bias + numeric anchor + next watch-for, all grounded in
+    structured fields, with explicit rejection of generic state-description prose.
+    """
+
+    for prompt_id in range(2, 8):
+        rendered = render_prompt(prompt_id, _stage_ab_inputs())
+
+        assert "structural_notes is the trader-facing market read" in rendered
+        assert "states or unambiguously implies the directional_bias" in rendered
+        assert "names the specific numeric anchor level" in rendered
+        assert "next concrete observation the trader is watching for" in rendered
+        assert (
+            "A reader of structural_notes alone should know the bias, the anchor, "
+            "and the next decision point without cross-referencing any other field."
+        ) in rendered
+
+        assert 'Strings of the form "Price is holding above pivot"' in rendered
+        assert "are malformed structural_notes and must not be emitted" in rendered
+
+        assert "structural_notes must not introduce price-action observations" in rendered
+        assert "If a claim cannot be tied to a specific structured field, do not make the claim." in rendered
+
+        assert "structural_notes must not override or contradict structured fields" in rendered
+
+
+def test_stage_b_conflicting_signals_content_contract_renders_in_all_contract_prompts() -> None:
+    """conflicting_signals must be real directional tensions, not vague placeholders.
+
+    Each entry must name the specific signal/field, the directional pull relative
+    to bias, the structured field/value creating the tension, and be material.
+    Vague entries that pollute the conflict count must be explicitly rejected.
+    """
+
+    for prompt_id in range(2, 8):
+        rendered = render_prompt(prompt_id, _stage_ab_inputs())
+
+        assert "Each entry in conflicting_signals must be a real directional tension" in rendered
+        assert "name the specific signal or field" in rendered
+        assert "state the direction it pulls relative to directional_bias" in rendered
+        assert "reference the structured field or value that creates the tension" in rendered
+
+        assert '"delta mixed"' in rendered
+        assert '"balance intact"' in rendered
+        assert '"macro neutral"' in rendered
+        assert "Neutral or balanced context is not a conflict" in rendered
+        assert "Missing data is not a conflict" in rendered
+
+        assert "Inflating the count with vague entries to artificially cap evidence_score" in rendered
+
+        # Existing evidence_score caps must still be present and unchanged.
+        assert "If conflicting_signals contains >= 2 entries, evidence_score must not exceed 6." in rendered
+        assert "If conflicting_signals contains >= 3 entries, evidence_score must not exceed 4." in rendered
+
+
+def test_stage_c_rationale_defense_contract_renders_and_preserves_no_reread_boundary() -> None:
+    """rationale must positively defend the trade while remaining downstream-only.
+
+    The no-reread boundary is preserved (rule 11). The defense mandate (rule 12)
+    requires entry/stop/target/setup_class/invalidation defense drawn entirely
+    from contract_analysis. Tautology and rescue-prose are explicitly rejected.
+    """
+
+    rendered = render_prompt(8, _stage_c_inputs())
+
+    # No-reread boundary is preserved verbatim.
+    assert (
+        "rationale must reference only contract_analysis fields and values. "
+        "Do not re-read the market. Do not add new price-action observations."
+    ) in rendered
+
+    # Defense mandate.
+    assert "rationale must positively defend the trade against a wait or a different configuration" in rendered
+    assert "the specific contract_analysis field or fields that justify entry_price" in rendered
+    assert "places stop_price beyond the structural invalidation" in rendered
+    assert "contract_analysis.key_levels reference that justifies target_1" in rendered
+    assert "why setup_class fits this contract_analysis context" in rendered
+    assert "the specific contract_analysis condition whose change would invalidate the setup" in rendered
+
+    # Tautology rejection by example.
+    assert '"bullish bias supports a scalp"' in rendered
+    assert '"long from pivot toward resistance"' in rendered
+    assert "are malformed rationale and must not be emitted" in rendered
+
+    # Boundary in rule 11 explicitly preserved by rule 14.
+    assert "The boundary in rule 11 stands." in rendered
+    assert "If contract_analysis is too thin to satisfy rule 12, the correct response is NO_TRADE" in rendered
+
+    # Rescue-prose rejection (must not undermine fail-closed behavior).
+    assert "rationale must not rescue a weak setup with prose" in rendered
+    assert "the hard NO_TRADE rules above govern" in rendered
+
+
+def test_stage_c_disqualifiers_monitorable_token_contract_renders() -> None:
+    """Stage C disqualifiers must be deterministic lockout tokens or monitorable tokens.
+
+    Each entry names what to watch and the breach condition, so a future
+    active-trade evaluator can check it against current state. Narrative
+    tokens that cannot be monitored are explicitly rejected. The existing
+    stop_distance_unusually_wide guidance is preserved.
+    """
+
+    rendered = render_prompt(8, _stage_c_inputs())
+
+    # Existing stop-distance guidance preserved.
+    assert (
+        "Max stop distance guidelines: ES 16 ticks, NQ 40 ticks, CL 20 ticks, "
+        "ZN 16 ticks, 6E 40 ticks, MGC 50 ticks."
+    ) in rendered
+    assert 'add disqualifier "stop_distance_unusually_wide"' in rendered
+
+    # Monitorable token mandate.
+    assert (
+        "Each entry in disqualifiers must be either a deterministic lockout token"
+    ) in rendered
+    assert "monitorable token tied to a specific contract_analysis field" in rendered
+    assert "A monitorable token names what to watch and the breach condition" in rendered
+
+    # Acceptable example shapes (chosen to mirror the prompt's voice).
+    for example in (
+        "stop_distance_unusually_wide",
+        "quote_stale",
+        "event_lockout_active",
+        "post_eia_settling",
+        "breadth_below_55",
+        "dxy_change_above_plus_30bp",
+        "es_close_below_invalidation_anchor",
+        "relative_strength_vs_es_below_1_0",
+        "megacap_earnings_risk_active",
+    ):
+        assert example in rendered, f"Expected acceptable example {example!r} in Stage C prompt"
+
+    # Narrative-token rejection by example.
+    for malformed in (
+        '"market_conditions_change"',
+        '"thesis_invalidated"',
+        '"structure_failed"',
+        '"weak_context"',
+        '"bad_trade_location"',
+        '"poor_setup"',
+        '"risky_trade"',
+        '"context_shifted"',
+        '"confidence_low"',
+    ):
+        assert malformed in rendered, f"Expected malformed example {malformed!r} called out in Stage C prompt"
+
+    assert "are malformed disqualifiers and must not be emitted" in rendered
+
+    # Boundary against alternate-trade suggestions (preserve manual-only / single-decision authority).
+    assert "disqualifiers must not be used to suggest alternate trades" in rendered
+    assert "They are conditions that would invalidate this proposed_setup" in rendered
+
+    # Distinctness rule.
+    assert "disqualifiers entries must be distinct in meaning" in rendered
+
+
+def test_narrative_hardening_does_not_weaken_existing_no_trade_or_no_reread_invariants() -> None:
+    """Final invariant guard: every existing fail-closed and boundary rule still renders.
+
+    If a future edit to prompt_assets.py accidentally removes one of these phrases
+    while tightening narrative quality, this test fails before the regression
+    reaches the engine.
+    """
+
+    stage_ab = {prompt_id: render_prompt(prompt_id, _stage_ab_inputs()) for prompt_id in range(2, 8)}
+    stage_c = render_prompt(8, _stage_c_inputs())
+
+    for rendered in stage_ab.values():
+        # Stage B fail-closed and boundary rules.
+        assert "outcome must be Stage B outcome only: ANALYSIS_COMPLETE or NO_TRADE." in rendered
+        assert "Do not leak Stage A fields into Stage B output." in rendered
+        assert "Every claim in structural_notes must reference at least one specific field" in rendered
+
+    # Stage C hard NO_TRADE rules still present.
+    for hard_rule in (
+        'return NO_TRADE with reason "market_read_returned_no_trade"',
+        'return NO_TRADE with reason "confidence_band_low"',
+        'return NO_TRADE with reason "medium_confidence_insufficient_evidence"',
+        'return NO_TRADE with reason "directional_bias_unclear"',
+        'return NO_TRADE with reason "neutral_in_range_no_edge"',
+        'return NO_TRADE with reason "stale_market_read"',
+    ):
+        assert hard_rule in stage_c
+
+    # Stage C no-reread boundary preserved.
+    assert "rationale must reference only contract_analysis fields and values." in stage_c
+    assert "Do not re-read the market." in stage_c
+    assert "Do not add new price-action observations." in stage_c

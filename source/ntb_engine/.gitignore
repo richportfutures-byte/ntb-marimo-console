@@ -3,6 +3,8 @@ __pycache__/
 .pytest_cache/
 *.py[cod]
 
+uv.lock
+
 *.egg-info/
 src/ninjatradebuilder.egg-info/
 
