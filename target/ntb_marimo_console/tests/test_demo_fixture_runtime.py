@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from ntb_marimo_console.adapters.schwab_futures_market_data import (
     SchwabFuturesMarketDataResult,
@@ -25,6 +27,7 @@ from ntb_marimo_console.runtime_profiles import get_runtime_profile
 
 
 TEST_MARKET_DATA_MAX_AGE_SECONDS = "3600"
+DETERMINISTIC_FIXTURE_NOW = datetime(2026, 4, 30, 12, 0, 0, tzinfo=timezone.utc)
 
 
 class FakeSchwabAdapter:
@@ -38,6 +41,14 @@ class FakeSchwabAdapter:
 
 
 class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._clock_patcher = patch(
+            "ntb_marimo_console.market_data.futures_quote_service._utc_now",
+            new=lambda: DETERMINISTIC_FIXTURE_NOW,
+        )
+        self._clock_patcher.start()
+        self.addCleanup(self._clock_patcher.stop)
+
     def test_boots_fixture_backed_es_shell(self) -> None:
         shell = build_es_app_shell_for_mode(mode="fixture_demo")
 
@@ -94,7 +105,6 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
         self.assertEqual(shell["runtime"]["profile_id"], "fixture_es_demo")
 
     def test_fixture_market_data_display_does_not_change_workflow_or_runtime(self) -> None:
-        profile = get_runtime_profile("fixture_es_demo")
         market_data_config = resolve_futures_quote_service_config(
             {
                 "NTB_MARKET_DATA_PROVIDER": "fixture",
