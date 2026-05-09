@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import base64
 import getpass
+import gzip
+import hashlib
 import json
 import os
 import stat
@@ -13,6 +15,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -21,6 +24,7 @@ import re
 
 DEFAULT_AUTH_URL = "https://api.schwabapi.com/v1/oauth/authorize"
 DEFAULT_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
+AUTHORIZATION_CODE_MIN_LENGTH = 7
 
 
 class OAuthPrepError(RuntimeError):
@@ -34,6 +38,7 @@ class TokenEndpointError(OAuthPrepError):
         http_status: int | None,
         body: bytes | str = b"",
         content_type: str = "",
+        content_encoding: str = "",
         exception_class: str | None = None,
         reason_class: str | None = None,
         reason: object | None = None,
@@ -42,6 +47,7 @@ class TokenEndpointError(OAuthPrepError):
         self.http_status = http_status
         self.body = body
         self.content_type = content_type
+        self.content_encoding = content_encoding
         self.exception_class = exception_class
         self.reason_class = reason_class
         self.reason = reason
@@ -69,7 +75,10 @@ class TokenErrorSummary:
     token_error_description_present: str
     token_error_description_class: str
     response_content_type: str
+    response_content_encoding: str
     response_decode_status: str
+    retryable: str
+    blocking_reason: str
 
 
 def _target_root() -> Path:
@@ -151,19 +160,33 @@ def build_authorization_url(config: OAuthConfig) -> str:
     return f"{config.auth_url}?{query}"
 
 
+def _callback_url_fingerprint(callback_url: str) -> str:
+    return hashlib.sha256(callback_url.encode("utf-8")).hexdigest()
+
+
+def _validate_authorization_code_shape(code: str) -> str:
+    if len(code) < AUTHORIZATION_CODE_MIN_LENGTH:
+        raise OAuthPrepError("Authorization code input was too short.")
+    if not (code.startswith("C0.") or code.startswith("CO.")):
+        raise OAuthPrepError("Authorization code input had an unsupported shape.")
+    if any(ch.isspace() for ch in code) or any(marker in code for marker in ("&", "?", "code=", "://")):
+        raise OAuthPrepError("Authorization code input was malformed.")
+    return code
+
+
 def extract_authorization_code(raw_value: str) -> str:
     value = raw_value.strip()
     if not value:
         raise OAuthPrepError("Authorization code input was empty.")
     if "://" not in value and "code=" not in value:
-        return urllib.parse.unquote(value)
+        return _validate_authorization_code_shape(urllib.parse.unquote(value))
 
     parsed = urllib.parse.urlparse(value)
     params = urllib.parse.parse_qs(parsed.query, keep_blank_values=False)
     code_values = params.get("code")
     if not code_values or not code_values[0].strip():
         raise OAuthPrepError("Pasted callback URL did not contain a code query parameter.")
-    return code_values[0].strip()
+    return _validate_authorization_code_shape(code_values[0].strip())
 
 
 def describe_authorization_code(code: str) -> str:
@@ -221,6 +244,17 @@ def _safe_content_type(value: str) -> str:
     return content_type
 
 
+def _safe_content_encoding(value: str) -> str:
+    content_encoding = value.split(",", maxsplit=1)[0].strip().lower()
+    if not content_encoding:
+        return "identity"
+    if content_encoding in {"identity", "gzip", "deflate"}:
+        return content_encoding
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,40}", content_encoding):
+        return "unsafe"
+    return "unsupported"
+
+
 def _safe_token_error_code(value: object) -> str:
     if not isinstance(value, str) or not value.strip():
         return "unavailable"
@@ -230,11 +264,21 @@ def _safe_token_error_code(value: object) -> str:
     return token_error_code
 
 
-def _decode_response_body(body: bytes | str) -> tuple[str, str]:
+def _decode_response_body(body: bytes | str, *, content_encoding: str = "") -> tuple[str, str]:
     if isinstance(body, str):
         return body, "ok"
     if not body:
         return "", "ok"
+    safe_encoding = _safe_content_encoding(content_encoding)
+    try:
+        if safe_encoding == "gzip":
+            body = gzip.decompress(body)
+        elif safe_encoding == "deflate":
+            body = zlib.decompress(body)
+        elif safe_encoding in {"unsafe", "unsupported"}:
+            return "", "failed"
+    except (OSError, zlib.error):
+        return "", "failed"
     try:
         return body.decode("utf-8"), "ok"
     except UnicodeDecodeError:
@@ -248,20 +292,53 @@ def _classify_token_error_description(error_code: str, description: object) -> s
     text = description.lower()
     if "redirect_uri" in text or "redirect uri" in text or "callback" in text:
         return "redirect_uri_or_callback"
+    if "request" in text or "grant_type" in text or error_code in {"invalid_request", "unsupported_grant_type"}:
+        return "malformed_request"
     if "authorization code" in text or "code" in text or "grant" in text or error_code == "invalid_grant":
         return "authorization_code_or_grant"
     if "client" in text or "secret" in text or "basic" in text or error_code == "invalid_client":
         return "client_auth"
-    if "request" in text or "grant_type" in text or error_code in {"invalid_request", "unsupported_grant_type"}:
-        return "malformed_request"
     if "token" in text:
         return "token_value"
     return "present"
 
 
+def _token_error_retryable(http_status: int | None, error_code: str) -> str:
+    if http_status is not None and http_status >= 500:
+        return "yes"
+    if error_code in {"temporarily_unavailable", "server_error"}:
+        return "yes"
+    return "no"
+
+
+def _token_error_blocking_reason(
+    *,
+    http_status: int | None,
+    error_code: str,
+    description_class: str,
+    decode_status: str,
+) -> str:
+    if decode_status == "failed":
+        return "token_endpoint_response_unreadable"
+    if error_code == "invalid_grant":
+        return "authorization_code_or_grant_rejected"
+    if error_code == "invalid_client":
+        return "client_auth_rejected"
+    if error_code in {"invalid_request", "unsupported_grant_type"}:
+        return "malformed_token_request"
+    if description_class == "redirect_uri_or_callback":
+        return "redirect_uri_mismatch_possible"
+    if http_status is not None and http_status >= 500:
+        return "token_endpoint_retryable"
+    if error_code == "unavailable":
+        return "token_endpoint_response_unclassified"
+    return "token_endpoint_rejected"
+
+
 def summarize_token_endpoint_error(error: TokenEndpointError) -> TokenErrorSummary:
-    body_text, decode_status = _decode_response_body(error.body)
+    body_text, decode_status = _decode_response_body(error.body, content_encoding=error.content_encoding)
     response_content_type = _safe_content_type(error.content_type)
+    response_content_encoding = _safe_content_encoding(error.content_encoding)
     fallback_description_class = "decode_failed" if decode_status == "failed" else "non_json"
     if not body_text.strip():
         fallback_description_class = "decode_failed" if decode_status == "failed" else "empty"
@@ -278,20 +355,37 @@ def summarize_token_endpoint_error(error: TokenEndpointError) -> TokenErrorSumma
             token_error_description_present="no",
             token_error_description_class=fallback_description_class,
             response_content_type=response_content_type,
+            response_content_encoding=response_content_encoding,
             response_decode_status=decode_status,
+            retryable=_token_error_retryable(error.http_status, "unavailable"),
+            blocking_reason=_token_error_blocking_reason(
+                http_status=error.http_status,
+                error_code="unavailable",
+                description_class=fallback_description_class,
+                decode_status=decode_status,
+            ),
         )
 
     raw_error = parsed.get("error")
     error_code = _safe_token_error_code(raw_error)
     raw_description = parsed.get("error_description")
     description_present = isinstance(raw_description, str) and bool(raw_description.strip())
+    description_class = _classify_token_error_description(error_code, raw_description)
     return TokenErrorSummary(
         token_error_present="yes" if raw_error is not None else "no",
         token_error_code=error_code,
         token_error_description_present="yes" if description_present else "no",
-        token_error_description_class=_classify_token_error_description(error_code, raw_description),
+        token_error_description_class=description_class,
         response_content_type=response_content_type,
+        response_content_encoding=response_content_encoding,
         response_decode_status=decode_status,
+        retryable=_token_error_retryable(error.http_status, error_code),
+        blocking_reason=_token_error_blocking_reason(
+            http_status=error.http_status,
+            error_code=error_code,
+            description_class=description_class,
+            decode_status=decode_status,
+        ),
     )
 
 
@@ -307,6 +401,13 @@ def confirm_overwrite(token_path: Path, *, input_func=input) -> None:
     response = input_func("Token file already exists. Type OVERWRITE to replace it: ")
     if response.strip() != "OVERWRITE":
         raise OAuthPrepError("Existing token overwrite was not confirmed.")
+
+
+def validate_initial_token_response(token_response: dict[str, Any]) -> None:
+    if not isinstance(token_response.get("access_token"), str) or not token_response["access_token"].strip():
+        raise OAuthPrepError("Token response missing required token fields.")
+    if not isinstance(token_response.get("refresh_token"), str) or not token_response["refresh_token"].strip():
+        raise OAuthPrepError("Token response missing required token fields.")
 
 
 def exchange_authorization_code(config: OAuthConfig, code: str) -> dict[str, Any]:
@@ -343,6 +444,7 @@ def exchange_authorization_code(config: OAuthConfig, code: str) -> dict[str, Any
             http_status=exc.code,
             body=body,
             content_type=exc.headers.get("Content-Type", "") if exc.headers is not None else "",
+            content_encoding=exc.headers.get("Content-Encoding", "") if exc.headers is not None else "",
             exception_class=exc.__class__.__name__,
         ) from exc
     except urllib.error.URLError as exc:
@@ -360,12 +462,12 @@ def exchange_authorization_code(config: OAuthConfig, code: str) -> dict[str, Any
         raise OAuthPrepError("Token endpoint response was not valid JSON.") from exc
     if not isinstance(token_response, dict):
         raise OAuthPrepError("Token endpoint response JSON was not an object.")
-    if not token_response.get("access_token") or not token_response.get("refresh_token"):
-        raise OAuthPrepError("Token response missing required token fields.")
+    validate_initial_token_response(token_response)
     return token_response
 
 
 def write_token_file(token_path: Path, token_response: dict[str, Any]) -> None:
+    validate_initial_token_response(token_response)
     token_path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=".token.", suffix=".tmp", dir=token_path.parent)
     temp_path = Path(temp_name)
@@ -432,6 +534,7 @@ def print_safe_summary(
     print("oauth_credentials_present=yes")
     print("callback_url_present=yes")
     print("callback_url_printed=no")
+    print(f"callback_url_fingerprint_sha256={_callback_url_fingerprint(config.callback_url)}")
     print("token_url_present=yes")
     print("token_url_printed=no")
     print(f"token_path={config.token_path_display}")
@@ -514,7 +617,10 @@ def run(
             print(f"token_error_description_present={summary.token_error_description_present}")
             print(f"token_error_description_class={summary.token_error_description_class}")
             print(f"response_content_type={summary.response_content_type}")
+            print(f"response_content_encoding={summary.response_content_encoding}")
             print(f"response_decode_status={summary.response_decode_status}")
+            print(f"retryable={summary.retryable}")
+            print(f"blocking_reason={summary.blocking_reason}")
             print("values_printed=no")
             if exc.reason_class:
                 print(f"reason_class={exc.reason_class}")

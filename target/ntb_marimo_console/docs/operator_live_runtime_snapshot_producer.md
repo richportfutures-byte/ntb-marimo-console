@@ -86,7 +86,7 @@ R29 is ready for explicit manual live rehearsal **provided** the operator suppli
 
 ### Safe OAuth recovery
 
-If the user-preference probe reports that the local token file has an access token but no refresh token, perform a fresh OAuth authorization-code flow locally before retrying the live probes. The OAuth prep script prints status fields only. It must not print the raw authorization URL, callback URL, authorization code, app credentials, token JSON, access token, or refresh token.
+If the user-preference probe reports that the local token file has an access token but no refresh token, treat the artifact as non-refresh-capable and blocked. Do not proceed to userPreference, streamer credentials, or operator runtime rehearsal from a token artifact unless the sanitized token contract reports `access_token_present=yes`, `refresh_token_present=yes`, and `token_contract_valid=yes`. Perform a fresh OAuth authorization-code flow locally before retrying the live probes. The OAuth prep script prints status fields only. It must not print the raw authorization URL, callback URL, authorization code, app credentials, token JSON, access token, refresh token, request payload, auth header, raw token response body, customer ID, correl ID, streamer URL, or account ID.
 
 Run from `target/ntb_marimo_console/`:
 
@@ -99,9 +99,11 @@ python3 scripts/prepare_schwab_oauth_token.py --write-authorization-url
 
 The command writes the raw authorization URL to `target/ntb_marimo_console/.state/schwab/oauth_authorization_url.txt` with owner-only permissions and prints only the relative path plus sanitized status fields. Open that local file outside chat, complete the browser authorization, then paste the redirected callback URL or raw authorization code only into the local terminal prompt. Do not paste the authorization URL, callback URL, authorization code, token JSON, or token values into chat, docs, logs, commits, or proof artifacts.
 
-If token exchange fails after pasting a code, do not retry the same code. Schwab authorization codes are single-use and time-sensitive. Inspect only the sanitized `token_error_code`, `token_error_description_class`, `response_content_type`, and `response_decode_status` fields printed by the prep script. Use those fields to distinguish likely `invalid_grant` code reuse/expiry, redirect URI/callback mismatch, `invalid_client` app credential problems, malformed request shape, or unreadable/compressed response handling. Verify callback URL exactness locally in the shell or browser configuration without printing or pasting the callback URL. Rerun a fresh OAuth browser flow only after the diagnostics are readable and sanitized.
+Paste the full redirected callback URL into the local terminal prompt when possible. The parser accepts a full callback URL or a raw synthetic-shaped code, preserves Schwab `%40` endings, and decodes once to `@`. Do not double-decode a code. The `redirect_uri` used by the token exchange must match the Schwab registered callback exactly; compare it locally, or compare the printed SHA-256 fingerprint against a locally computed expected fingerprint, without printing the URI.
 
-After the token file is written, rerun `scripts/probe_schwab_user_preference.py` under the existing explicit live gate. Rerun `scripts/run_operator_live_runtime_rehearsal.py --live` only after streamer credentials are obtained. A user-preference failure remains blocking; the operator runtime must not fall back to fixtures after a live failure.
+If token exchange fails after pasting a code, do not retry the same code. Schwab authorization codes are single-use and time-sensitive; use one fresh authorization code per attempt. Inspect only the sanitized `token_error_code`, `token_error_description_class`, `response_content_type`, `response_content_encoding`, `response_decode_status`, `retryable`, and `blocking_reason` fields printed by the prep script. Use those fields to distinguish likely `invalid_grant` code reuse/expiry, redirect URI/callback mismatch, `invalid_client` app credential problems, malformed request shape, or unreadable/compressed response handling. Verify callback URL exactness locally in the shell or browser configuration without printing or pasting the callback URL. Rerun a fresh OAuth browser flow only after the diagnostics are readable and sanitized.
+
+`TOKEN_WRITE_PASS` requires both `access_token` and `refresh_token` in the token response, and token writes remain owner-only under `target/ntb_marimo_console/.state/`. After `TOKEN_WRITE_PASS`, rerun `scripts/probe_schwab_user_preference.py` under the existing explicit live gate. Rerun `scripts/run_operator_live_runtime_rehearsal.py --live` only after streamerInfo / streamer credentials are obtained. A user-preference failure remains blocking; the operator runtime must not fall back to fixtures after a live failure.
 
 ### Manual rehearsal command
 
@@ -135,6 +137,10 @@ operator_live_runtime_env=yes|no
 env_keys_present=yes|no
 token_path_under_target_state=yes|no
 token_file_present=yes|no
+token_file_parseable=yes|no
+token_contract_valid=yes|no
+access_token_present=yes|no
+refresh_token_present=yes|no
 token_fresh=yes|no|unknown
 streamer_credentials_obtained=yes|no
 runtime_start_attempted=yes|no

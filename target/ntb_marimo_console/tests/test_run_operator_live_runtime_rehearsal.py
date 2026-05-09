@@ -6,6 +6,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 import unittest
 from collections import deque
 from contextlib import redirect_stderr, redirect_stdout
@@ -330,8 +331,19 @@ def _ensure_token_file(target_root: Path) -> Path:
     token_path = target_root / ".state" / "schwab" / "token.json"
     token_path.parent.mkdir(parents=True, exist_ok=True)
     if not token_path.exists():
-        token_path.write_text(json.dumps({"access_token": PLACEHOLDER_TOKEN}), encoding="utf-8")
+        token_path.write_text(
+            json.dumps({"access_token": PLACEHOLDER_TOKEN, "refresh_token": "placeholder-refresh-token"}),
+            encoding="utf-8",
+        )
     return token_path
+
+
+def _make_isolated_target_root(test_case: unittest.TestCase) -> Path:
+    tmpdir = tempfile.TemporaryDirectory()
+    test_case.addCleanup(tmpdir.cleanup)
+    target_root = Path(tmpdir.name) / "target" / "ntb_marimo_console"
+    (target_root / "src" / "ntb_marimo_console").mkdir(parents=True)
+    return target_root
 
 
 # ---------------------------------------------------------------------------
@@ -343,7 +355,7 @@ class RehearsalCliBlockingTests(unittest.TestCase):
     def setUp(self) -> None:
         clear_operator_live_runtime_registration()
         self.addCleanup(clear_operator_live_runtime_registration)
-        self.target_root = Path(__file__).resolve().parents[1]
+        self.target_root = _make_isolated_target_root(self)
 
     def test_import_does_not_perform_network_credential_or_token_work(self) -> None:
         self.assertTrue(hasattr(rehearsal, "run"))
@@ -448,7 +460,7 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
     def setUp(self) -> None:
         clear_operator_live_runtime_registration()
         self.addCleanup(clear_operator_live_runtime_registration)
-        self.target_root = Path(__file__).resolve().parents[1]
+        self.target_root = _make_isolated_target_root(self)
         _ensure_token_file(self.target_root)
 
     def test_full_path_invokes_factory_login_subscribe_dispatch_close_each_once_with_one_session(self) -> None:
@@ -634,7 +646,7 @@ class RehearsalFailureTests(unittest.TestCase):
     def setUp(self) -> None:
         clear_operator_live_runtime_registration()
         self.addCleanup(clear_operator_live_runtime_registration)
-        self.target_root = Path(__file__).resolve().parents[1]
+        self.target_root = _make_isolated_target_root(self)
         _ensure_token_file(self.target_root)
 
     def test_login_failure_yields_blocked_report_without_fixture_fallback(self) -> None:
@@ -722,7 +734,10 @@ class RehearsalFailureTests(unittest.TestCase):
     def test_token_freshness_unknown_when_token_payload_lacks_expiry(self) -> None:
         token_path = self.target_root / ".state" / "schwab" / "token.json"
         token_path.parent.mkdir(parents=True, exist_ok=True)
-        token_path.write_text(json.dumps({"access_token": PLACEHOLDER_TOKEN}), encoding="utf-8")
+        token_path.write_text(
+            json.dumps({"access_token": PLACEHOLDER_TOKEN, "refresh_token": "placeholder-refresh-token"}),
+            encoding="utf-8",
+        )
 
         websocket_factory = FakeWebsocketFactory()
         websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
@@ -741,9 +756,39 @@ class RehearsalFailureTests(unittest.TestCase):
             target_root=self.target_root,
             deps=deps,
         )
-        # Without expiry fields the freshness should report "yes" or "unknown"
-        # (token_is_expired_or_near_expiry returns False when fields missing).
-        self.assertIn(report.token_fresh, ("yes", "unknown", "no"))
+        self.assertEqual(report.token_fresh, "unknown")
+        self.assertTrue(report.token_contract_valid)
+        self.assertTrue(report.refresh_token_present)
+
+    def test_missing_refresh_token_blocks_before_streamer_credentials(self) -> None:
+        token_path = self.target_root / ".state" / "schwab" / "token.json"
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text(json.dumps({"access_token": PLACEHOLDER_TOKEN}), encoding="utf-8")
+        credentials_provider = FakeCredentialsProvider()
+        deps = rehearsal.RehearsalDependencies(
+            token_provider=FakeTokenProvider(),
+            credentials_provider=credentials_provider,
+            websocket_factory=FakeWebsocketFactory(),
+            manager_builder=lambda cfg, c: FakeStartingManager(cfg, c),
+            clock=_make_clock(),
+        )
+
+        report = rehearsal.run_with_dependencies(
+            args=_make_args(live=True, duration=1),
+            env=_full_env(self.target_root),
+            target_root=self.target_root,
+            deps=deps,
+        )
+
+        self.assertEqual(report.mode, "blocked")
+        self.assertFalse(report.token_contract_valid)
+        self.assertTrue(report.access_token_present)
+        self.assertFalse(report.refresh_token_present)
+        self.assertEqual(report.token_fresh, "unknown")
+        self.assertEqual(report.blocking_reason, "refresh_token_missing")
+        self.assertFalse(report.streamer_credentials_obtained)
+        self.assertFalse(report.runtime_start_attempted)
+        self.assertEqual(credentials_provider.call_count, 0)
 
     def test_websocket_connect_failure_yields_blocked_report(self) -> None:
         websocket_factory = FakeWebsocketFactory(
@@ -770,7 +815,7 @@ class RehearsalUniverseTests(unittest.TestCase):
     def setUp(self) -> None:
         clear_operator_live_runtime_registration()
         self.addCleanup(clear_operator_live_runtime_registration)
-        self.target_root = Path(__file__).resolve().parents[1]
+        self.target_root = _make_isolated_target_root(self)
         _ensure_token_file(self.target_root)
 
     def test_zn_or_gc_in_overrides_is_rejected_at_argparse(self) -> None:
@@ -873,7 +918,7 @@ class RehearsalCliExitCodeTests(unittest.TestCase):
     def setUp(self) -> None:
         clear_operator_live_runtime_registration()
         self.addCleanup(clear_operator_live_runtime_registration)
-        self.target_root = Path(__file__).resolve().parents[1]
+        self.target_root = _make_isolated_target_root(self)
         _ensure_token_file(self.target_root)
 
     def test_cli_run_without_live_returns_2(self) -> None:

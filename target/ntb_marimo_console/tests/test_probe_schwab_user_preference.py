@@ -54,6 +54,12 @@ def test_dry_run_succeeds_without_network(capsys: pytest.CaptureFixture[str], to
     assert called is False
     assert "USER_PREF_DRY_RUN_PASS" in output
     assert "network_activity=SKIPPED_USER_PREF_DRY_RUN" in output
+    assert "token_file_present=yes" in output
+    assert "token_file_parseable=yes" in output
+    assert "token_contract_valid=yes" in output
+    assert "access_token_present=yes" in output
+    assert "refresh_token_present=yes" in output
+    assert "values_printed=no" in output
     assert "secret-access-token-value" not in output
 
 
@@ -68,6 +74,34 @@ def test_missing_access_token_fails(token_path: Path) -> None:
 
     with pytest.raises(probe.UserPreferenceProbeError, match="access_token"):
         probe.load_access_token(token_path)
+
+
+def test_missing_refresh_token_blocks_before_user_preference_fetch(
+    capsys: pytest.CaptureFixture[str],
+    token_path: Path,
+) -> None:
+    token_path.parent.mkdir(parents=True)
+    token_path.write_text(json.dumps({"access_token": "secret-access-token-value"}), encoding="utf-8")
+    called = False
+
+    def fetch_func(config: object, access_token: str) -> dict[str, object]:
+        nonlocal called
+        called = True
+        return {}
+
+    exit_code = probe.run([], env=env_for(token_path, live="true"), fetch_func=fetch_func)
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert called is False
+    assert "USER_PREF_FAIL" in output
+    assert "token_file_present=yes" in output
+    assert "token_file_parseable=yes" in output
+    assert "token_contract_valid=no" in output
+    assert "access_token_present=yes" in output
+    assert "refresh_token_present=no" in output
+    assert "blocking_reason=refresh_token_missing" in output
+    assert "secret-access-token-value" not in output
 
 
 def test_live_request_is_gated_by_exact_true(capsys: pytest.CaptureFixture[str], token_path: Path) -> None:

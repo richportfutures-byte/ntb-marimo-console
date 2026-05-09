@@ -88,6 +88,65 @@ def test_malformed_token_file_fails_closed(token_path: Path) -> None:
         tokens.load_token_json(token_path, target_root=target_root_for(token_path))
 
 
+def test_validate_token_contract_reports_missing_refresh_without_values(token_path: Path) -> None:
+    write_token(token_path, {"access_token": "secret-access-token-value"})
+
+    report = tokens.validate_token_contract(token_path, target_root=target_root_for(token_path))
+
+    assert report.status_fields() == {
+        "token_file_present": "yes",
+        "token_file_parseable": "yes",
+        "token_contract_valid": "no",
+        "access_token_present": "yes",
+        "refresh_token_present": "no",
+        "token_fresh": "unknown",
+        "blocking_reason": "refresh_token_missing",
+    }
+    assert "secret-access-token-value" not in str(report.status_fields())
+
+
+def test_validate_token_contract_reports_malformed_file_without_contents(token_path: Path) -> None:
+    token_path.parent.mkdir(parents=True)
+    token_path.write_text("{not-json", encoding="utf-8")
+
+    report = tokens.validate_token_contract(token_path, target_root=target_root_for(token_path))
+
+    assert report.token_file_present is True
+    assert report.token_file_parseable is False
+    assert report.token_contract_valid is False
+    assert report.blocking_reason == "token_file_unparseable"
+    assert "{not-json" not in str(report.status_fields())
+
+
+def test_validate_token_contract_reports_refresh_capable_unknown_freshness(token_path: Path) -> None:
+    write_token(token_path, {"access_token": "access", "refresh_token": "refresh"})
+
+    report = tokens.validate_token_contract(token_path, target_root=target_root_for(token_path))
+
+    assert report.token_contract_valid is True
+    assert report.access_token_present is True
+    assert report.refresh_token_present is True
+    assert report.token_fresh == "unknown"
+    assert report.blocking_reason == "none"
+
+
+def test_validate_token_contract_reports_expired_refresh_capable_token(token_path: Path) -> None:
+    write_token(
+        token_path,
+        {
+            "access_token": "access",
+            "refresh_token": "refresh",
+            "_ntb_expires_at_epoch": 1000,
+        },
+    )
+
+    report = tokens.validate_token_contract(token_path, target_root=target_root_for(token_path), now_epoch=2000)
+
+    assert report.token_contract_valid is True
+    assert report.token_fresh == "no"
+    assert report.blocking_reason == "none"
+
+
 def test_successful_refresh_atomically_updates_token_file(token_path: Path) -> None:
     write_token(token_path, {"access_token": "old-access", "refresh_token": "old-refresh"})
 
@@ -119,6 +178,59 @@ def test_successful_refresh_atomically_updates_token_file(token_path: Path) -> N
         assert stat.S_IMODE(token_path.stat().st_mode) & 0o077 == 0
 
 
+def test_refresh_response_with_new_refresh_token_rotates_persisted_refresh_token(token_path: Path) -> None:
+    write_token(token_path, {"access_token": "old-access", "refresh_token": "old-refresh"})
+
+    class Response:
+        def __enter__(self) -> "Response":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"access_token":"new-access","refresh_token":"new-refresh","expires_in":1800}'
+
+    refreshed = tokens.refresh_token_file(
+        token_path,
+        target_root=target_root_for(token_path),
+        app_key="key",
+        app_secret="secret",
+        urlopen_func=lambda request, timeout: Response(),
+    )
+
+    on_disk = json.loads(token_path.read_text(encoding="utf-8"))
+    assert refreshed["refresh_token"] == "new-refresh"
+    assert on_disk["refresh_token"] == "new-refresh"
+
+
+def test_refresh_response_with_blank_refresh_token_preserves_existing_refresh_token(token_path: Path) -> None:
+    write_token(token_path, {"access_token": "old-access", "refresh_token": "old-refresh"})
+
+    class Response:
+        def __enter__(self) -> "Response":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"access_token":"new-access","refresh_token":"   ","expires_in":1800}'
+
+    refreshed = tokens.refresh_token_file(
+        token_path,
+        target_root=target_root_for(token_path),
+        app_key="key",
+        app_secret="secret",
+        urlopen_func=lambda request, timeout: Response(),
+    )
+
+    on_disk = json.loads(token_path.read_text(encoding="utf-8"))
+    assert refreshed["access_token"] == "new-access"
+    assert refreshed["refresh_token"] == "old-refresh"
+    assert on_disk["refresh_token"] == "old-refresh"
+
+
 def test_failed_refresh_does_not_corrupt_token_file(token_path: Path) -> None:
     original = {"access_token": "old-access", "refresh_token": "old-refresh"}
     write_token(token_path, original)
@@ -133,6 +245,32 @@ def test_failed_refresh_does_not_corrupt_token_file(token_path: Path) -> None:
             app_key="key",
             app_secret="secret",
             urlopen_func=failing_urlopen,
+        )
+
+    assert json.loads(token_path.read_text(encoding="utf-8")) == original
+
+
+def test_refresh_response_without_access_token_does_not_create_partial_artifact(token_path: Path) -> None:
+    original = {"access_token": "old-access", "refresh_token": "old-refresh"}
+    write_token(token_path, original)
+
+    class Response:
+        def __enter__(self) -> "Response":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"refresh_token":"new-refresh"}'
+
+    with pytest.raises(tokens.SchwabTokenError, match="access_token"):
+        tokens.refresh_token_file(
+            token_path,
+            target_root=target_root_for(token_path),
+            app_key="key",
+            app_secret="secret",
+            urlopen_func=lambda request, timeout: Response(),
         )
 
     assert json.loads(token_path.read_text(encoding="utf-8")) == original

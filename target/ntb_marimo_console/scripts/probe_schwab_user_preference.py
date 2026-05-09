@@ -380,14 +380,16 @@ def print_missing_streamer_shape(payload: object) -> None:
     print(f"nested_key_paths={','.join(nested_paths) if nested_paths else '(none)'}")
 
 
-def print_summary(config: UserPreferenceConfig) -> None:
+def print_summary(config: UserPreferenceConfig, token_contract: schwab_token_utils.TokenContractReport) -> None:
     print("SCHWAB_USER_PREFERENCE_PROBE")
     print(f"repo_root={config.repo_root}")
     print(f"target_root={_repo_relative(config.target_root, repo_root=config.repo_root)}")
     print(f"user_pref_live={config.live}")
     print(f"token_path={config.token_path_display}")
     print("token_path_safety=UNDER_TARGET_STATE")
-    print("access_token=present")
+    for key, value in token_contract.status_fields().items():
+        print(f"{key}={value}")
+    print("values_printed=no")
 
 
 def print_streamer_info(summary: StreamerInfoSummary) -> None:
@@ -423,8 +425,13 @@ def run(
 
     try:
         config = load_config(env)
-        access_token = load_access_token(config.token_path)
-        print_summary(config)
+        token_contract = schwab_token_utils.validate_token_contract(config.token_path, target_root=config.target_root)
+        print_summary(config, token_contract)
+        if not token_contract.token_contract_valid:
+            raise UserPreferenceProbeError(
+                f"Token contract invalid. blocking_reason={token_contract.blocking_reason}. "
+                "Fresh OAuth is required if refresh cannot complete."
+            )
         if not config.live:
             print("network_activity=SKIPPED_USER_PREF_DRY_RUN")
             print("USER_PREF_DRY_RUN_PASS")

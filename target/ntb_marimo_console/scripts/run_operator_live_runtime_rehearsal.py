@@ -146,6 +146,10 @@ class RehearsalReport:
     env_keys_present: bool = False
     token_path_under_target_state: bool = False
     token_file_present: bool = False
+    token_file_parseable: bool = False
+    token_contract_valid: bool = False
+    access_token_present: bool = False
+    refresh_token_present: bool = False
     token_fresh: str = "unknown"  # "yes" | "no" | "unknown"
     streamer_credentials_obtained: bool = False
     runtime_start_attempted: bool = False
@@ -170,6 +174,10 @@ class RehearsalReport:
             "env_keys_present": _yes_no(self.env_keys_present),
             "token_path_under_target_state": _yes_no(self.token_path_under_target_state),
             "token_file_present": _yes_no(self.token_file_present),
+            "token_file_parseable": _yes_no(self.token_file_parseable),
+            "token_contract_valid": _yes_no(self.token_contract_valid),
+            "access_token_present": _yes_no(self.access_token_present),
+            "refresh_token_present": _yes_no(self.refresh_token_present),
             "token_fresh": self.token_fresh,
             "streamer_credentials_obtained": _yes_no(self.streamer_credentials_obtained),
             "runtime_start_attempted": _yes_no(self.runtime_start_attempted),
@@ -230,6 +238,10 @@ def render_text(report: RehearsalReport) -> str:
         "env_keys_present",
         "token_path_under_target_state",
         "token_file_present",
+        "token_file_parseable",
+        "token_contract_valid",
+        "access_token_present",
+        "refresh_token_present",
         "token_fresh",
         "streamer_credentials_obtained",
         "runtime_start_attempted",
@@ -543,16 +555,16 @@ def _validate_token_path_under_target_state(env: Mapping[str, str], target_root:
             return False, candidate
 
 
-def _check_token_freshness(token_path: Path, target_root: Path) -> str:
-    try:
-        token_data = schwab_token_utils.load_token_json(token_path, target_root=target_root)
-    except Exception:
-        return "unknown"
-    try:
-        is_stale = schwab_token_utils.token_is_expired_or_near_expiry(token_data)
-    except Exception:
-        return "unknown"
-    return "no" if is_stale else "yes"
+def _apply_token_contract_report(
+    report: RehearsalReport,
+    token_contract: schwab_token_utils.TokenContractReport,
+) -> None:
+    report.token_file_present = token_contract.token_file_present
+    report.token_file_parseable = token_contract.token_file_parseable
+    report.token_contract_valid = token_contract.token_contract_valid
+    report.access_token_present = token_contract.access_token_present
+    report.refresh_token_present = token_contract.refresh_token_present
+    report.token_fresh = token_contract.token_fresh
 
 
 # ---------------------------------------------------------------------------
@@ -671,7 +683,8 @@ def run_with_dependencies(
         return report
     report.checks.append(RehearsalCheck("token_path_under_target_state", "ok"))
 
-    report.token_file_present = token_path.exists()
+    token_contract = schwab_token_utils.validate_token_contract(token_path, target_root=target_root)
+    _apply_token_contract_report(report, token_contract)
     if not report.token_file_present:
         report.mode = "blocked"
         report.status = "blocked"
@@ -679,8 +692,24 @@ def run_with_dependencies(
         report.checks.append(RehearsalCheck("token_file_present", "blocked"))
         return report
     report.checks.append(RehearsalCheck("token_file_present", "ok"))
+    report.checks.append(
+        RehearsalCheck("token_file_parseable", "ok" if report.token_file_parseable else "blocked")
+    )
+    report.checks.append(
+        RehearsalCheck("access_token_present", "ok" if report.access_token_present else "blocked")
+    )
+    report.checks.append(
+        RehearsalCheck("refresh_token_present", "ok" if report.refresh_token_present else "blocked")
+    )
+    report.checks.append(
+        RehearsalCheck("token_contract_valid", "ok" if report.token_contract_valid else "blocked")
+    )
+    if not report.token_contract_valid:
+        report.mode = "blocked"
+        report.status = "blocked"
+        report.blocking_reason = token_contract.blocking_reason
+        return report
 
-    report.token_fresh = _check_token_freshness(token_path, target_root)
     report.checks.append(RehearsalCheck("token_fresh", "ok" if report.token_fresh == "yes" else "info", report.token_fresh))
 
     app_key = env.get("SCHWAB_APP_KEY", "").strip()

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import gzip
 import importlib.util
 import stat
 import sys
 import urllib.error
 import urllib.parse
+import zlib
 from email.message import Message
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -78,6 +80,7 @@ def test_dry_run_succeeds_with_dummy_values(capsys: pytest.CaptureFixture[str]) 
     assert "authorization_url_written=no" in output
     assert "callback_url_present=yes" in output
     assert "callback_url_printed=no" in output
+    assert "callback_url_fingerprint_sha256=" in output
     assert "token_url_present=yes" in output
     assert "token_url_printed=no" in output
     assert "values_printed=no" in output
@@ -85,6 +88,10 @@ def test_dry_run_succeeds_with_dummy_values(capsys: pytest.CaptureFixture[str]) 
     assert_no_sensitive_oauth_output(output)
     assert "SCHWAB_APP_KEY" not in output
     assert "SCHWAB_APP_SECRET" not in output
+
+
+def test_default_token_url_is_schwab_oauth_token_endpoint() -> None:
+    assert oauth.DEFAULT_TOKEN_URL == "https://api.schwabapi.com/v1/oauth/token"
 
 
 def test_write_authorization_url_writes_state_file_without_printing_raw_values(
@@ -190,10 +197,28 @@ def test_open_browser_requires_live_mode(capsys: pytest.CaptureFixture[str]) -> 
         ("CO.raw-code-value", "CO.raw-code-value"),
         ("https://127.0.0.1:8182/?code=CO.abc%40x&state=ignored", "CO.abc@x"),
         ("https://127.0.0.1/?code=C0.xxx%40&session=abc", "C0.xxx@"),
+        ("C0.synthetic-code%40", "C0.synthetic-code@"),
+        ("C0.synthetic-code@", "C0.synthetic-code@"),
+        ("C0.synthetic-code%2540", "C0.synthetic-code%40"),
     ),
 )
 def test_callback_url_code_extraction_works(raw_value: str, expected: str) -> None:
     assert oauth.extract_authorization_code(raw_value) == expected
+
+
+@pytest.mark.parametrize(
+    "raw_value",
+    (
+        "",
+        "not-a-code",
+        "C0.x",
+        "code=C0.synthetic-code%40&state=ignored",
+        "https://127.0.0.1:8182/?state=missing-code",
+    ),
+)
+def test_malformed_authorization_code_input_fails_closed(raw_value: str) -> None:
+    with pytest.raises(oauth.OAuthPrepError):
+        oauth.extract_authorization_code(raw_value)
 
 
 def test_secret_and_tokens_are_not_printed(capsys: pytest.CaptureFixture[str]) -> None:
@@ -299,6 +324,15 @@ def test_run_rejects_token_response_without_refresh_token(
     assert "CO.safe-code" not in output
 
 
+def test_write_token_file_rejects_partial_token_response_without_writing(tmp_path: Path) -> None:
+    token_path = tmp_path / "target" / "ntb_marimo_console" / ".state" / "schwab" / "token.json"
+
+    with pytest.raises(oauth.OAuthPrepError, match="missing required token fields"):
+        oauth.write_token_file(token_path, {"access_token": "access-token-value"})
+
+    assert not token_path.exists()
+
+
 def test_exchange_rejects_token_response_without_required_token_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -366,7 +400,10 @@ def test_token_endpoint_http_400_json_error_is_summarized_without_raw_body(
     assert "token_error_description_present=yes" in output
     assert "token_error_description_class=authorization_code_or_grant" in output
     assert "response_content_type=unknown" in output
+    assert "response_content_encoding=identity" in output
     assert "response_decode_status=ok" in output
+    assert "retryable=no" in output
+    assert "blocking_reason=authorization_code_or_grant_rejected" in output
     assert "error_body=" not in output
     assert "bad code" not in output
     assert "CO.sensitive-auth-code" not in output
@@ -403,7 +440,9 @@ def test_token_endpoint_unreadable_body_is_classified_without_raw_body(
     assert "token_error_description_present=no" in output
     assert "token_error_description_class=decode_failed" in output
     assert "response_content_type=application/json" in output
+    assert "response_content_encoding=identity" in output
     assert "response_decode_status=failed" in output
+    assert "blocking_reason=token_endpoint_response_unreadable" in output
     assert "error_body=" not in output
     assert "\\x1f" not in output
     assert_no_sensitive_oauth_output(output)
@@ -477,7 +516,118 @@ def test_exchange_http_error_body_is_summarized(monkeypatch: pytest.MonkeyPatch)
     assert summary.token_error_description_present == "yes"
     assert summary.token_error_description_class == "redirect_uri_or_callback"
     assert summary.response_content_type == "application/json"
+    assert summary.response_content_encoding == "identity"
     assert summary.response_decode_status == "ok"
+    assert summary.retryable == "no"
+    assert summary.blocking_reason == "client_auth_rejected"
+
+
+def test_token_endpoint_gzip_json_error_is_classified_without_raw_body() -> None:
+    body = gzip.compress(
+        b'{"error":"invalid_grant","error_description":"bad code=C0.synthetic-code access_token=hidden"}'
+    )
+    summary = oauth.summarize_token_endpoint_error(
+        oauth.TokenEndpointError(
+            http_status=400,
+            body=body,
+            content_type="application/json",
+            content_encoding="gzip",
+        )
+    )
+
+    assert summary.token_error_present == "yes"
+    assert summary.token_error_code == "invalid_grant"
+    assert summary.token_error_description_present == "yes"
+    assert summary.token_error_description_class == "authorization_code_or_grant"
+    assert summary.response_content_encoding == "gzip"
+    assert summary.response_decode_status == "ok"
+    assert summary.retryable == "no"
+    assert summary.blocking_reason == "authorization_code_or_grant_rejected"
+
+
+def test_token_endpoint_deflate_json_error_is_classified_without_raw_body() -> None:
+    body = zlib.compress(b'{"error":"invalid_request","error_description":"missing grant_type"}')
+    summary = oauth.summarize_token_endpoint_error(
+        oauth.TokenEndpointError(
+            http_status=400,
+            body=body,
+            content_type="application/json; charset=utf-8",
+            content_encoding="deflate",
+        )
+    )
+
+    assert summary.token_error_code == "invalid_request"
+    assert summary.token_error_description_class == "malformed_request"
+    assert summary.response_content_type == "application/json"
+    assert summary.response_content_encoding == "deflate"
+    assert summary.response_decode_status == "ok"
+    assert summary.blocking_reason == "malformed_token_request"
+
+
+def test_token_endpoint_plain_json_error_is_classified_without_raw_body() -> None:
+    summary = oauth.summarize_token_endpoint_error(
+        oauth.TokenEndpointError(
+            http_status=500,
+            body=b'{"error":"temporarily_unavailable","error_description":"server busy"}',
+            content_type="application/json",
+            content_encoding="identity",
+        )
+    )
+
+    assert summary.token_error_code == "temporarily_unavailable"
+    assert summary.response_content_encoding == "identity"
+    assert summary.response_decode_status == "ok"
+    assert summary.retryable == "yes"
+    assert summary.blocking_reason == "token_endpoint_retryable"
+
+
+def test_token_endpoint_malformed_compressed_body_is_classified_without_raw_body() -> None:
+    summary = oauth.summarize_token_endpoint_error(
+        oauth.TokenEndpointError(
+            http_status=400,
+            body=b"not-gzip",
+            content_type="application/json",
+            content_encoding="gzip",
+        )
+    )
+
+    assert summary.token_error_present == "no"
+    assert summary.token_error_code == "unavailable"
+    assert summary.response_content_encoding == "gzip"
+    assert summary.response_decode_status == "failed"
+    assert summary.blocking_reason == "token_endpoint_response_unreadable"
+
+
+def test_token_endpoint_malformed_json_body_is_classified_without_raw_body() -> None:
+    summary = oauth.summarize_token_endpoint_error(
+        oauth.TokenEndpointError(
+            http_status=400,
+            body=b'{"error":',
+            content_type="application/json",
+        )
+    )
+
+    assert summary.token_error_present == "no"
+    assert summary.token_error_code == "unavailable"
+    assert summary.response_decode_status == "ok"
+    assert summary.token_error_description_class == "non_json"
+    assert summary.blocking_reason == "token_endpoint_response_unclassified"
+
+
+def test_token_endpoint_unknown_error_shape_is_classified_without_raw_body() -> None:
+    summary = oauth.summarize_token_endpoint_error(
+        oauth.TokenEndpointError(
+            http_status=400,
+            body=b'{"message":"do not print code=C0.synthetic-code"}',
+            content_type="application/json",
+        )
+    )
+
+    assert summary.token_error_present == "no"
+    assert summary.token_error_code == "unavailable"
+    assert summary.token_error_description_present == "no"
+    assert summary.response_decode_status == "ok"
+    assert summary.blocking_reason == "token_endpoint_response_unclassified"
 
 
 def test_http_error_is_caught_before_urlerror_and_reports_status(
