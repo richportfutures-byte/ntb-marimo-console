@@ -5,7 +5,7 @@ from typing import Literal, Protocol, TypedDict
 
 
 JsonDict = dict[str, object]
-ContractSymbol = Literal["ES", "NQ", "CL", "ZN", "6E", "MGC"]
+ContractSymbol = Literal["ES", "NQ", "CL", "6E", "MGC"]
 RuntimeMode = Literal["fixture_demo", "preserved_engine"]
 LIVE_OBSERVABLE_FIELD_PATHS: tuple[str, ...] = (
     "contract",

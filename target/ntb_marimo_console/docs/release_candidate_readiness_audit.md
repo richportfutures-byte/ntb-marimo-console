@@ -44,7 +44,7 @@ R19 distinguishes four evidence tiers. Fixture and harness evidence must never b
 - `MGC` is Micro Gold and is the gold contract for this application.
 - `MGC` is not `GC`. `GC` is not a synonym, alias, profile name, label, or substitute for `MGC`.
 - Excluded contracts: `ZN`, `GC`.
-- `ZN` may remain only as legacy/historical code, fixture, or test artifact. It is not final target support and must not be re-promoted.
+- `ZN` may remain only as source-engine history, fixture data, or excluded-contract guard evidence. It is not target app runtime support and must not be re-promoted.
 - `GC` is excluded and is not present as a supported runtime profile or engine schema contract.
 
 ## Contract Support Audit
@@ -59,7 +59,7 @@ For each final target contract, the audit verifies the same fixture-safe foundat
 | 6E | `preserved_6e_phase1` | Yes | Yes | Yes | Yes | Yes | Real five-contract Schwab live proof pending |
 | MGC | `preserved_mgc_phase1` | Yes | Yes | Yes | Yes | Yes | Real five-contract Schwab live proof pending |
 
-`ZN` and `GC` are not final target support. `ZN` remains as a legacy/historical preserved profile only. `GC` is not present and must not be added.
+`ZN` and `GC` are not final target support. `ZN` is not exposed as a target app runtime profile. `GC` is not present and must not be added.
 
 ## Live Data Audit
 

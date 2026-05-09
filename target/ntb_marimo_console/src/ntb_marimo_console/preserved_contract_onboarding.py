@@ -442,7 +442,7 @@ def render_contract_eligibility_report(snapshot: ContractEligibilitySnapshot) ->
         "Preserved Contract Eligibility Audit",
         "Final Target Contracts: " + ", ".join(final_target_contracts()),
         "Excluded Final Target Contracts: " + ", ".join(excluded_final_target_contracts()),
-        "Legacy/Historical Contracts: " + ", ".join(legacy_historical_contracts()),
+        "Legacy/Historical Contracts: " + (", ".join(legacy_historical_contracts()) or "none"),
         "Never Supported Contracts: " + ", ".join(never_supported_contracts()),
     ]
     lines.extend(_render_group("Supported Now", snapshot.supported_now))

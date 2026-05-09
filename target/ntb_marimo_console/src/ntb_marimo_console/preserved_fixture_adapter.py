@@ -138,24 +138,6 @@ def _mgc_fixture_analysis() -> dict[str, object]:
     )
 
 
-def _zn_fixture_analysis() -> dict[str, object]:
-    profile = get_runtime_profile("preserved_zn_phase1")
-    historical = _load_json_fixture("source/ntb_engine/tests/fixtures/compiler/zn_historical_input.valid.json")
-    extension = _load_json_fixture("source/ntb_engine/tests/fixtures/compiler/zn_extension.valid.json")
-    return _valid_contract_analysis_no_trade(
-        contract=profile.contract,
-        timestamp=profile.evaluation_timestamp_iso,
-        support_level=float(historical["current_session_val"]),
-        resistance_level=float(historical["prior_day_high"]),
-        pivot_level=float(historical["current_session_poc"]),
-        structural_notes=(
-            "Cash 10Y yield remains anchored at "
-            f"{float(extension['cash_10y_yield']):.2f} with buyer absorption near session VWAP, "
-            "but the bounded preserved fixture adapter terminates at NO_TRADE."
-        ),
-    )
-
-
 def build_profile_fixture_adapter(profile_id: str = "preserved_es_phase1") -> InProcessStructuredAdapter:
     profile = get_runtime_profile(profile_id)
     analysis_by_profile_id = {
@@ -164,7 +146,6 @@ def build_profile_fixture_adapter(profile_id: str = "preserved_es_phase1") -> In
         "preserved_nq_phase1": _nq_fixture_analysis,
         "preserved_6e_phase1": _sixe_fixture_analysis,
         "preserved_mgc_phase1": _mgc_fixture_analysis,
-        "preserved_zn_phase1": _zn_fixture_analysis,
     }
     analysis_builder = analysis_by_profile_id.get(profile.profile_id)
     if analysis_builder is None:
@@ -178,5 +159,4 @@ adapter_cl = build_profile_fixture_adapter("preserved_cl_phase1")
 adapter_nq = build_profile_fixture_adapter("preserved_nq_phase1")
 adapter_6e = build_profile_fixture_adapter("preserved_6e_phase1")
 adapter_mgc = build_profile_fixture_adapter("preserved_mgc_phase1")
-adapter_zn = build_profile_fixture_adapter("preserved_zn_phase1")
 adapter = adapter_es

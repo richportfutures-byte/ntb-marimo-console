@@ -12,7 +12,11 @@ from ntb_marimo_console.contract_universe import (
     legacy_historical_contracts,
     never_supported_contracts,
 )
-from ntb_marimo_console.runtime_profiles import get_runtime_profile, list_runtime_profiles
+from ntb_marimo_console.runtime_profiles import (
+    RuntimeProfileError,
+    get_runtime_profile,
+    list_runtime_profiles,
+)
 
 
 class ContractUniverseTests(unittest.TestCase):
@@ -24,10 +28,11 @@ class ContractUniverseTests(unittest.TestCase):
         self.assertTrue(is_excluded_final_target_contract("ZN"))
         self.assertTrue(is_excluded_final_target_contract("GC"))
 
-    def test_zn_is_legacy_historical_not_final_target(self) -> None:
-        self.assertEqual(legacy_historical_contracts(), ("ZN",))
-        self.assertTrue(is_legacy_historical_contract("ZN"))
+    def test_zn_is_excluded_not_legacy_runtime_supported(self) -> None:
+        self.assertEqual(legacy_historical_contracts(), ())
+        self.assertFalse(is_legacy_historical_contract("ZN"))
         self.assertFalse(is_final_target_contract("ZN"))
+        self.assertTrue(is_excluded_final_target_contract("ZN"))
 
     def test_gc_is_never_supported_excluded(self) -> None:
         self.assertEqual(never_supported_contracts(), ("GC",))
@@ -39,11 +44,12 @@ class ContractUniverseTests(unittest.TestCase):
         self.assertFalse(is_final_target_contract("GC"))
         self.assertFalse(is_never_supported_contract("MGC"))
 
-    def test_final_target_universe_does_not_depend_on_engine_or_runtime_deletion(self) -> None:
+    def test_final_target_universe_does_not_depend_on_engine_history(self) -> None:
         profile_ids = {profile.profile_id for profile in list_runtime_profiles()}
 
-        self.assertIn("preserved_zn_phase1", profile_ids)
-        self.assertEqual(get_runtime_profile("preserved_zn_phase1").contract, "ZN")
+        self.assertNotIn("preserved_zn_phase1", profile_ids)
+        with self.assertRaises(RuntimeProfileError):
+            get_runtime_profile("preserved_zn_phase1")
         self.assertNotIn("ZN", final_target_contracts())
 
 

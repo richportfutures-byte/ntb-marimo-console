@@ -114,7 +114,7 @@ The target project added executable final-contract policy without changing engin
 - encoded final target contracts as `ES`, `NQ`, `CL`, `6E`, and `MGC`
 - encoded `ZN` as legacy/historical and excluded from final target operator selector surfaces
 - encoded `GC` as never-supported/excluded
-- preserved `preserved_zn_phase1` as a direct legacy runtime profile
+- superseded by R23: `preserved_zn_phase1` is no longer exposed as a target app runtime profile
 - kept `MGC` as the only gold final target contract with no `GC` aliasing
 
 ### Explicit Non-Implementation Boundary

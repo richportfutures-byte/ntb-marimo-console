@@ -62,14 +62,14 @@ def test_supported_contract_events_can_be_created_and_serialized(contract: str) 
     assert json.loads(serialize_evidence_event(event))["event_id"] == event.event_id
 
 
-def test_zn_is_excluded_legacy_and_cannot_be_final_supported_replay_target() -> None:
+def test_zn_is_excluded_and_cannot_be_final_supported_replay_target() -> None:
     event = evidence_event(contract="ZN")
     replay = build_replay_summary((event,), contract="ZN").to_dict()
 
     assert event.valid is False
-    assert "contract_not_final_supported:ZN:legacy_historical_excluded" in event.invalid_reasons
+    assert "contract_not_final_supported:ZN:excluded" in event.invalid_reasons
     assert replay["status"] == "blocked"
-    assert "replay_contract_not_final_supported:ZN:legacy_historical_excluded" in replay["blocking_reasons"]
+    assert "replay_contract_not_final_supported:ZN:excluded" in replay["blocking_reasons"]
     assert "ZN" not in final_target_contracts()
 
 

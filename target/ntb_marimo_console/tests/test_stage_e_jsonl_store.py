@@ -3,7 +3,6 @@ from __future__ import annotations
 import tempfile
 import unittest
 from datetime import datetime, timezone
-from pathlib import Path
 from unittest.mock import patch
 
 from ninjatradebuilder.logging_record import RunHistoryRecord, append_log_record
@@ -65,12 +64,12 @@ class StageEJsonlStoreTests(unittest.TestCase):
                 )
                 append_log_record(
                     _record(
-                        contract="ZN",
+                        contract="NQ",
                         evaluation_timestamp_iso="2026-01-14T15:05:00Z",
-                        run_id="zn-1",
+                        run_id="nq-1",
                         final_decision="NO_TRADE",
                     ),
-                    resolve_stage_e_log_path("ZN"),
+                    resolve_stage_e_log_path("NQ"),
                 )
 
                 store = JsonlRunHistoryStore()
@@ -117,10 +116,10 @@ class StageEJsonlStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.dict("os.environ", {"NTB_STAGE_E_LOG_ROOT": temp_dir}):
                 rows = JsonlRunHistoryStore().list_rows(
-                    SessionTarget(contract="ZN", session_date="2026-01-14")
+                    SessionTarget(contract="MGC", session_date="2026-01-14")
                 )
                 replay = JsonlAuditReplayStore().load_replay(
-                    SessionTarget(contract="ZN", session_date="2026-01-14")
+                    SessionTarget(contract="MGC", session_date="2026-01-14")
                 )
 
         self.assertEqual(rows, [])

@@ -40,8 +40,8 @@ This audit uses these exact files to establish truth:
 | NQ | Final target | Yes | Yes | Yes: `preserved_nq_phase1` | Partial | Live upgrade |
 | CL | Final target | Yes | Yes | Yes: `preserved_cl_phase1` | Partial | Live upgrade |
 | 6E | Final target | Yes | Yes | Yes: `preserved_6e_phase1` | Partial | Live upgrade |
-| MGC | Final target; not `GC` | Yes | Yes | No | No | Onboard profile and DXY/yield gating |
-| ZN | Excluded/historical | Yes | Yes | Yes today: `preserved_zn_phase1` | Partial/historical | Remove from final target workflow later without deleting engine in R01 |
+| MGC | Final target; not `GC` | Yes | Yes | Yes: `preserved_mgc_phase1` | Partial | Live upgrade |
+| ZN | Excluded | Yes | Yes | No target app profile | No target app runtime support | Keep excluded; source-engine history and fixtures may remain |
 | GC | Excluded | No | No | No | No | Keep excluded; no engine schema literal, prompt, runtime profile, or live gating |
 
 ## Engine Universe Finding
@@ -58,12 +58,11 @@ Runtime profiles currently include:
 - preserved `ES` through `preserved_es_phase1`
 - preserved `NQ` through `preserved_nq_phase1`
 - preserved `6E` through `preserved_6e_phase1`
-- preserved `ZN` through `preserved_zn_phase1`
 - preserved `CL` through `preserved_cl_phase1`
 
-`MGC` profile onboarding remains future work. `NQ` and `6E` now have preserved profile foundations, but live startup wiring and trade authorization remain out of scope. Remaining contracts require onboarding rather than engine creation.
+`NQ`, `6E`, and `MGC` now have preserved profile foundations, but live startup wiring and trade authorization remain out of scope. Remaining final target contracts require live upgrades rather than engine creation.
 
-R02 adds a target-owned final contract universe guard. That guard does not delete runtime profiles; it separates final-target operator selection from legacy/historical runtime availability.
+R23 removes `ZN` from the target app runtime profile surface while preserving source-engine history and fixture evidence.
 
 ## Live Gating Finding
 
@@ -79,11 +78,11 @@ These blockers are not implemented by R02, and this audit does not claim they ar
 
 ## ZN and GC Boundary
 
-`ZN` exists today in engine schema, prompt/system-spec coverage, fixtures, and the preserved runtime profile `preserved_zn_phase1`, but it is historical/excluded and is not part of final target support.
+`ZN` exists today in engine schema, prompt/system-spec coverage, and fixtures, but it is excluded and is not exposed as target app runtime support.
 
 `GC` is not present as an engine schema literal, Stage A/B prompt, system-spec target, runtime profile, or current app/live-gating target. `GC` must not be added or conflated with `MGC`.
 
-R02 executable guard status: `ZN` is classified as legacy/historical and excluded from final-target operator selector surfaces. `GC` is classified as never-supported/excluded. `MGC` remains the only gold final target contract and is not mapped to `GC`.
+R23 executable guard status: `ZN` is classified as excluded and direct `preserved_zn_phase1` launch/switch attempts fail closed. `GC` is classified as never-supported/excluded. `MGC` remains the only gold final target contract and is not mapped to `GC`.
 
 ## Next Roadmap Justification
 

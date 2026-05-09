@@ -54,7 +54,7 @@ def test_supported_contracts_build_operator_workspace_models(contract: str) -> N
 @pytest.mark.parametrize(
     ("contract", "support_status"),
     (
-        ("ZN", "legacy_historical_excluded"),
+        ("ZN", "excluded"),
         ("GC", "never_supported_excluded"),
     ),
 )

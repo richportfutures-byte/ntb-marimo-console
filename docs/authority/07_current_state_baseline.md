@@ -13,10 +13,10 @@
 ### Engine Schema and Contract Universe
 
 - engine schema includes `ES`, `NQ`, `CL`, `ZN`, `6E`, and `MGC`
-- target adapter contract typing also includes `ES`, `NQ`, `CL`, `ZN`, `6E`, and `MGC`
+- target adapter contract typing includes `ES`, `NQ`, `CL`, `6E`, and `MGC`
 - `GC` is not present as an engine schema contract or target adapter contract
 - the final product target has been reset to `ES`, `NQ`, `CL`, `6E`, and `MGC`
-- `ZN` exists in code today but is excluded from final target support
+- `ZN` exists in source-engine history and fixture data but is excluded from target app runtime support
 - `GC` is excluded and must not be used as a synonym for `MGC`
 
 ### Runtime Profiles and Support Boundary
@@ -26,12 +26,11 @@
 - `preserved_nq_phase1`: fixture-safe preserved profile foundation
 - `preserved_6e_phase1`: fixture-safe preserved profile foundation
 - `preserved_mgc_phase1`: fixture-safe preserved profile foundation
-- `preserved_zn_phase1`: operational current preserved legacy/historical profile
 - `preserved_cl_phase1`: operational current preserved profile
-- `ZN`: current preserved profile exists, but it is now excluded from final target support
+- `ZN`: no target app runtime profile is exposed
 - `GC`: not present and excluded
-- target-owned `contract_universe.py` now encodes final target contracts, legacy/historical contracts, and never-supported contracts
-- final-target operator selector surfaces exclude the legacy `ZN` profile while preserving direct legacy runtime availability
+- target-owned `contract_universe.py` now encodes final target contracts and excluded contracts
+- final-target operator selector surfaces exclude `ZN`, and direct `preserved_zn_phase1` launch fails closed
 
 ### Windows Runtime Ownership
 
@@ -50,10 +49,10 @@
 
 ### Preserved Engine Execution Path
 
-- preserved ES, NQ, 6E, MGC, ZN, and CL profiles can execute the bounded preserved-engine query path
-- profile switching across ES, NQ, 6E, MGC, ZN, and CL is implemented and fail-closed as current-state behavior
+- preserved ES, NQ, 6E, MGC, and CL profiles can execute the bounded preserved-engine query path
+- profile switching across ES, NQ, 6E, MGC, and CL is implemented and fail-closed as current-state behavior
 - stale per-profile session state is cleared on successful switch
-- this current-state behavior does not make `ZN` final target support
+- `ZN` launch and switch attempts fail closed in the target app
 
 ### Run History, Audit Replay, and Recent Session Evidence
 

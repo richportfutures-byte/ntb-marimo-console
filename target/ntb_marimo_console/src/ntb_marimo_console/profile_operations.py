@@ -172,12 +172,12 @@ def evaluate_profile_switch(
                 return ProfileSwitchEvaluation(
                     requested_profile_id=requested_profile_id,
                     current_profile_id=current_profile_id,
-                    status="supported",
+                    status="blocked",
                     summary=(
-                        f"Profile {requested_profile_id} is runtime-loadable as a legacy historical profile, "
-                        "but it is excluded from final target operator selector surfaces."
+                        f"Profile switch blocked because {requested_profile_id} is excluded from target app "
+                        "runtime support."
                     ),
-                    next_action="Use this profile only for legacy/historical verification, not final target operation.",
+                    next_action="Select one of the final-target supported profile ids.",
                     selected_profile=profile,
                 )
             return ProfileSwitchEvaluation(

@@ -30,7 +30,6 @@ class WindowsAcceptanceTests(unittest.TestCase):
                 "preserved_es_phase1\tmode=preserved_engine\tcontract=ES\tsession_date=2026-03-25\tadapter=adapter",
                 "preserved_mgc_phase1\tmode=preserved_engine\tcontract=MGC\tsession_date=2026-01-14\tadapter=adapter_mgc",
                 "preserved_nq_phase1\tmode=preserved_engine\tcontract=NQ\tsession_date=2026-01-14\tadapter=adapter_nq",
-                "preserved_zn_phase1\tmode=preserved_engine\tcontract=ZN\tsession_date=2026-01-14\tadapter=adapter_zn",
             ]
         )
 
@@ -43,7 +42,6 @@ class WindowsAcceptanceTests(unittest.TestCase):
                 "preserved_es_phase1",
                 "preserved_mgc_phase1",
                 "preserved_nq_phase1",
-                "preserved_zn_phase1",
             ),
         )
 

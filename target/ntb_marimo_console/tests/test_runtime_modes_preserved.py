@@ -28,6 +28,9 @@ from ntb_marimo_console.runtime_modes import (
 from ntb_marimo_console.runtime_profiles import get_runtime_profile
 
 
+FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "golden" / "phase1"
+
+
 class _ValidModelAdapter:
     def generate_structured(self, request: object) -> dict[str, object]:
         return {"ok": True}
@@ -115,7 +118,7 @@ class _NonLoggingPreservedBackend(_ReadyPreservedBackend):
 class RuntimeModesPreservedTests(unittest.TestCase):
     @staticmethod
     def _build_valid_preserved_artifact_root(root: Path, *, profile_id: str) -> Path:
-        source_root = Path("fixtures/golden/phase1")
+        source_root = FIXTURES_ROOT
         artifact_root = root / "phase1"
         shutil.copytree(source_root, artifact_root)
         write_preserved_fixture_artifacts(
@@ -127,7 +130,7 @@ class RuntimeModesPreservedTests(unittest.TestCase):
     def test_fixture_mode_returns_fixture_backend(self) -> None:
         backend = build_backend_for_mode(
             mode="fixture_demo",
-            fixtures_root="fixtures/golden/phase1",
+            fixtures_root=FIXTURES_ROOT,
         )
         self.assertIsInstance(backend, FixturePipelineBackend)
 
@@ -135,7 +138,7 @@ class RuntimeModesPreservedTests(unittest.TestCase):
         with self.assertRaises(PreservedModeInitializationError):
             build_backend_for_mode(
                 mode="preserved_engine",
-                fixtures_root="fixtures/golden/phase1",
+                fixtures_root=FIXTURES_ROOT,
                 model_adapter=None,
             )
 
@@ -143,7 +146,7 @@ class RuntimeModesPreservedTests(unittest.TestCase):
         with self.assertRaises(PreservedModeInitializationError):
             build_backend_for_mode(
                 mode="preserved_engine",
-                fixtures_root="fixtures/golden/phase1",
+                fixtures_root=FIXTURES_ROOT,
                 model_adapter=object(),
             )
 
@@ -155,7 +158,7 @@ class RuntimeModesPreservedTests(unittest.TestCase):
             with self.assertRaises(PreservedModeInitializationError):
                 build_backend_for_mode(
                     mode="preserved_engine",
-                    fixtures_root="fixtures/golden/phase1",
+                    fixtures_root=FIXTURES_ROOT,
                     model_adapter=_ValidModelAdapter(),
                 )
 
@@ -193,7 +196,7 @@ class RuntimeModesPreservedTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             artifact_root = self._build_valid_preserved_artifact_root(
                 Path(temp_dir),
-                profile_id="preserved_zn_phase1",
+                profile_id="preserved_nq_phase1",
             )
             with patch.dict(os.environ, {"NTB_STAGE_E_LOG_ROOT": str(Path(temp_dir) / ".stage_e")}):
                 with patch(
@@ -201,20 +204,20 @@ class RuntimeModesPreservedTests(unittest.TestCase):
                     _ReadyPreservedBackend,
                 ):
                     shell = build_app_shell_for_profile_id(
-                        profile_id="preserved_zn_phase1",
+                        profile_id="preserved_nq_phase1",
                         fixtures_root=artifact_root,
                         model_adapter=_ValidModelAdapter(),
                     )
 
         surfaces = shell["surfaces"]
-        self.assertEqual(surfaces["session_header"]["contract"], "ZN")
+        self.assertEqual(surfaces["session_header"]["contract"], "NQ")
         self.assertEqual(surfaces["run_history"]["source"], "stage_e_jsonl")
         self.assertTrue(surfaces["query_action"]["query_enabled"])
         self.assertTrue(surfaces["decision_review"]["has_result"])
         self.assertTrue(surfaces["audit_replay"]["stage_e_live_backend"])
         self.assertEqual(surfaces["audit_replay"]["source"], "stage_e_jsonl")
         self.assertEqual(shell["runtime"]["runtime_mode"], "preserved_engine")
-        self.assertEqual(shell["runtime"]["profile_id"], "preserved_zn_phase1")
+        self.assertEqual(shell["runtime"]["profile_id"], "preserved_nq_phase1")
         self.assertEqual(_ReadyPreservedBackend.run_pipeline_calls, 1)
 
     def test_third_supported_preserved_profile_reaches_ready_state(self) -> None:
@@ -280,7 +283,7 @@ class RuntimeModesPreservedTests(unittest.TestCase):
 
     def test_preserved_profile_rejects_legacy_fixture_packet_shapes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            source_root = Path("fixtures/golden/phase1")
+            source_root = FIXTURES_ROOT
             artifact_root = Path(temp_dir) / "phase1"
             shutil.copytree(source_root, artifact_root)
             legacy_bundle = {

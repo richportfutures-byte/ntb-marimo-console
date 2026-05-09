@@ -25,7 +25,6 @@ EXPECTED_SUPPORTED_PROFILE_IDS: Final[tuple[str, ...]] = (
     "preserved_es_phase1",
     "preserved_mgc_phase1",
     "preserved_nq_phase1",
-    "preserved_zn_phase1",
 )
 EXPECTED_BLOCKED_CONTRACTS: Final[dict[str, str]] = {}
 WATCHMAN_GATE_REGRESSION_TARGETS: Final[tuple[str, ...]] = (

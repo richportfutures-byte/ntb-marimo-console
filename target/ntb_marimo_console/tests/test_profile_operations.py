@@ -22,7 +22,6 @@ class ProfileOperationsTests(unittest.TestCase):
                 "preserved_es_phase1",
                 "preserved_mgc_phase1",
                 "preserved_nq_phase1",
-                "preserved_zn_phase1",
             ),
         )
         self.assertEqual(supported["fixture_es_demo"].profile_kind, "Demo")
@@ -35,8 +34,6 @@ class ProfileOperationsTests(unittest.TestCase):
         self.assertTrue(supported["preserved_mgc_phase1"].operator_selectable)
         self.assertTrue(supported["preserved_es_phase1"].active)
         self.assertTrue(supported["preserved_es_phase1"].operator_selectable)
-        self.assertFalse(supported["preserved_zn_phase1"].operator_selectable)
-        self.assertEqual(supported["preserved_zn_phase1"].contract_policy, "legacy_historical_excluded")
         self.assertNotIn("preserved_zn_phase1", snapshot.selectable_profile_ids)
 
     def test_candidate_visibility_is_empty_after_final_target_profile_onboarding(self) -> None:
@@ -53,17 +50,16 @@ class ProfileOperationsTests(unittest.TestCase):
         self.assertEqual(evaluation.status, "supported")
         self.assertIn("supported and selectable", evaluation.summary)
 
-    def test_legacy_historical_profile_switch_is_runtime_loadable_but_not_operator_selectable(self) -> None:
+    def test_zn_profile_switch_fails_closed(self) -> None:
         evaluation = evaluate_profile_switch(
             "preserved_zn_phase1",
             current_profile_id="preserved_es_phase1",
         )
 
-        self.assertEqual(evaluation.status, "supported")
-        self.assertIsNotNone(evaluation.selected_profile)
-        self.assertFalse(evaluation.selected_profile.operator_selectable)
-        self.assertIn("legacy historical profile", evaluation.summary)
-        self.assertIn("excluded from final target operator selector surfaces", evaluation.summary)
+        self.assertEqual(evaluation.status, "unsupported")
+        self.assertIsNone(evaluation.selected_profile)
+        self.assertIn("supported profile registry", evaluation.summary)
+        self.assertIn("preserved_zn_phase1", evaluation.summary)
 
     def test_nq_profile_switch_is_supported_after_foundation_onboarding(self) -> None:
         evaluation = evaluate_profile_switch(

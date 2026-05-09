@@ -69,13 +69,12 @@ class AuthorityContractUniverseTests(unittest.TestCase):
         self.assertIn("must not be described as engine-missing contracts", support)
         self.assertNotIn("engine-missing", baseline)
 
-    def test_current_runtime_profiles_remain_factual_not_final_target_authority(self) -> None:
+    def test_current_runtime_profiles_exclude_zn_target_app_runtime(self) -> None:
         baseline = _read_authority_doc("07_current_state_baseline.md")
 
         for profile_id in (
             "fixture_es_demo",
             "preserved_es_phase1",
-            "preserved_zn_phase1",
             "preserved_cl_phase1",
             "preserved_nq_phase1",
             "preserved_6e_phase1",
@@ -83,7 +82,8 @@ class AuthorityContractUniverseTests(unittest.TestCase):
         ):
             self.assertIn(f"`{profile_id}`", baseline)
 
-        self.assertIn("current-state behavior does not make `ZN` final target support", baseline)
+        self.assertNotIn("operational current preserved legacy/historical profile", baseline)
+        self.assertIn("`ZN` launch and switch attempts fail closed", baseline)
 
 
 if __name__ == "__main__":

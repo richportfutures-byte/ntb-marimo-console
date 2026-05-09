@@ -5,7 +5,7 @@ from typing import Final
 
 FINAL_TARGET_CONTRACTS: Final[tuple[str, ...]] = ("ES", "NQ", "CL", "6E", "MGC")
 EXCLUDED_FINAL_TARGET_CONTRACTS: Final[tuple[str, ...]] = ("ZN", "GC")
-LEGACY_HISTORICAL_CONTRACTS: Final[tuple[str, ...]] = ("ZN",)
+LEGACY_HISTORICAL_CONTRACTS: Final[tuple[str, ...]] = ()
 NEVER_SUPPORTED_CONTRACTS: Final[tuple[str, ...]] = ("GC",)
 
 
@@ -49,10 +49,10 @@ def contract_policy_label(contract: str) -> str:
     normalized = normalize_contract_symbol(contract)
     if normalized in FINAL_TARGET_CONTRACTS:
         return "final_target"
-    if normalized in LEGACY_HISTORICAL_CONTRACTS:
-        return "legacy_historical_excluded"
     if normalized in NEVER_SUPPORTED_CONTRACTS:
         return "never_supported_excluded"
     if normalized in EXCLUDED_FINAL_TARGET_CONTRACTS:
         return "excluded"
+    if normalized in LEGACY_HISTORICAL_CONTRACTS:
+        return "legacy_historical_excluded"
     return "unknown"

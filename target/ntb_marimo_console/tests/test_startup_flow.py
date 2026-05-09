@@ -45,17 +45,15 @@ class StartupFlowTests(unittest.TestCase):
         self.assertEqual(startup.shell["startup"]["readiness_state"], "OPERATOR_SURFACES_READY")
         self.assertEqual(startup.shell["startup"]["current_session_state"], "LIVE_QUERY_ELIGIBLE")
 
-    def test_startup_flow_legacy_zn_profile_is_operator_ready_but_query_blocked(self) -> None:
+    def test_startup_flow_zn_profile_fails_closed(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_zn_phase1"}, clear=True):
             startup = build_startup_artifacts_from_env()
 
-        self.assertTrue(startup.ready)
+        self.assertFalse(startup.ready)
         self.assertEqual(startup.shell["startup"]["selected_profile_id"], "preserved_zn_phase1")
-        self.assertEqual(startup.shell["startup"]["running_as"], "Preserved-Engine-Backed")
-        self.assertEqual(startup.shell["startup"]["readiness_state"], "OPERATOR_SURFACES_READY")
-        self.assertEqual(startup.shell["startup"]["current_session_state"], "LIVE_QUERY_BLOCKED")
-        self.assertEqual(startup.shell["watchman_gate"]["validator_status"], "FAILED")
-        self.assertFalse(startup.shell["workflow"]["query_enabled"])
+        self.assertEqual(startup.shell["startup"]["readiness_state"], "BLOCKED")
+        self.assertEqual(startup.shell["startup"]["current_session_state"], "STARTUP_BLOCKED")
+        self.assertFalse(startup.shell["startup"]["operator_ready"])
 
     def test_startup_flow_nq_preserved_profile_is_fixture_safe_and_non_live(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_nq_phase1"}, clear=True):
@@ -110,15 +108,13 @@ class StartupFlowTests(unittest.TestCase):
         self.assertTrue(startup.shell["workflow"]["audit_replay_ready"])
         self.assertEqual(startup.shell["runtime"]["session_state"], "AUDIT_REPLAY_READY")
 
-    def test_legacy_zn_query_action_request_fails_closed(self) -> None:
+    def test_zn_query_action_request_fails_closed_at_startup(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_zn_phase1"}, clear=True):
             startup = build_startup_artifacts_from_env(query_action_requested=True)
 
-        self.assertTrue(startup.ready)
-        self.assertEqual(startup.shell["workflow"]["query_action_status"], "FAILED")
-        self.assertFalse(startup.shell["workflow"]["decision_review_ready"])
-        self.assertFalse(startup.shell["workflow"]["audit_replay_ready"])
-        self.assertEqual(startup.shell["runtime"]["session_state"], "QUERY_ACTION_FAILED")
+        self.assertFalse(startup.ready)
+        self.assertEqual(startup.shell["startup"]["readiness_state"], "BLOCKED")
+        self.assertEqual(startup.shell["startup"]["current_session_state"], "STARTUP_BLOCKED")
 
     def test_blocked_startup_on_failed_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -189,7 +185,7 @@ class StartupFlowTests(unittest.TestCase):
                 "preserved_nq_phase1",
             },
         )
-        self.assertEqual(legacy_ids, {"preserved_zn_phase1"})
+        self.assertEqual(legacy_ids, set())
         self.assertNotIn("preserved_zn_phase1", startup.shell["startup"]["supported_profile_ids"])
         self.assertEqual(blocked_contracts, set())
         self.assertTrue(startup.shell["startup"]["candidate_audit_available"])

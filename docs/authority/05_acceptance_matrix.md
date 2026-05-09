@@ -12,10 +12,10 @@ All R00 tests are binary pass/fail. R00 is a documentation/authority reset only.
 | Test ID | Condition | Expected Result | Pass Criteria |
 |---|---|---|---|
 | R00-1 | Authority docs describe final target contracts | Final target support is `ES`, `NQ`, `CL`, `6E`, and `MGC` | All five appear as final target contracts in the phase contract and support matrix |
-| R00-2 | Authority docs describe excluded contracts | `ZN` and `GC` are excluded from final target support | `ZN` appears only as excluded/historical/current-state legacy; `GC` appears only as excluded |
+| R00-2 | Authority docs describe excluded contracts | `ZN` and `GC` are excluded from final target support | `ZN` appears only as excluded/source-history or fixture evidence; `GC` appears only as excluded |
 | R00-3 | Gold contract naming is checked | `MGC` is the gold contract for this application | `MGC` is never mislabeled as `GC`; `GC` is not used as a synonym for `MGC` |
 | R00-4 | Onboarding targets are classified truthfully | `NQ`, `6E`, and `MGC` are required onboarding targets | They are not described as engine-missing contracts or generic non-target deferred extras |
-| R00-5 | Current runtime profile reality remains factual | Current profiles are fixture `ES`, preserved `ES`, preserved `ZN`, and preserved `CL` | Authority baseline distinguishes current runtime profiles from final target support |
+| R00-5 | Current runtime profile reality remains factual | Current target app profiles are fixture `ES` plus preserved `ES`, `NQ`, `CL`, `6E`, and `MGC` | Authority baseline excludes `ZN` from target app runtime support |
 | R00-6 | Runtime implementation is not claimed complete | Live networking, startup wiring, and authorization work remains future roadmap work | No R00 doc claims final live Schwab workstation implementation is complete |
 | R00-7 | Doctrine remains intact | Engine decision authority, manual-only execution, and fail-closed behavior remain binding | No authority doc adds broker/order/execution/account/fill/P&L behavior or weakens fail-closed language |
 
@@ -35,9 +35,9 @@ The following checks remain truthful for the current implementation and may be u
 
 | Test ID | Condition | Expected Result | Pass Criteria |
 |---|---|---|---|
-| SP-1 | Supported profile list command runs | Current runtime profiles are listed | `fixture_es_demo`, `preserved_es_phase1`, `preserved_nq_phase1`, `preserved_6e_phase1`, `preserved_mgc_phase1`, `preserved_zn_phase1`, and `preserved_cl_phase1` present |
+| SP-1 | Supported profile list command runs | Current runtime profiles are listed | `fixture_es_demo`, `preserved_es_phase1`, `preserved_nq_phase1`, `preserved_6e_phase1`, `preserved_mgc_phase1`, and `preserved_cl_phase1` present |
 | SP-2 | Preserved-contract eligibility audit runs | App-profile gaps are reported truthfully | No remaining final-target onboarding candidate is reported as blocked |
-| SP-3 | Strict preflight runs for current preserved profiles | Preflight passes for current supported preserved profiles | `preserved_es_phase1`, `preserved_nq_phase1`, `preserved_6e_phase1`, `preserved_mgc_phase1`, `preserved_zn_phase1`, and `preserved_cl_phase1` report PASS as current-state profiles |
+| SP-3 | Strict preflight runs for current preserved profiles | Preflight passes for current supported preserved profiles | `preserved_es_phase1`, `preserved_nq_phase1`, `preserved_6e_phase1`, `preserved_mgc_phase1`, and `preserved_cl_phase1` report PASS as current-state profiles |
 
 ### Watchman Gate
 
@@ -52,7 +52,7 @@ The following checks remain truthful for the current implementation and may be u
 | Test ID | Condition | Expected Result | Pass Criteria |
 |---|---|---|---|
 | OP-1 | Current profiles rendered in app surface | Operator sees current supported and not-current states readably | Current profiles and onboarding candidates appear without raw JSON |
-| OP-2 | Current profile switch `ES -> ZN`, `ZN -> CL`, `CL -> ES` | Switch completes cleanly as current-state behavior | Active profile updates and stale session state is cleared |
+| OP-2 | Current profile switch among final-target profiles | Switch completes cleanly as current-state behavior | Active profile updates and stale session state is cleared; `ZN` switch attempts fail closed |
 | OP-3 | Switch to unsupported profile | Fails closed | Readable blocked diagnostic; active supported profile remains intact |
 
 ### Run History and Audit Replay
@@ -94,7 +94,7 @@ These assumptions are superseded by R00:
 - final target support requires `ZN`
 - final target support is bounded to `ES`, `ZN`, and `CL`
 - `NQ`, `6E`, and `MGC` are generic deferred/non-target contracts
-- current `ZN` runtime support implies final target inclusion
+- any current `ZN` runtime support exists in the target app
 - any prior assumption that `GC` may be treated as shorthand for `MGC`
 
 ## Manual Verification Items
@@ -102,7 +102,7 @@ These assumptions are superseded by R00:
 | Item | What to Verify | Verified By |
 |---|---|---|
 | MV-1 | Authority docs identify final target contracts as `ES`, `NQ`, `CL`, `6E`, and `MGC` | Operator |
-| MV-2 | `ZN` is classified only as excluded/historical/current-state legacy | Operator |
+| MV-2 | `ZN` is classified only as excluded/source-history or fixture evidence, not target app runtime support | Operator |
 | MV-3 | `GC` is excluded and is not used as a synonym for `MGC` | Operator |
 | MV-4 | Brief language remains actionable against the operator's own platform for current `ES` and `CL` profiles | Operator |
 | MV-5 | Recent-session evidence and JSONL-backed run history are understandable without debug knowledge | Operator |
@@ -113,7 +113,7 @@ These assumptions are superseded by R00:
 Successful R00 verification proves:
 
 - the authority set now binds final target support to `ES`, `NQ`, `CL`, `6E`, and `MGC`
-- `ZN` is excluded/historical rather than required final target support
+- `ZN` is excluded rather than required final target support
 - `GC` is excluded and is not a synonym for `MGC`
 - current runtime profile facts are preserved without redefining the final target
 - future onboarding work is correctly classified for `NQ`, `6E`, and `MGC`

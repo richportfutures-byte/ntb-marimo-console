@@ -74,7 +74,7 @@ class LaunchConfigTests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "NTB_CONSOLE_PROFILE": "preserved_zn_phase1",
+                "NTB_CONSOLE_PROFILE": "preserved_nq_phase1",
             },
             clear=True,
         ):
@@ -82,10 +82,10 @@ class LaunchConfigTests(unittest.TestCase):
                 config = load_launch_config_from_env()
 
         self.assertEqual(config.mode, "preserved_engine")
-        self.assertEqual(config.profile.profile_id, "preserved_zn_phase1")
+        self.assertEqual(config.profile.profile_id, "preserved_nq_phase1")
         self.assertEqual(
             config.adapter_binding,
-            "ntb_marimo_console.preserved_fixture_adapter:adapter_zn",
+            "ntb_marimo_console.preserved_fixture_adapter:adapter_nq",
         )
         self.assertTrue(callable(getattr(config.model_adapter, "generate_structured", None)))
         self.assertTrue(config.preflight.passed)
@@ -124,15 +124,19 @@ class LaunchConfigTests(unittest.TestCase):
                 load_launch_config_from_env()
 
     def test_explicit_profile_request_uses_profile_defaults(self) -> None:
-        request = resolve_launch_request_for_profile_id("preserved_zn_phase1", use_env_defaults=False)
+        request = resolve_launch_request_for_profile_id("preserved_nq_phase1", use_env_defaults=False)
 
         self.assertEqual(request.mode, "preserved_engine")
-        self.assertEqual(request.profile.profile_id, "preserved_zn_phase1")
+        self.assertEqual(request.profile.profile_id, "preserved_nq_phase1")
         self.assertEqual(
             request.adapter_binding,
-            "ntb_marimo_console.preserved_fixture_adapter:adapter_zn",
+            "ntb_marimo_console.preserved_fixture_adapter:adapter_nq",
         )
         self.assertFalse(request.lockout)
+
+    def test_zn_profile_request_fails_closed(self) -> None:
+        with self.assertRaises(RuntimeError):
+            resolve_launch_request_for_profile_id("preserved_zn_phase1", use_env_defaults=False)
 
     def test_preserved_profile_loads_model_adapter_override_from_env(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

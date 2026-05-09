@@ -21,7 +21,7 @@ Substitute one of the five final target preserved profiles:
 - `preserved_6e_phase1` (6E)
 - `preserved_mgc_phase1` (MGC)
 
-`MGC` is Micro Gold and is the gold contract for this application. `MGC` is not `GC`. `GC` is excluded and is not a synonym, alias, or substitute for `MGC`. The legacy/historical `preserved_zn_phase1` profile remains as current-state legacy only and is not part of the final target universe.
+`MGC` is Micro Gold and is the gold contract for this application. `MGC` is not `GC`. `GC` is excluded and is not a synonym, alias, or substitute for `MGC`. `preserved_zn_phase1` is not a target app runtime profile and direct selection fails closed.
 
 For a no-credentials cross-profile sanity check that does not start Marimo, run the canonical non-live acceptance verifier:
 

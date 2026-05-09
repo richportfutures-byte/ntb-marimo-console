@@ -29,7 +29,7 @@ from ntb_marimo_console.trigger_state import (
 )
 
 
-FIXTURES_ROOT = Path("fixtures/golden/phase1")
+FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "golden" / "phase1"
 BRIEF_PATHS = {
     "ES": FIXTURES_ROOT / "premarket" / "ES" / "2026-03-25" / "premarket_brief.ready.json",
     "NQ": FIXTURES_ROOT / "premarket" / "NQ" / "2026-01-14" / "premarket_brief.ready.json",

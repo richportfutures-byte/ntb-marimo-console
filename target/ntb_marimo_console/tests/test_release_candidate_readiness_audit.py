@@ -64,7 +64,7 @@ def test_audit_names_final_target_universe(audit_text: str) -> None:
 
 def test_audit_names_zn_and_gc_as_excluded(audit_text: str) -> None:
     assert "Excluded contracts: `ZN`, `GC`" in audit_text
-    assert "`ZN` may remain only as legacy/historical" in audit_text
+    assert "`ZN` may remain only as source-engine history" in audit_text
     assert "`GC` is excluded" in audit_text
 
 

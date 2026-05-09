@@ -21,7 +21,7 @@ class ContractTruthAuditTests(unittest.TestCase):
             self.assertIn(f"| {contract} | Final target", self.audit)
 
     def test_zn_and_gc_are_excluded(self) -> None:
-        self.assertIn("| ZN | Excluded/historical |", self.audit)
+        self.assertIn("| ZN | Excluded |", self.audit)
         self.assertIn("| GC | Excluded |", self.audit)
         self.assertIn("`ZN` and `GC` are excluded from final target support", self.audit)
 
@@ -36,26 +36,25 @@ class ContractTruthAuditTests(unittest.TestCase):
         )
 
     def test_mgc_is_final_target_and_not_gc(self) -> None:
-        self.assertIn("| MGC | Final target; not `GC` | Yes | Yes | No | No |", self.audit)
+        self.assertIn("| MGC | Final target; not `GC` | Yes | Yes | Yes: `preserved_mgc_phase1` | Partial | Live upgrade |", self.audit)
         self.assertIn("`GC` must not be added or conflated with `MGC`", self.audit)
 
     def test_onboarding_targets_require_onboarding_not_engine_creation(self) -> None:
         self.assertIn("| 6E | Final target | Yes | Yes | Yes: `preserved_6e_phase1` | Partial | Live upgrade |", self.audit)
-        self.assertIn("| MGC | Final target; not `GC` | Yes | Yes | No | No | Onboard profile and DXY/yield gating |", self.audit)
-        self.assertIn("Remaining contracts require onboarding rather than engine creation", self.audit)
+        self.assertIn("| MGC | Final target; not `GC` | Yes | Yes | Yes: `preserved_mgc_phase1` | Partial | Live upgrade |", self.audit)
+        self.assertIn("Remaining final target contracts require live upgrades rather than engine creation", self.audit)
 
     def test_es_and_cl_have_runtime_profiles_and_need_live_upgrades(self) -> None:
         self.assertIn("| ES | Final target | Yes | Yes | Yes: `fixture_es_demo`, `preserved_es_phase1` | Partial | Live upgrade |", self.audit)
         self.assertIn("| NQ | Final target | Yes | Yes | Yes: `preserved_nq_phase1` | Partial | Live upgrade |", self.audit)
         self.assertIn("| CL | Final target | Yes | Yes | Yes: `preserved_cl_phase1` | Partial | Live upgrade |", self.audit)
 
-    def test_zn_exists_today_but_is_historical_excluded(self) -> None:
+    def test_zn_has_no_target_app_runtime_profile(self) -> None:
         self.assertIn(
-            "| ZN | Excluded/historical | Yes | Yes | Yes today: `preserved_zn_phase1` | Partial/historical |",
+            "| ZN | Excluded | Yes | Yes | No target app profile | No target app runtime support |",
             self.audit,
         )
-        self.assertIn("`ZN` exists today", self.audit)
-        self.assertIn("historical/excluded", self.audit)
+        self.assertIn("not exposed as target app runtime support", self.audit)
 
 
 if __name__ == "__main__":

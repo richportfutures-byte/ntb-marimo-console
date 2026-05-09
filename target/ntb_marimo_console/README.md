@@ -146,7 +146,7 @@ Reference-only product-shell ideas remain in `../../reference/ntb_v3_idea`.
    $env:NTB_CONSOLE_PROFILE='preserved_mgc_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
    ```
 
-   `preserved_zn_phase1` remains as a legacy/historical profile only and is not part of the final target universe.
+   `preserved_zn_phase1` is not a target app runtime profile; direct launch attempts fail closed.
 
 6. Read the app’s `Startup Status` section before using the operator surfaces:
 
@@ -219,7 +219,7 @@ $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe scripts\run_windows_acceptance
 What it verifies:
 
 - environment/bootstrap imports and target-owned Marimo runtime path preparation
-- supported profile listing for `fixture_es_demo`, `preserved_es_phase1`, `preserved_nq_phase1`, `preserved_6e_phase1`, `preserved_mgc_phase1`, `preserved_zn_phase1`, and `preserved_cl_phase1`
+- supported profile listing for `fixture_es_demo`, `preserved_es_phase1`, `preserved_nq_phase1`, `preserved_6e_phase1`, `preserved_mgc_phase1`, and `preserved_cl_phase1`
 - strict preflight for every supported profile
 - no remaining blocked final-target onboarding candidate reporting
 - validator-driven Watchman gate regression coverage
@@ -276,10 +276,6 @@ Final target preserved profiles (`ES`, `NQ`, `CL`, `6E`, `MGC`):
 - `preserved_cl_phase1`: preserved-engine-backed CL profile using the target-owned preserved fixture adapter by default
 - `preserved_6e_phase1`: preserved-engine-backed 6E profile using the target-owned preserved fixture adapter by default
 - `preserved_mgc_phase1`: preserved-engine-backed MGC (Micro Gold) profile using the target-owned preserved fixture adapter by default
-
-Legacy/historical preserved profile (excluded from the final target universe):
-
-- `preserved_zn_phase1`: preserved-engine-backed ZN profile retained as legacy/historical only
 
 Fixture/demo profile:
 
@@ -366,10 +362,6 @@ $env:NTB_CONSOLE_PROFILE='preserved_cl_phase1'; $env:PYTHONPATH='src'; .\.venv\S
 $env:NTB_CONSOLE_PROFILE='preserved_es_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe scripts\run_runtime_preflight.py
 ```
 
-```powershell
-$env:NTB_CONSOLE_PROFILE='preserved_zn_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe scripts\run_runtime_preflight.py
-```
-
 POSIX shells:
 
 ```bash
@@ -379,11 +371,6 @@ PYTHONPATH=src .venv/bin/python scripts/run_runtime_preflight.py
 
 ```bash
 NTB_CONSOLE_PROFILE=preserved_es_phase1 \
-PYTHONPATH=src .venv/bin/python scripts/run_runtime_preflight.py
-```
-
-```bash
-NTB_CONSOLE_PROFILE=preserved_zn_phase1 \
 PYTHONPATH=src .venv/bin/python scripts/run_runtime_preflight.py
 ```
 
@@ -470,7 +457,7 @@ These use profile-bound default adapter references:
 - `ntb_marimo_console.preserved_fixture_adapter:adapter_6e`
 - `ntb_marimo_console.preserved_fixture_adapter:adapter_mgc`
 
-The legacy/historical `preserved_zn_phase1` profile remains supported as a current-state profile but is not part of the final target universe and is intentionally omitted from the launch set above.
+`preserved_zn_phase1` is intentionally omitted from the launch set above and fails closed if requested directly.
 
 ## Override The Preserved Adapter
 
@@ -480,20 +467,10 @@ Windows PowerShell:
 $env:NTB_CONSOLE_PROFILE='preserved_es_phase1'; $env:NTB_MODEL_ADAPTER_REF='your_package.your_module:your_adapter'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
 ```
 
-```powershell
-$env:NTB_CONSOLE_PROFILE='preserved_zn_phase1'; $env:NTB_MODEL_ADAPTER_REF='your_package.your_module:your_adapter'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
-```
-
 POSIX shells:
 
 ```bash
 NTB_CONSOLE_PROFILE=preserved_es_phase1 \
-NTB_MODEL_ADAPTER_REF=your_package.your_module:your_adapter \
-PYTHONPATH=src .venv/bin/python -m marimo run src/ntb_marimo_console/operator_console_app.py
-```
-
-```bash
-NTB_CONSOLE_PROFILE=preserved_zn_phase1 \
 NTB_MODEL_ADAPTER_REF=your_package.your_module:your_adapter \
 PYTHONPATH=src .venv/bin/python -m marimo run src/ntb_marimo_console/operator_console_app.py
 ```
@@ -577,10 +554,10 @@ The Phase 1 console now keeps a bounded recent-session evidence ledger in a targ
 
 What profile separation means:
 
-- If ES is queried and then the operator switches to ZN, ES keeps its own last known query/decision/audit outcome.
-- ZN becomes active with a fresh session context and its own new evidence entry.
+- If ES is queried and then the operator switches to another final-target profile such as NQ, ES keeps its own last known query/decision/audit outcome.
+- NQ becomes active with a fresh session context and its own new evidence entry.
 - A blocked or failed profile switch remains attributed to the currently active originating profile plus the requested target; it does not create fake success evidence for the blocked target.
-- After the app is closed and relaunched, restored ES and ZN evidence still remain attached to ES and ZN until a newer event for one of those profiles is recorded.
+- After the app is closed and relaunched, restored ES and NQ evidence still remain attached to ES and NQ until a newer event for one of those profiles is recorded.
 
 What reset and reload mean in evidence:
 

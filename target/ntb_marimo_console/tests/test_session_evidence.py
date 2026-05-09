@@ -17,6 +17,9 @@ from ntb_marimo_console.session_lifecycle import (
 from ntb_marimo_console.ui.marimo_phase1_renderer import build_session_evidence_markdown
 
 
+FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "golden" / "phase1"
+
+
 class SessionEvidenceTests(unittest.TestCase):
     @staticmethod
     def _outcomes_by_profile(evidence_panel: dict[str, object]) -> dict[str, dict[str, object]]:
@@ -44,18 +47,18 @@ class SessionEvidenceTests(unittest.TestCase):
         self.assertEqual(es["query_eligibility_state"], "ELIGIBLE")
         self.assertEqual(es["query_action_state"], "AVAILABLE")
 
-    def test_recent_session_evidence_recording_for_zn(self) -> None:
-        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_zn_phase1"}, clear=True):
+    def test_recent_session_evidence_recording_for_nq(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_nq_phase1"}, clear=True):
             lifecycle = load_session_lifecycle_from_env()
 
         evidence = lifecycle.shell["evidence"]
         outcomes = self._outcomes_by_profile(evidence)
-        zn = outcomes["preserved_zn_phase1"]
+        nq = outcomes["preserved_nq_phase1"]
 
-        self.assertEqual(lifecycle.evidence_history[-1].active_profile_id, "preserved_zn_phase1")
-        self.assertEqual(zn["preflight_status"], "PASS")
-        self.assertEqual(zn["startup_outcome"], "OPERATOR_SURFACES_READY")
-        self.assertEqual(zn["query_action_state"], "AVAILABLE")
+        self.assertEqual(lifecycle.evidence_history[-1].active_profile_id, "preserved_nq_phase1")
+        self.assertEqual(nq["preflight_status"], "PASS")
+        self.assertEqual(nq["startup_outcome"], "OPERATOR_SURFACES_READY")
+        self.assertEqual(nq["query_action_state"], "AVAILABLE")
 
     def test_recent_session_evidence_recording_for_cl(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_cl_phase1"}, clear=True):
@@ -74,25 +77,25 @@ class SessionEvidenceTests(unittest.TestCase):
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
             lifecycle = load_session_lifecycle_from_env()
             queried = request_query_action(lifecycle)
-            switched = switch_profile(queried, "preserved_zn_phase1")
+            switched = switch_profile(queried, "preserved_nq_phase1")
 
         latest_record = switched.evidence_history[-1]
-        self.assertEqual(latest_record.active_profile_id, "preserved_zn_phase1")
+        self.assertEqual(latest_record.active_profile_id, "preserved_nq_phase1")
         self.assertEqual(latest_record.originating_profile_id, "preserved_es_phase1")
-        self.assertEqual(latest_record.requested_profile_id, "preserved_zn_phase1")
-        self.assertEqual(switched.shell["evidence"]["recent_profiles"], ["preserved_zn_phase1", "preserved_es_phase1"])
+        self.assertEqual(latest_record.requested_profile_id, "preserved_nq_phase1")
+        self.assertEqual(switched.shell["evidence"]["recent_profiles"], ["preserved_nq_phase1", "preserved_es_phase1"])
 
         outcomes = self._outcomes_by_profile(switched.shell["evidence"])
         es = outcomes["preserved_es_phase1"]
-        zn = outcomes["preserved_zn_phase1"]
+        nq = outcomes["preserved_nq_phase1"]
 
         self.assertEqual(es["last_action"], "RUN_BOUNDED_QUERY")
         self.assertEqual(es["query_action_state"], "COMPLETED")
         self.assertEqual(es["decision_review_state"], "READY")
-        self.assertEqual(zn["last_action"], "SWITCH_PROFILE")
-        self.assertEqual(zn["profile_switch_result"], "SWITCH_COMPLETED")
-        self.assertEqual(zn["query_action_state"], "AVAILABLE")
-        self.assertEqual(zn["decision_review_state"], "NOT_READY")
+        self.assertEqual(nq["last_action"], "SWITCH_PROFILE")
+        self.assertEqual(nq["profile_switch_result"], "SWITCH_COMPLETED")
+        self.assertEqual(nq["query_action_state"], "AVAILABLE")
+        self.assertEqual(nq["decision_review_state"], "NOT_READY")
 
     def test_reset_reload_event_attribution_integrity(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_cl_phase1"}, clear=True):
@@ -116,22 +119,22 @@ class SessionEvidenceTests(unittest.TestCase):
     def test_blocked_outcome_attribution_integrity(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
             lifecycle = load_session_lifecycle_from_env()
-            switched = switch_profile(lifecycle, "preserved_nq_phase1")
+            switched = switch_profile(lifecycle, "preserved_zn_phase1")
 
         latest_record = switched.evidence_history[-1]
         self.assertEqual(latest_record.active_profile_id, "preserved_es_phase1")
         self.assertEqual(latest_record.originating_profile_id, "preserved_es_phase1")
-        self.assertEqual(latest_record.requested_profile_id, "preserved_nq_phase1")
+        self.assertEqual(latest_record.requested_profile_id, "preserved_zn_phase1")
         self.assertEqual(latest_record.profile_switch_result, "SWITCH_BLOCKED")
 
         outcomes = self._outcomes_by_profile(switched.shell["evidence"])
-        self.assertNotIn("preserved_nq_phase1", outcomes)
+        self.assertNotIn("preserved_zn_phase1", outcomes)
         self.assertEqual(outcomes["preserved_es_phase1"]["last_action"], "SWITCH_PROFILE")
         self.assertEqual(outcomes["preserved_es_phase1"]["profile_switch_result"], "SWITCH_BLOCKED")
 
     def test_failure_outcome_attribution_integrity(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            source_root = Path("fixtures/golden/phase1")
+            source_root = FIXTURES_ROOT
             artifact_root = Path(temp_dir) / "phase1"
             shutil.copytree(source_root, artifact_root)
 
@@ -164,14 +167,14 @@ class SessionEvidenceTests(unittest.TestCase):
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
             lifecycle = load_session_lifecycle_from_env()
             queried = request_query_action(lifecycle)
-            switched = switch_profile(queried, "preserved_zn_phase1")
+            switched = switch_profile(queried, "preserved_nq_phase1")
 
         markdown = build_session_evidence_markdown(switched.shell["evidence"])
         self.assertIn("## Recent Session Evidence", markdown)
         self.assertIn("Last Known Outcome By Supported Profile", markdown)
         self.assertIn("Recent Activity", markdown)
         self.assertIn("preserved_es_phase1", markdown)
-        self.assertIn("preserved_zn_phase1", markdown)
+        self.assertIn("preserved_nq_phase1", markdown)
         self.assertIn("No retained recent-session evidence recorded", markdown)
 
 

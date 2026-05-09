@@ -160,7 +160,7 @@ def test_pause_rule_triggers_for_unsupported_contract_appears_ready() -> None:
         record_id="sys-zn",
         timestamp="2026-05-06T14:00:00+00:00",
         contract="ZN",
-        profile_id="preserved_zn_phase1",
+        profile_id="excluded_zn_profile",
         final_decision="NO_TRADE",
         unsupported_contract_ready=True,
     )
@@ -235,7 +235,7 @@ def test_zn_is_not_repromoted_into_final_target_support() -> None:
     summary = build_performance_review_summary(ReviewInput(contract="ZN", system_decisions=(decision("sys-1", contract="ZN"),))).to_dict()
 
     assert summary["status"] == "blocked"
-    assert "review_contract_not_final_supported:ZN:legacy_historical_excluded" in summary["blocking_reasons"]
+    assert "review_contract_not_final_supported:ZN:excluded" in summary["blocking_reasons"]
     assert "ZN" not in final_target_contracts()
 
 

@@ -19,10 +19,13 @@ from ntb_marimo_console.runtime_modes import build_app_shell_for_profile_id
 from ntb_marimo_console.runtime_profiles import get_runtime_profile
 
 
+FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "golden" / "phase1"
+
+
 class PreservedFixtureArtifactsTests(unittest.TestCase):
     def test_build_artifacts_returns_engine_compatible_shapes(self) -> None:
         artifacts = build_preserved_fixture_artifacts(
-            "fixtures/golden/phase1",
+            FIXTURES_ROOT,
             profile=get_runtime_profile("preserved_es_phase1"),
         )
 
@@ -41,7 +44,7 @@ class PreservedFixtureArtifactsTests(unittest.TestCase):
 
     def test_invalid_overlay_inputs_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            source_root = Path("fixtures/golden/phase1")
+            source_root = FIXTURES_ROOT
             artifact_root = Path(temp_dir) / "phase1"
             shutil.copytree(source_root, artifact_root)
             bad_snapshot = artifact_root / "observables" / "ES" / "trigger_true.json"
@@ -58,7 +61,7 @@ class PreservedFixtureArtifactsTests(unittest.TestCase):
 
     def test_refresh_rebuilds_profile_aware_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            source_root = Path("fixtures/golden/phase1")
+            source_root = FIXTURES_ROOT
             artifact_root = Path(temp_dir) / "phase1"
             shutil.copytree(source_root, artifact_root)
 
@@ -66,14 +69,14 @@ class PreservedFixtureArtifactsTests(unittest.TestCase):
 
         self.assertIn("preserved_es_phase1", refreshed)
         self.assertIn("preserved_cl_phase1", refreshed)
-        self.assertIn("preserved_zn_phase1", refreshed)
+        self.assertIn("preserved_nq_phase1", refreshed)
         self.assertIn("shared", refreshed["preserved_es_phase1"].packet_bundle)
-        self.assertIn("contracts", refreshed["preserved_zn_phase1"].packet_bundle)
+        self.assertIn("contracts", refreshed["preserved_nq_phase1"].packet_bundle)
 
     def test_preserved_mode_reaches_ready_state_with_actual_engine(self) -> None:
         engine_src = str((Path("../../source/ntb_engine/src")).resolve())
         with tempfile.TemporaryDirectory() as temp_dir:
-            source_root = Path("fixtures/golden/phase1")
+            source_root = FIXTURES_ROOT
             artifact_root = Path(temp_dir) / "phase1"
             shutil.copytree(source_root, artifact_root)
             write_preserved_fixture_artifacts(
@@ -102,7 +105,7 @@ class PreservedFixtureArtifactsTests(unittest.TestCase):
     def test_third_preserved_profile_reaches_ready_state_with_actual_engine(self) -> None:
         engine_src = str((Path("../../source/ntb_engine/src")).resolve())
         with tempfile.TemporaryDirectory() as temp_dir:
-            source_root = Path("fixtures/golden/phase1")
+            source_root = FIXTURES_ROOT
             artifact_root = Path(temp_dir) / "phase1"
             shutil.copytree(source_root, artifact_root)
             write_preserved_fixture_artifacts(
@@ -130,25 +133,25 @@ class PreservedFixtureArtifactsTests(unittest.TestCase):
     def test_second_preserved_profile_reaches_ready_state_with_actual_engine(self) -> None:
         engine_src = str((Path("../../source/ntb_engine/src")).resolve())
         with tempfile.TemporaryDirectory() as temp_dir:
-            source_root = Path("fixtures/golden/phase1")
+            source_root = FIXTURES_ROOT
             artifact_root = Path(temp_dir) / "phase1"
             shutil.copytree(source_root, artifact_root)
             write_preserved_fixture_artifacts(
                 artifact_root,
-                profile=get_runtime_profile("preserved_zn_phase1"),
+                profile=get_runtime_profile("preserved_nq_phase1"),
             )
 
             with patch.dict(os.environ, {"NTB_STAGE_E_LOG_ROOT": str(Path(temp_dir) / ".stage_e")}):
                 with patch.object(sys, "path", [engine_src, *sys.path]):
                     adapter_module = importlib.import_module("ntb_marimo_console.preserved_fixture_adapter")
                     shell = build_app_shell_for_profile_id(
-                        profile_id="preserved_zn_phase1",
+                        profile_id="preserved_nq_phase1",
                         fixtures_root=artifact_root,
-                        model_adapter=adapter_module.adapter_zn,
+                        model_adapter=adapter_module.adapter_nq,
                     )
 
         self.assertEqual(shell["runtime"]["runtime_mode"], "preserved_engine")
-        self.assertEqual(shell["runtime"]["profile_id"], "preserved_zn_phase1")
+        self.assertEqual(shell["runtime"]["profile_id"], "preserved_nq_phase1")
         self.assertEqual(shell["runtime"]["session_state"], "AUDIT_REPLAY_READY")
         self.assertIn("DECISION_REVIEW_READY", shell["runtime"]["state_history"])
         self.assertTrue(shell["surfaces"]["decision_review"]["has_result"])

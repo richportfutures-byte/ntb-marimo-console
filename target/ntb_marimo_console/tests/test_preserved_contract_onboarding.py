@@ -26,7 +26,6 @@ class PreservedContractOnboardingTests(unittest.TestCase):
                 "preserved_es_phase1",
                 "preserved_mgc_phase1",
                 "preserved_nq_phase1",
-                "preserved_zn_phase1",
                 "preserved_cl_phase1",
             },
         )
@@ -42,7 +41,7 @@ class PreservedContractOnboardingTests(unittest.TestCase):
         self.assertIn("Blocked:\n- none", report)
         self.assertIn("Final Target Contracts: ES, NQ, CL, 6E, MGC", report)
         self.assertIn("Excluded Final Target Contracts: ZN, GC", report)
-        self.assertIn("ZN -> preserved_zn_phase1: legacy_historical", report)
+        self.assertNotIn("preserved_zn_phase1", report)
         self.assertIn("NQ -> preserved_nq_phase1: final_target | supported_profile", report)
         self.assertIn("6E -> preserved_6e_phase1: final_target | supported_profile", report)
         self.assertIn("MGC -> preserved_mgc_phase1: final_target | supported_profile", report)
@@ -67,19 +66,19 @@ class PreservedContractOnboardingTests(unittest.TestCase):
             validate_profile_template(replace(template, premarket_brief=broken_brief))
 
     def test_select_single_new_contract_picks_cl_when_only_cl_is_viable(self) -> None:
-        selected = select_single_new_preserved_contract(supported_contracts={"ES", "ZN", "NQ", "6E", "MGC"})
+        selected = select_single_new_preserved_contract(supported_contracts={"ES", "NQ", "6E", "MGC"})
 
         self.assertIsNotNone(selected)
         self.assertEqual(selected.contract, "CL")
         self.assertEqual(selected.profile_id, "preserved_cl_phase1")
 
     def test_select_single_new_contract_fails_closed_when_only_blocked_candidates_remain(self) -> None:
-        selected = select_single_new_preserved_contract(supported_contracts={"ES", "ZN", "CL", "NQ", "6E", "MGC"})
+        selected = select_single_new_preserved_contract(supported_contracts={"ES", "CL", "NQ", "6E", "MGC"})
 
         self.assertIsNone(selected)
 
     def test_select_single_new_contract_can_pick_mgc_before_r10_onboarding(self) -> None:
-        selected = select_single_new_preserved_contract(supported_contracts={"ES", "ZN", "CL", "NQ", "6E"})
+        selected = select_single_new_preserved_contract(supported_contracts={"ES", "CL", "NQ", "6E"})
 
         self.assertIsNotNone(selected)
         self.assertEqual(selected.contract, "MGC")

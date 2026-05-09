@@ -45,11 +45,11 @@ cd C:\Users\stuar\ntb-marimo-console\target\ntb_marimo_console
 $env:NTB_CONSOLE_PROFILE='preserved_es_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
 ```
 
-Use in-app profile switching for `preserved_zn_phase1` and `preserved_cl_phase1`. Do not use blocked contracts.
+Use in-app profile switching among final-target profiles such as `preserved_nq_phase1`, `preserved_cl_phase1`, `preserved_6e_phase1`, and `preserved_mgc_phase1`. Do not use blocked contracts.
 
 ### MV-1 Brief Language Is Actionable
 
-For `preserved_es_phase1`, `preserved_zn_phase1`, and `preserved_cl_phase1`:
+For `preserved_es_phase1`, `preserved_nq_phase1`, and `preserved_cl_phase1`:
 
 - read the rendered pre-market brief in the primary surface
 - confirm the brief is understandable and actionable against the operator's own platform workflow
@@ -57,8 +57,8 @@ For `preserved_es_phase1`, `preserved_zn_phase1`, and `preserved_cl_phase1`:
 
 ### MV-2 Contract Language Remains Distinct
 
-- compare the rendered ES and ZN pre-market briefs
-- confirm ES and ZN do not collapse into the same causal vocabulary
+- compare the rendered ES and NQ pre-market briefs
+- confirm ES and NQ do not collapse into the same causal vocabulary
 - switch to CL and confirm the rendered CL brief keeps EIA-specific wording
 
 ### MV-3 Evidence And Run History Are Understandable Without Debug
@@ -67,12 +67,12 @@ Recommended sequence:
 
 1. on ES, run `Run bounded query for loaded snapshot`
 2. review `Run History`, `Decision Review`, and `Audit / Replay`
-3. switch to ZN and repeat one bounded query
+3. switch to NQ and repeat one bounded query
 4. close the app
 5. relaunch with any supported preserved profile
 6. review `Recent Session Evidence` and confirm:
    - current-session versus restored-prior-run labels are understandable
-   - ES and ZN attribution stays separate
+   - ES and NQ attribution stays separate
    - the operator can understand the surfaces without opening `Debug (Secondary)`
 
 Reject sign-off if run history, audit replay, or evidence require raw JSON interpretation to understand the primary result.

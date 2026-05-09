@@ -28,13 +28,16 @@ from ntb_marimo_console.session_lifecycle import (
 from ntb_marimo_console.ui.marimo_phase1_renderer import build_session_evidence_markdown
 
 
+FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "golden" / "phase1"
+
+
 class SessionEvidenceStoreTests(unittest.TestCase):
     def test_persistence_round_trip_for_evidence_records(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             store_path = Path(temp_dir) / ".state" / "recent_session_evidence.v1.json"
             lifecycle = self._load_profile("preserved_es_phase1", store_path=store_path)
             lifecycle = request_query_action(lifecycle)
-            lifecycle = switch_profile(lifecycle, "preserved_zn_phase1")
+            lifecycle = switch_profile(lifecycle, "preserved_nq_phase1")
 
             restored = restore_session_evidence_history(path=store_path)
 
@@ -42,7 +45,7 @@ class SessionEvidenceStoreTests(unittest.TestCase):
         self.assertEqual(len(restored.history), 3)
         self.assertEqual(restored.history[0].active_profile_id, "preserved_es_phase1")
         self.assertEqual(restored.history[1].lifecycle_action, "RUN_BOUNDED_QUERY")
-        self.assertEqual(restored.history[2].active_profile_id, "preserved_zn_phase1")
+        self.assertEqual(restored.history[2].active_profile_id, "preserved_nq_phase1")
         self.assertEqual(restored.history[2].originating_profile_id, "preserved_es_phase1")
 
     def test_bounded_retention_across_writes(self) -> None:
@@ -50,7 +53,7 @@ class SessionEvidenceStoreTests(unittest.TestCase):
             store_path = Path(temp_dir) / ".state" / "recent_session_evidence.v1.json"
             lifecycle = self._load_profile("preserved_es_phase1", store_path=store_path)
             targets = (
-                "preserved_zn_phase1",
+                "preserved_nq_phase1",
                 "preserved_cl_phase1",
                 "preserved_es_phase1",
             )
@@ -107,12 +110,12 @@ class SessionEvidenceStoreTests(unittest.TestCase):
         self.assertEqual(restored.restore_status, "RESTORE_OK")
         self.assertEqual(len(restored.history), 1)
 
-    def test_restore_prior_evidence_for_preserved_es_zn_and_cl(self) -> None:
+    def test_restore_prior_evidence_for_preserved_es_nq_and_cl(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             store_path = Path(temp_dir) / ".state" / "recent_session_evidence.v1.json"
             lifecycle = self._load_profile("preserved_es_phase1", store_path=store_path)
             lifecycle = request_query_action(lifecycle)
-            lifecycle = switch_profile(lifecycle, "preserved_zn_phase1")
+            lifecycle = switch_profile(lifecycle, "preserved_nq_phase1")
             lifecycle = switch_profile(lifecycle, "preserved_cl_phase1")
 
             restarted = self._load_profile("preserved_es_phase1", store_path=store_path)
@@ -120,9 +123,9 @@ class SessionEvidenceStoreTests(unittest.TestCase):
 
         self.assertEqual(restarted.shell["evidence"]["restore_status"], "RESTORE_OK")
         self.assertEqual(outcomes["preserved_es_phase1"]["source_scope"], "CURRENT_SESSION")
-        self.assertEqual(outcomes["preserved_zn_phase1"]["source_scope"], "RESTORED_PRIOR_RUN")
+        self.assertEqual(outcomes["preserved_nq_phase1"]["source_scope"], "RESTORED_PRIOR_RUN")
         self.assertEqual(outcomes["preserved_cl_phase1"]["source_scope"], "RESTORED_PRIOR_RUN")
-        self.assertEqual(outcomes["preserved_zn_phase1"]["last_action"], "SWITCH_PROFILE")
+        self.assertEqual(outcomes["preserved_nq_phase1"]["last_action"], "SWITCH_PROFILE")
         self.assertEqual(outcomes["preserved_cl_phase1"]["last_action"], "SWITCH_PROFILE")
 
     def test_explicit_clear_removes_retained_durable_evidence(self) -> None:
@@ -130,7 +133,7 @@ class SessionEvidenceStoreTests(unittest.TestCase):
             store_path = Path(temp_dir) / ".state" / "recent_session_evidence.v1.json"
             lifecycle = self._load_profile("preserved_es_phase1", store_path=store_path)
             lifecycle = request_query_action(lifecycle)
-            lifecycle = switch_profile(lifecycle, "preserved_zn_phase1")
+            lifecycle = switch_profile(lifecycle, "preserved_nq_phase1")
             cleared = clear_retained_evidence(lifecycle)
             restored = restore_session_evidence_history(path=store_path)
 
@@ -145,7 +148,7 @@ class SessionEvidenceStoreTests(unittest.TestCase):
             store_path = Path(temp_dir) / ".state" / "recent_session_evidence.v1.json"
             lifecycle = self._load_profile("preserved_es_phase1", store_path=store_path)
             lifecycle = request_query_action(lifecycle)
-            lifecycle = switch_profile(lifecycle, "preserved_zn_phase1")
+            lifecycle = switch_profile(lifecycle, "preserved_nq_phase1")
             lifecycle = clear_retained_evidence(lifecycle)
 
             restarted = self._load_profile("preserved_cl_phase1", store_path=store_path)
@@ -159,7 +162,7 @@ class SessionEvidenceStoreTests(unittest.TestCase):
             store_path = Path(temp_dir) / ".state" / "recent_session_evidence.v1.json"
             lifecycle = self._load_profile("preserved_es_phase1", store_path=store_path)
             lifecycle = request_query_action(lifecycle)
-            lifecycle = switch_profile(lifecycle, "preserved_zn_phase1")
+            lifecycle = switch_profile(lifecycle, "preserved_nq_phase1")
             lifecycle = clear_retained_evidence(lifecycle)
             lifecycle = switch_profile(lifecycle, "preserved_cl_phase1")
 
@@ -168,7 +171,7 @@ class SessionEvidenceStoreTests(unittest.TestCase):
 
         self.assertEqual(outcomes["preserved_es_phase1"]["source_scope"], "CURRENT_SESSION")
         self.assertEqual(outcomes["preserved_cl_phase1"]["source_scope"], "RESTORED_PRIOR_RUN")
-        self.assertNotIn("preserved_zn_phase1", {
+        self.assertNotIn("preserved_nq_phase1", {
             key: value for key, value in outcomes.items() if value.get("source_scope") == "RESTORED_PRIOR_RUN"
         })
 
@@ -230,7 +233,7 @@ class SessionEvidenceStoreTests(unittest.TestCase):
             store_path = Path(temp_dir) / ".state" / "recent_session_evidence.v1.json"
             lifecycle = self._load_profile("preserved_es_phase1", store_path=store_path)
             lifecycle = request_query_action(lifecycle)
-            lifecycle = switch_profile(lifecycle, "preserved_zn_phase1")
+            lifecycle = switch_profile(lifecycle, "preserved_nq_phase1")
 
             restarted = self._load_profile("preserved_es_phase1", store_path=store_path)
             switched = switch_profile(restarted, "preserved_cl_phase1")
@@ -238,7 +241,7 @@ class SessionEvidenceStoreTests(unittest.TestCase):
 
         self.assertEqual(outcomes["preserved_es_phase1"]["query_action_state"], "AVAILABLE")
         self.assertEqual(outcomes["preserved_es_phase1"]["source_scope"], "CURRENT_SESSION")
-        self.assertEqual(outcomes["preserved_zn_phase1"]["source_scope"], "RESTORED_PRIOR_RUN")
+        self.assertEqual(outcomes["preserved_nq_phase1"]["source_scope"], "RESTORED_PRIOR_RUN")
         self.assertEqual(outcomes["preserved_cl_phase1"]["source_scope"], "CURRENT_SESSION")
         self.assertEqual(switched.evidence_history[-1].originating_profile_id, "preserved_es_phase1")
         self.assertEqual(switched.evidence_history[-1].requested_profile_id, "preserved_cl_phase1")
@@ -264,7 +267,7 @@ class SessionEvidenceStoreTests(unittest.TestCase):
             lifecycle = request_query_action(lifecycle)
             lifecycle = reload_current_profile(lifecycle)
 
-            restarted = self._load_profile("preserved_zn_phase1", store_path=store_path)
+            restarted = self._load_profile("preserved_nq_phase1", store_path=store_path)
             outcomes = self._outcomes_by_profile(restarted.shell["evidence"])
 
         self.assertEqual(outcomes["preserved_cl_phase1"]["source_scope"], "RESTORED_PRIOR_RUN")
@@ -275,9 +278,9 @@ class SessionEvidenceStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             store_path = Path(temp_dir) / ".state" / "recent_session_evidence.v1.json"
             lifecycle = self._load_profile("preserved_es_phase1", store_path=store_path)
-            lifecycle = switch_profile(lifecycle, "preserved_nq_phase1")
+            lifecycle = switch_profile(lifecycle, "preserved_zn_phase1")
 
-            source_root = Path("fixtures/golden/phase1")
+            source_root = FIXTURES_ROOT
             artifact_root = Path(temp_dir) / "phase1"
             shutil.copytree(source_root, artifact_root)
             fixture_lifecycle = self._load_profile(
@@ -302,7 +305,7 @@ class SessionEvidenceStoreTests(unittest.TestCase):
             store_path = Path(temp_dir) / ".state" / "recent_session_evidence.v1.json"
             lifecycle = self._load_profile("preserved_es_phase1", store_path=store_path)
             lifecycle = request_query_action(lifecycle)
-            lifecycle = switch_profile(lifecycle, "preserved_zn_phase1")
+            lifecycle = switch_profile(lifecycle, "preserved_nq_phase1")
 
             restarted = self._load_profile("preserved_es_phase1", store_path=store_path)
             markdown = build_session_evidence_markdown(restarted.shell["evidence"])

@@ -16,7 +16,7 @@ R00 is complete when the authority document set truthfully resets the final prod
 | Gate 1 | Product target for this phase | Documentation/authority reset only. No runtime behavior, Schwab adapter behavior, stream manager behavior, or engine behavior is implemented in R00. | R00 |
 | Gate 2 | Final target support universe | `ES`, `NQ`, `CL`, `6E`, and `MGC` are the final target contracts. `MGC` is the gold contract for this application. | BINDING TARGET |
 | Gate 3 | Excluded contracts | `ZN` is excluded/historical. `GC` is excluded and must not be treated as a synonym for `MGC`. | BINDING EXCLUSION |
-| Gate 4 | Current runtime profile reality | Current target runtime profiles include fixture `ES`, preserved `ES`, preserved `ZN`, and preserved `CL`; this current-state fact does not define final target support. | CURRENT STATE |
+| Gate 4 | Current runtime profile reality | Current target runtime profiles are centered on fixture `ES` and preserved `ES`, `NQ`, `CL`, `6E`, and `MGC`; `ZN` is no longer a target app runtime profile. | CURRENT STATE |
 | Gate 5 | Engine freeze and decision authority | No `ntb_engine` changes are authorized in R00. The engine remains sole decision authority for staged evaluation. | THIS PHASE |
 
 ## Mandatory R00 Capabilities
@@ -33,7 +33,7 @@ R00 is complete when the authority document set truthfully resets the final prod
 - `ZN` must be classified as excluded/historical, not required final target support
 - `GC` must be classified as excluded
 - `MGC` must never be described as `GC`, and `GC` must never be used as a synonym for `MGC`
-- historical references to `ZN` may remain when clearly classified as current-state, legacy, fixture, or historical evidence
+- historical references to `ZN` may remain only as source-engine history, fixture data, or negative excluded-contract evidence
 
 ### Layer 2 - Current-State Truthfulness
 
@@ -43,11 +43,10 @@ R00 is complete when the authority document set truthfully resets the final prod
   - `preserved_nq_phase1`
   - `preserved_6e_phase1`
   - `preserved_mgc_phase1`
-  - `preserved_zn_phase1`
   - `preserved_cl_phase1`
 - `ES`, `NQ`, `CL`, `6E`, and `MGC` are current app-profile-supported through fixture-safe foundations that still require future live workstation upgrades
 - `NQ`, `6E`, and `MGC` must not be described as engine-missing contracts
-- `ZN` may remain in code, fixtures, or tests as a legacy/historical artifact during R00, but it is not final target support
+- `ZN` may remain in source-engine history or fixture data, but it must not be exposed as a target app runtime profile
 - `GC` is not present as a supported contract and remains excluded
 
 ### Layer 3 - Runtime and Live Work Boundary
@@ -57,7 +56,7 @@ R00 is complete when the authority document set truthfully resets the final prod
 - R00 does not implement stream manager behavior
 - R00 does not make default launch live
 - R00 does not add broker, order, execution, account, fill, or P&L behavior
-- R00 does not delete `ZN` engine code or fixtures
+- R00 does not delete source-engine `ZN` history or fixture data
 - runtime/profile/live-gating implementation for the final target universe is future roadmap work
 
 ### Layer 4 - Preserved Engine and Manual-Only Execution Boundary

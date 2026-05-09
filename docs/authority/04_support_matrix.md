@@ -14,7 +14,7 @@
 | CL | Required final target | Supported today through preserved profile | Retain current profile; future live workstation upgrades required |
 | 6E | Required final target | Supported today through preserved profile foundation | Retain profile foundation; future live workstation upgrades required |
 | MGC | Required final target | Supported today through preserved profile foundation | Retain profile foundation; gold contract for this application |
-| ZN | Excluded from final target support | Present today as preserved legacy/historical profile | Scope cleanup required; may remain as historical code/test artifact during R00 |
+| ZN | Excluded from final target support | Not exposed as a target app runtime profile | May remain as source-engine history or fixture data only |
 | GC | Excluded | Not present as supported runtime profile or engine schema contract | Exclusion guard required; not a synonym for `MGC` |
 
 ## Final Target Universe
@@ -38,10 +38,9 @@ The current target runtime profile registry contains:
 - `preserved_nq_phase1`
 - `preserved_6e_phase1`
 - `preserved_mgc_phase1`
-- `preserved_zn_phase1`
 - `preserved_cl_phase1`
 
-This current registry is factual baseline, not final target authority. `ZN` exists today as a preserved legacy/historical profile, but it is not part of final target support.
+This current registry is factual baseline, not final target authority. `ZN` is excluded and is no longer exposed as a target app runtime profile.
 
 ## Supported vs Onboarding vs Excluded Policy
 
@@ -49,7 +48,7 @@ This current registry is factual baseline, not final target authority. `ZN` exis
 2. `MGC` is the Micro Gold profile foundation for this application.
 3. `NQ`, `6E`, and `MGC` must not be described as engine-missing contracts; the engine schema includes them today.
 4. `MGC` must remain truthfully classified as a fixture-safe foundation, not live networking, order, or authorization support.
-5. `ZN` may remain only as legacy/historical code, fixture, or test artifact until cleanup work removes or quarantines it.
+5. `ZN` may remain only as source-engine history, fixture data, or excluded-contract guard evidence.
 6. `ZN` must not be presented as final target support.
 7. `GC` must remain excluded and must not appear as supported, onboarded, or synonymous with `MGC`.
 
