@@ -24,10 +24,11 @@
 - `fixture_es_demo`: available as a fixture/demo runtime path
 - `preserved_es_phase1`: operational current preserved profile
 - `preserved_nq_phase1`: fixture-safe preserved profile foundation
+- `preserved_6e_phase1`: fixture-safe preserved profile foundation
 - `preserved_zn_phase1`: operational current preserved legacy/historical profile
 - `preserved_cl_phase1`: operational current preserved profile
-- `6E` and `MGC`: engine-supported but not final app-profile-supported yet
-- current final target mismatch: `6E` and `MGC` are required final target onboarding contracts but do not yet have app-profile support
+- `MGC`: engine-supported but not final app-profile-supported yet
+- current final target mismatch: `MGC` is a required final target onboarding contract but does not yet have app-profile support
 - `ZN`: current preserved profile exists, but it is now excluded from final target support
 - `GC`: not present and excluded
 - target-owned `contract_universe.py` now encodes final target contracts, legacy/historical contracts, and never-supported contracts
@@ -50,8 +51,8 @@
 
 ### Preserved Engine Execution Path
 
-- preserved ES, NQ, ZN, and CL profiles can execute the bounded preserved-engine query path
-- profile switching across ES, NQ, ZN, and CL is implemented and fail-closed as current-state behavior
+- preserved ES, NQ, 6E, ZN, and CL profiles can execute the bounded preserved-engine query path
+- profile switching across ES, NQ, 6E, ZN, and CL is implemented and fail-closed as current-state behavior
 - stale per-profile session state is cleared on successful switch
 - this current-state behavior does not make `ZN` final target support
 
@@ -114,6 +115,17 @@
 - default launch remains non-live and no real Schwab networking is opened by this layer
 - no trade, broker, order, execution, fill, account, or P&L behavior is added
 
+### 6E Live Workstation Foundation
+
+- target-owned 6E live workstation foundation exists under `live_workstation/`
+- the foundation is deterministic and requires explicit 6E quote, numeric DXY state, DXY source label, completed bar, Asia/London/NY session sequence, session ranges, thin-liquidity state, preserved artifact, trigger, and event-lockout inputs
+- textual DXY context is not sufficient when numeric DXY is required
+- absolute 6E price action alone cannot produce `QUERY_READY` when DXY/session confirmation is required
+- `QUERY_READY` is a read-model state only and does not enable pipeline query authorization
+- missing numeric DXY, missing DXY source label, missing session sequence, missing range fields, active blocking thin-liquidity state, stale data, malformed data, unsupported contracts, excluded contracts, and incomplete confirmation fail closed
+- default launch remains non-live and no real Schwab networking is opened by this layer
+- no trade, broker, order, execution, fill, account, or P&L behavior is added
+
 ### Primary App Surface
 
 - startup, workflow, profile, and evidence surfaces render readably
@@ -143,7 +155,7 @@
 | Item | Status |
 |---|---|
 | `NQ` app-profile support | R08 preserved profile and read-model foundation exists; live networking/startup wiring and authorization remain not implemented |
-| `6E` app-profile support | Not implemented |
+| `6E` app-profile support | R09 preserved profile and read-model foundation exists; live networking/startup wiring and authorization remain not implemented |
 | `MGC` app-profile support | Not implemented |
 | Future live workstation upgrades for current `ES` support | R06 read-model foundation exists; live networking/startup wiring and authorization remain not implemented |
 | Future live workstation upgrades for current `CL` support | Not implemented in R00 |
@@ -158,7 +170,7 @@
 |---|---|---|
 | Earlier authority set required full engine-owned Watchman generation/scoring in this phase | Target code implements only the app-surface Watchman gate truthfully | Requirement remains deferred |
 | Earlier authority set required final support around ES, ZN, and CL | Runtime profiles contain ES, ZN, and CL, but engine schema also includes NQ, 6E, and MGC | Authority reset supersedes ES/ZN/CL as final target; final target is ES, NQ, CL, 6E, MGC |
-| Earlier authority set treated NQ, 6E, and MGC as deferred/non-target for phase closure | NQ, 6E, and MGC are engine-supported but not app-profile-supported | Reclassified as required onboarding targets |
+| Earlier authority set treated NQ, 6E, and MGC as deferred/non-target for phase closure | NQ and 6E now have profile foundations; MGC remains engine-supported but not app-profile-supported | Reclassified as required onboarding targets |
 | Earlier authority set treated ZN as required current support | ZN runtime profile exists today | Reclassified as excluded/historical for final target support |
 | Earlier docs did not explicitly guard GC | GC is not present in engine or target contract typing | GC is explicitly excluded and not a synonym for MGC |
 | R01 documented ZN/GC exclusion but had no target-owned executable guard | `contract_universe.py` now classifies final, legacy, and never-supported contracts | Final-target selector/report surfaces can use executable policy without deleting engine/runtime history |

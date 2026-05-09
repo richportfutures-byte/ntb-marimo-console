@@ -1,0 +1,55 @@
+{
+  "contract": "6E",
+  "session_date": "2026-01-14",
+  "timezone": "America/New_York",
+  "prior_day": {
+    "high": 1.0921,
+    "low": 1.0864,
+    "close": 1.0889,
+    "poc": 1.08895,
+    "vah": 1.0897,
+    "val": 1.0882,
+    "session_range": 0.0057
+  },
+  "current_session": {
+    "vah": 1.0914,
+    "val": 1.0899,
+    "poc": 1.09065,
+    "vwap": 1.09055
+  },
+  "overnight": {
+    "high": 1.0908,
+    "low": 1.0881
+  },
+  "dxy_gate": {
+    "required": true,
+    "source_label": "fixture_numeric_dxy",
+    "dxy": 101.85,
+    "dxy_change": -0.12
+  },
+  "session_sequence": {
+    "asia_complete": true,
+    "london_complete": true,
+    "ny_active": true,
+    "ny_pending": false,
+    "asia_high": 1.0892,
+    "asia_low": 1.0876,
+    "london_high": 1.0914,
+    "london_low": 1.0886,
+    "ny_high_so_far": 1.0916,
+    "ny_low_so_far": 1.0898,
+    "thin_liquidity_after_london_close_active": false
+  },
+  "volatility_context": {
+    "avg_20d_session_range": 0.0052,
+    "current_volume_vs_average": 0.96
+  },
+  "metadata": {
+    "packet_version": "pmkt_v1",
+    "generated_at": "2026-01-14T09:00:00-05:00",
+    "provenance": [
+      "source/ntb_engine/tests/fixtures/compiler/6e_historical_input.valid.json",
+      "target/ntb_marimo_console/fixtures/golden/phase1/observables/6E/trigger_true.json"
+    ]
+  }
+}

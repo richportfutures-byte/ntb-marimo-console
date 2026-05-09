@@ -1,0 +1,145 @@
+{
+  "shared": {
+    "challenge_state": {
+      "$schema": "challenge_state_v1",
+      "current_balance": 50000.0,
+      "daily_realized_pnl": 0.0,
+      "max_risk_per_trade_dollars": 1450.0,
+      "daily_loss_stop_dollars": 10000.0,
+      "minimum_reward_to_risk": 1.5,
+      "event_lockout_minutes_before": 15,
+      "event_lockout_minutes_after": 5,
+      "max_position_size_by_contract": {
+        "ES": 2,
+        "NQ": 2,
+        "CL": 2,
+        "ZN": 4,
+        "6E": 4,
+        "MGC": 12
+      },
+      "max_trades_per_day": 60,
+      "max_trades_per_contract_per_day": 3,
+      "cooldown_after_stopout_minutes": 30,
+      "current_open_positions": [],
+      "trades_today_all": 0,
+      "trades_today_by_contract": {
+        "ES": 0,
+        "NQ": 0,
+        "CL": 0,
+        "ZN": 0,
+        "6E": 0,
+        "MGC": 0
+      },
+      "profit_target_dollars": 400000.0,
+      "last_stopout_time_by_contract": {
+        "ES": null,
+        "NQ": null,
+        "CL": null,
+        "ZN": null,
+        "6E": null,
+        "MGC": null
+      },
+      "last_trade_direction_by_contract": {
+        "ES": null,
+        "NQ": null,
+        "CL": null,
+        "ZN": null,
+        "6E": null,
+        "MGC": null
+      }
+    },
+    "attached_visuals": {
+      "$schema": "attached_visuals_v1",
+      "daily_chart_attached": true,
+      "higher_timeframe_chart_attached": true,
+      "tpo_chart_attached": true,
+      "volume_profile_attached": true,
+      "execution_chart_attached": true,
+      "footprint_chart_attached": true,
+      "dom_snapshot_attached": true
+    }
+  },
+  "contracts": {
+    "6E": {
+      "contract_metadata": {
+        "$schema": "contract_metadata_v1",
+        "contract": "6E",
+        "tick_size": 0.00005,
+        "dollar_per_tick": 6.25,
+        "point_value": 125000.0,
+        "max_position_size": 4,
+        "slippage_ticks": 1,
+        "allowed_hours_start_et": "08:00",
+        "allowed_hours_end_et": "12:00"
+      },
+      "market_packet": {
+        "$schema": "market_packet_v1",
+        "timestamp": "2026-01-14T09:05:00-05:00",
+        "contract": "6E",
+        "session_type": "RTH",
+        "current_price": 1.09125,
+        "session_open": 1.0895,
+        "prior_day_high": 1.0921,
+        "prior_day_low": 1.0864,
+        "prior_day_close": 1.0889,
+        "overnight_high": 1.0908,
+        "overnight_low": 1.0881,
+        "current_session_vah": 1.0914,
+        "current_session_val": 1.0899,
+        "current_session_poc": 1.09065,
+        "previous_session_vah": 1.0897,
+        "previous_session_val": 1.0882,
+        "previous_session_poc": 1.08895,
+        "vwap": 1.09055,
+        "session_range": 0.0057,
+        "avg_20d_session_range": 0.0052,
+        "cumulative_delta": 1260.0,
+        "current_volume_vs_average": 0.96,
+        "opening_type": "Open-Auction",
+        "major_higher_timeframe_levels": [
+          1.093,
+          1.086
+        ],
+        "key_hvns": [
+          1.09065,
+          1.08895
+        ],
+        "key_lvns": [
+          1.0918
+        ],
+        "singles_excess_poor_high_low_notes": "NY is trading near London's upper range edge.",
+        "event_calendar_remainder": [
+          {
+            "name": "ECB Speaker",
+            "time": "2026-01-14T16:00:00Z",
+            "tier": 2,
+            "event_state": "upcoming",
+            "minutes_until": 115
+          }
+        ],
+        "cross_market_context": {
+          "dxy_direction": "weakening"
+        },
+        "data_quality_flags": []
+      },
+      "contract_specific_extension": {
+        "$schema": "contract_specific_extension_v1",
+        "contract": "6E",
+        "asia_high_low": {
+          "high": 1.0892,
+          "low": 1.0876
+        },
+        "london_high_low": {
+          "high": 1.0914,
+          "low": 1.0886
+        },
+        "ny_high_low_so_far": {
+          "high": 1.0916,
+          "low": 1.0898
+        },
+        "dxy_context": "weakening",
+        "europe_initiative_status": "Europe drove higher"
+      }
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "contract": "6E",
+  "session_date": "2026-01-14",
+  "status": "READY",
+  "version": "pmkt_brief_v1",
+  "structural_setups": [
+    {
+      "id": "sixe_setup_1",
+      "summary": "6E requires explicit numeric DXY and Asia to London to NY sequence confirmation before query-ready read-model state is surfaced.",
+      "description": "Fixture-safe 6E profile foundation using numeric DXY, completed bar confirmation, session segmentation, and thin-liquidity lockout inputs.",
+      "fields_used": [
+        "market.current_price",
+        "market.bar_5m_close_count_at_or_beyond_level",
+        "cross_asset.dxy",
+        "session_sequence.asia_complete",
+        "session_sequence.london_complete",
+        "session_sequence.ny_pending"
+      ],
+      "contract_framework_labels": [
+        "fx_session_sequence",
+        "numeric_dxy_gate",
+        "fail_closed_read_model"
+      ],
+      "stage_b_thesis_links": [
+        "sixe_dxy_session_breakout"
+      ],
+      "query_triggers": [
+        {
+          "id": "sixe_trigger_dxy_session_breakout",
+          "logic": "sixe_dxy_session_breakout",
+          "description": "Trigger only when 6E touches the plan level, completed bars confirm, DXY is explicitly numeric and supportive, and session sequencing is complete.",
+          "observable_conditions": [
+            "market.current_price >= 1.0912",
+            "market.bar_5m_close_count_at_or_beyond_level >= 1",
+            "cross_asset.dxy <= 102.0",
+            "session_sequence.asia_complete == True",
+            "session_sequence.london_complete == True",
+            "session_sequence.ny_pending == False"
+          ],
+          "fields_used": [
+            "market.current_price",
+            "market.bar_5m_close_count_at_or_beyond_level",
+            "cross_asset.dxy",
+            "session_sequence.asia_complete",
+            "session_sequence.london_complete",
+            "session_sequence.ny_pending"
+          ]
+        }
+      ],
+      "warnings": [
+        "Textual dollar context is not sufficient when DXY is required.",
+        "Absolute 6E price action is not sufficient without numeric DXY and explicit session sequence confirmation.",
+        "Thin liquidity after London close must keep the read model blocked or locked out when active."
+      ]
+    }
+  ]
+}

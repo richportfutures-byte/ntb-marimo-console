@@ -195,9 +195,9 @@ $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe scripts\run_windows_acceptance
 What it verifies:
 
 - environment/bootstrap imports and target-owned Marimo runtime path preparation
-- supported profile listing for `fixture_es_demo`, `preserved_es_phase1`, `preserved_zn_phase1`, and `preserved_cl_phase1`
+- supported profile listing for `fixture_es_demo`, `preserved_es_phase1`, `preserved_nq_phase1`, `preserved_6e_phase1`, `preserved_zn_phase1`, and `preserved_cl_phase1`
 - strict preflight for every supported profile
-- fail-closed blocked-contract reporting for `NQ`, `6E`, and `MGC`
+- fail-closed blocked-contract reporting for `MGC`
 - validator-driven Watchman gate regression coverage
 - JSONL-backed Run History / Audit Replay regression coverage
 - retained-evidence regression coverage via the target pytest slice
@@ -272,8 +272,6 @@ Interpretation:
 
 Current blocked candidates:
 
-- `NQ`: `blocked_unsupported_query_observable_contract`
-- `6E`: `blocked_missing_numeric_cross_asset_source`
 - `MGC`: `blocked_missing_numeric_cross_asset_source`
 
 How this appears in the app:

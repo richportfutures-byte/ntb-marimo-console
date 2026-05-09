@@ -1,0 +1,10 @@
+[
+  {
+    "run_id": "run_fixture_6e_001",
+    "logged_at": "2026-01-14T09:05:00-05:00",
+    "contract": "6E",
+    "run_type": "pipeline",
+    "final_decision": "NO_TRADE",
+    "notes": "Fixture-backed 6E preserved profile foundation row"
+  }
+]

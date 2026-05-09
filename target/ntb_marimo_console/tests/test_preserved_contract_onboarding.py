@@ -22,7 +22,13 @@ class PreservedContractOnboardingTests(unittest.TestCase):
 
         self.assertEqual(
             supported_ids,
-            {"preserved_es_phase1", "preserved_nq_phase1", "preserved_zn_phase1", "preserved_cl_phase1"},
+            {
+                "preserved_6e_phase1",
+                "preserved_es_phase1",
+                "preserved_nq_phase1",
+                "preserved_zn_phase1",
+                "preserved_cl_phase1",
+            },
         )
 
     def test_blocked_candidates_are_reported_with_reason_categories(self) -> None:
@@ -30,7 +36,7 @@ class PreservedContractOnboardingTests(unittest.TestCase):
         blocked = {result.contract: result.reason_category for result in snapshot.blocked}
 
         self.assertNotIn("NQ", blocked)
-        self.assertEqual(blocked["6E"], BLOCKED_MISSING_NUMERIC_CROSS_ASSET_SOURCE)
+        self.assertNotIn("6E", blocked)
         self.assertEqual(blocked["MGC"], BLOCKED_MISSING_NUMERIC_CROSS_ASSET_SOURCE)
 
         report = render_contract_eligibility_report(snapshot)
@@ -40,6 +46,7 @@ class PreservedContractOnboardingTests(unittest.TestCase):
         self.assertIn("Excluded Final Target Contracts: ZN, GC", report)
         self.assertIn("ZN -> preserved_zn_phase1: legacy_historical", report)
         self.assertIn("NQ -> preserved_nq_phase1: final_target | supported_profile", report)
+        self.assertIn("6E -> preserved_6e_phase1: final_target | supported_profile", report)
 
     def test_profile_template_checklist_is_readable_and_complete(self) -> None:
         template = validate_profile_template(build_candidate_profile_template("CL"))

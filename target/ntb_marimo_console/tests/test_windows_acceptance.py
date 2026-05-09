@@ -25,6 +25,7 @@ class WindowsAcceptanceTests(unittest.TestCase):
         output = "\n".join(
             [
                 "fixture_es_demo\tmode=fixture_demo\tcontract=ES\tsession_date=2026-03-25\tadapter=n/a",
+                "preserved_6e_phase1\tmode=preserved_engine\tcontract=6E\tsession_date=2026-01-14\tadapter=adapter_6e",
                 "preserved_cl_phase1\tmode=preserved_engine\tcontract=CL\tsession_date=2026-01-14\tadapter=adapter_cl",
                 "preserved_es_phase1\tmode=preserved_engine\tcontract=ES\tsession_date=2026-03-25\tadapter=adapter",
                 "preserved_nq_phase1\tmode=preserved_engine\tcontract=NQ\tsession_date=2026-01-14\tadapter=adapter_nq",
@@ -36,6 +37,7 @@ class WindowsAcceptanceTests(unittest.TestCase):
             extract_profile_ids_from_listing(output),
             (
                 "fixture_es_demo",
+                "preserved_6e_phase1",
                 "preserved_cl_phase1",
                 "preserved_es_phase1",
                 "preserved_nq_phase1",
@@ -56,7 +58,6 @@ class WindowsAcceptanceTests(unittest.TestCase):
             [
                 "Preserved Contract Eligibility Audit",
                 "Blocked:",
-                "- 6E -> preserved_6e_phase1: blocked_missing_numeric_cross_asset_source | blocked",
                 "- MGC -> preserved_mgc_phase1: blocked_missing_numeric_cross_asset_source | blocked",
             ]
         )

@@ -558,7 +558,4 @@ def test_runtime_profile_defaults_remain_fixture_safe_and_non_live() -> None:
     assert supported["preserved_nq_phase1"].operator_selectable is True
     assert default_profile_id_for_mode("fixture_demo") == "fixture_es_demo"
     assert default_profile_id_for_mode("preserved_engine") == "preserved_es_phase1"
-    assert {candidate.contract for candidate in snapshot.candidate_profiles if candidate.status == "blocked"} == {
-        "6E",
-        "MGC",
-    }
+    assert {candidate.contract for candidate in snapshot.candidate_profiles if candidate.status == "blocked"} == {"MGC"}

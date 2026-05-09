@@ -12,7 +12,7 @@
 | ES | Required final target | Supported today through fixture and preserved profiles | Retain current profile; future live workstation upgrades required |
 | NQ | Required final target | Supported today through preserved profile foundation | Retain profile foundation; future live workstation upgrades required |
 | CL | Required final target | Supported today through preserved profile | Retain current profile; future live workstation upgrades required |
-| 6E | Required final target | Not app-profile-supported today | Required onboarding target |
+| 6E | Required final target | Supported today through preserved profile foundation | Retain profile foundation; future live workstation upgrades required |
 | MGC | Required final target | Not app-profile-supported today | Required onboarding target; gold contract for this application |
 | ZN | Excluded from final target support | Present today as preserved legacy/historical profile | Scope cleanup required; may remain as historical code/test artifact during R00 |
 | GC | Excluded | Not present as supported runtime profile or engine schema contract | Exclusion guard required; not a synonym for `MGC` |
@@ -36,6 +36,7 @@ The current target runtime profile registry contains:
 - `fixture_es_demo`
 - `preserved_es_phase1`
 - `preserved_nq_phase1`
+- `preserved_6e_phase1`
 - `preserved_zn_phase1`
 - `preserved_cl_phase1`
 
@@ -43,10 +44,10 @@ This current registry is factual baseline, not final target authority. `ZN` exis
 
 ## Supported vs Onboarding vs Excluded Policy
 
-1. `ES`, `NQ`, and `CL` are currently app-profile-supported and require future live workstation upgrades.
-2. `6E` and `MGC` are required onboarding targets for the final roadmap.
+1. `ES`, `NQ`, `CL`, and `6E` are currently app-profile-supported and require future live workstation upgrades.
+2. `MGC` is a required onboarding target for the final roadmap.
 3. `NQ`, `6E`, and `MGC` must not be described as engine-missing contracts; the engine schema includes them today.
-4. `6E` and `MGC` must remain truthfully classified as not current app-profile-supported until runtime/profile/live-gating work promotes them.
+4. `MGC` must remain truthfully classified as not current app-profile-supported until runtime/profile/live-gating work promotes it.
 5. `ZN` may remain only as legacy/historical code, fixture, or test artifact until cleanup work removes or quarantines it.
 6. `ZN` must not be presented as final target support.
 7. `GC` must remain excluded and must not appear as supported, onboarded, or synonymous with `MGC`.
@@ -70,7 +71,7 @@ Fixtures, preserved artifacts, or live provider outputs are acceptable only when
 | ES | Required for final target | Validator-driven `mo.stop()` hard gate | Required; current preserved profile exists |
 | NQ | Required for final target | Validator-driven `mo.stop()` hard gate | Required; current preserved profile foundation exists |
 | CL | Required for final target | Validator-driven `mo.stop()` hard gate | Required; current preserved profile exists |
-| 6E | Required for final target | Validator-driven `mo.stop()` hard gate | Required onboarding target |
+| 6E | Required for final target | Validator-driven `mo.stop()` hard gate | Required; current preserved profile foundation exists |
 | MGC | Required for final target | Validator-driven `mo.stop()` hard gate | Required onboarding target; gold contract |
 | ZN | Not final target | Must not appear as final supported target | Excluded/historical |
 | GC | Not final target | Must not appear as supported or as `MGC` synonym | Excluded |
@@ -92,9 +93,11 @@ Fixtures, preserved artifacts, or live provider outputs are acceptable only when
 
 ## Required Onboarding Boundary
 
-`6E` and `MGC` are not current app-profile-supported yet. They are required onboarding targets for the final target roadmap and must be promoted only through explicit future runtime/profile/live-gating work. They are not optional deferred extras and not blocked because the engine lacks schema support.
+`MGC` is not current app-profile-supported yet. It is a required onboarding target for the final target roadmap and must be promoted only through explicit future runtime/profile/live-gating work. It is not an optional deferred extra and is not blocked because the engine lacks schema support.
 
 `NQ` now has a preserved profile and deterministic ES-relative live workstation read-model foundation. That foundation does not authorize trades, make default launch live, wire live Schwab startup, or make absolute NQ price action sufficient by itself.
+
+`6E` now has a preserved profile and deterministic DXY/session-sequence live workstation read-model foundation. That foundation does not authorize trades, make default launch live, wire live Schwab startup, infer numeric DXY from text, or make absolute 6E price action sufficient by itself.
 
 ## Exclusion Boundary
 

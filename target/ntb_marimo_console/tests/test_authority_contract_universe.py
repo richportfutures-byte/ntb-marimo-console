@@ -64,8 +64,8 @@ class AuthorityContractUniverseTests(unittest.TestCase):
             self.assertRegex(support, rf"\| {re.escape(contract)} \| Required final target")
             self.assertIn(f"`{contract}`", support)
 
-        self.assertIn("`6E` and `MGC` are required onboarding targets", support)
-        self.assertIn("engine-supported but not final app-profile-supported yet", baseline)
+        self.assertIn("`MGC` is not current app-profile-supported yet", support)
+        self.assertIn("`MGC`: engine-supported but not final app-profile-supported yet", baseline)
         self.assertIn("must not be described as engine-missing contracts", support)
         self.assertNotIn("engine-missing", baseline)
 
@@ -78,6 +78,7 @@ class AuthorityContractUniverseTests(unittest.TestCase):
             "preserved_zn_phase1",
             "preserved_cl_phase1",
             "preserved_nq_phase1",
+            "preserved_6e_phase1",
         ):
             self.assertIn(f"`{profile_id}`", baseline)
 

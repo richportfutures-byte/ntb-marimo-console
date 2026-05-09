@@ -40,7 +40,7 @@ class ContractTruthAuditTests(unittest.TestCase):
         self.assertIn("`GC` must not be added or conflated with `MGC`", self.audit)
 
     def test_onboarding_targets_require_onboarding_not_engine_creation(self) -> None:
-        self.assertIn("| 6E | Final target | Yes | Yes | No | No | Onboard profile and DXY/session gating |", self.audit)
+        self.assertIn("| 6E | Final target | Yes | Yes | Yes: `preserved_6e_phase1` | Partial | Live upgrade |", self.audit)
         self.assertIn("| MGC | Final target; not `GC` | Yes | Yes | No | No | Onboard profile and DXY/yield gating |", self.audit)
         self.assertIn("Remaining contracts require onboarding rather than engine creation", self.audit)
 

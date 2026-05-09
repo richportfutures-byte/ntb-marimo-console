@@ -1,0 +1,28 @@
+{
+  "contract": "6E",
+  "timestamp_et": "2026-01-14T09:05:00-05:00",
+  "market": {
+    "current_price": 1.09065,
+    "cumulative_delta": 240.0,
+    "bar_5m_close": 1.0907,
+    "bar_5m_close_count_at_or_beyond_level": 0
+  },
+  "cross_asset": {
+    "dxy": 102.35,
+    "dxy_change": 0.18,
+    "dxy_source": "fixture_numeric_dxy"
+  },
+  "session_sequence": {
+    "asia_complete": true,
+    "london_complete": true,
+    "ny_active": false,
+    "ny_pending": true,
+    "asia_high": 1.0892,
+    "asia_low": 1.0876,
+    "london_high": 1.0914,
+    "london_low": 1.0886,
+    "ny_high_so_far": 1.0909,
+    "ny_low_so_far": 1.0898,
+    "thin_liquidity_after_london_close_active": false
+  }
+}
