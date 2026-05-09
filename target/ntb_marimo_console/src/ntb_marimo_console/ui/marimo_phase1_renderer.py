@@ -11,6 +11,7 @@ from ..watchman_gate import build_watchman_gate_markdown, watchman_gate_requires
 
 FROZEN_SURFACE_KEYS: tuple[str, ...] = (
     "session_header",
+    "five_contract_readiness_summary",
     "pre_market_brief",
     "readiness_matrix",
     "live_observables",
@@ -73,6 +74,8 @@ def build_phase1_render_plan(shell: Mapping[str, object]) -> dict[str, object]:
     rendered_sections: list[dict[str, object]] = []
     for key in FROZEN_SURFACE_KEYS:
         value = surfaces.get(key)
+        if key == "five_contract_readiness_summary" and not isinstance(value, Mapping):
+            value = _build_five_contract_readiness_summary_fallback(shell)
         if not isinstance(value, Mapping):
             warnings.append(f"Missing or invalid surface: {key}")
             rendered_sections.append({"key": key, "panel": {"surface": key, "warning": "unavailable"}})
@@ -523,6 +526,44 @@ def _render_surface_section(
                     )
         return _render_surface_card(mo.md("## Readiness Matrix\n" + ("\n".join(row_lines) if row_lines else "- unavailable")))
 
+    if key == "five_contract_readiness_summary":
+        rows = panel.get("rows")
+        lines = [
+            "## Five-Contract Readiness Summary",
+            f"- Mode: `{_as_str(panel.get('mode'), default='<unavailable>')}`",
+            f"- Active Profile: `{_as_str(panel.get('active_profile_id'), default='<none>')}`",
+            f"- Default Launch Live: `{_as_str(panel.get('default_launch_live'), default=False)}`",
+            f"- Live Credentials Required: `{_as_str(panel.get('live_credentials_required'), default=False)}`",
+            f"- Decision Authority: `{_as_str(panel.get('decision_authority'), default='<unavailable>')}`",
+            f"- Manual Execution Only: `{_as_str(panel.get('manual_execution_only'), default=True)}`",
+            f"- Summary Can Authorize Trades: `{_as_str(panel.get('summary_can_authorize_trades'), default=False)}`",
+            "- Rows:",
+        ]
+        if isinstance(rows, list):
+            for row in rows:
+                if not isinstance(row, Mapping):
+                    continue
+                lines.append(
+                    "  - "
+                    + f"{_as_str(row.get('contract'))}: "
+                    + f"profile={_as_str(row.get('runtime_profile_id'))}, "
+                    + f"preflight={_as_str(row.get('preflight_status'))}, "
+                    + f"startup={_as_str(row.get('startup_readiness_state'))}, "
+                    + f"operator_ready={_as_str(row.get('operator_ready'))}, "
+                    + f"market_data={_as_str(row.get('market_data_status'))}, "
+                    + f"trigger={_as_str(row.get('trigger_state_summary'))}, "
+                    + f"query={_as_str(row.get('query_gate_status'))}"
+                )
+                blocked = row.get("primary_blocked_reasons")
+                if isinstance(blocked, list) and blocked:
+                    lines.append("    Blocked: " + ", ".join(_as_str(item) for item in blocked))
+                query_not_ready = row.get("query_not_ready_reasons")
+                if isinstance(query_not_ready, list) and query_not_ready:
+                    lines.append("    Query Not Ready: " + ", ".join(_as_str(item) for item in query_not_ready))
+        else:
+            lines.append("  - <unavailable>")
+        return _render_surface_card(mo.md("\n".join(lines)))
+
     if key == "live_observables":
         snapshot = panel.get("snapshot")
         lines = [
@@ -742,6 +783,19 @@ def _first_value(primary: Mapping[str, object], secondary: Mapping[str, object],
         if value is not None:
             return _as_str(value, default="<unavailable>")
     return "<unavailable>"
+
+
+def _build_five_contract_readiness_summary_fallback(shell: Mapping[str, object]) -> dict[str, object]:
+    from ..readiness_summary import build_five_contract_readiness_summary_surface
+
+    startup = shell.get("startup")
+    runtime = shell.get("runtime")
+    startup_map = startup if isinstance(startup, Mapping) else {}
+    runtime_map = runtime if isinstance(runtime, Mapping) else {}
+    active_profile_id = _first_value(startup_map, runtime_map, "selected_profile_id", "profile_id")
+    if active_profile_id == "<unavailable>":
+        active_profile_id = None
+    return build_five_contract_readiness_summary_surface(active_profile_id=active_profile_id)
 
 
 def _table_value(value: object) -> str:

@@ -1,4 +1,4 @@
-# R21 Operator Workstation Launch & Usability Note
+# R21/R22 Operator Workstation Launch & Usability Note
 
 This note is the operator-facing summary of the current trader-usability audit. It does not change runtime behavior, default launch mode, stream manager behavior, or operator UI surfaces. It does not authorize trades.
 
@@ -34,6 +34,7 @@ PYTHONPATH=target/ntb_marimo_console/src python3 target/ntb_marimo_console/scrip
 For each final target preserved profile (`ES`, `NQ`, `CL`, `6E`, `MGC`) the non-live launch path produces an operator cockpit shell that exposes:
 
 - session header with active contract, profile id, and session date
+- five-contract readiness summary with one non-live row each for `ES`, `NQ`, `CL`, `6E`, and `MGC`
 - pre-market brief surface with status, setup summaries, and warnings
 - readiness matrix with contract status, event risk, and hard-lockout context
 - trigger table with declared triggers and validity
@@ -46,7 +47,7 @@ Cross-profile non-live launchability is regression-tested by `tests/test_worksta
 ## What Is Still Not Yet Trader-Usable
 
 - Real Schwab live market data is not wired into default launch. It remains explicitly opt-in via the operator-run R18 manual rehearsal and the single-quote Schwab manual live harness. Default launch stays non-live.
-- A consolidated five-contract live readiness dashboard surface (one panel showing all five final target contracts side-by-side with quote freshness, bar status, trigger state, and blocked reasons) is not yet present. The current cockpit is single-profile-active at a time, with profile switching available in-session.
+- Real five-contract live readiness is not proven by the new summary. The summary is fixture-backed/non-live and intentionally reports live market data as unavailable unless explicit fixture inputs provide otherwise. Real Schwab readiness still requires explicit opt-in and sanitized live proof.
 - Real five-contract Schwab live proof remains operator-run and pending. R19 marks the workstation as `CONDITIONALLY READY` until a sanitized real five-contract Schwab live session artifact is reviewed and committed.
 - Broker order routing, order placement, fills, account state, and P&L behavior are deliberately absent. Trade execution is manual-only on the operator's own platform.
 - Replay, performance review, and proof capture are read-only audit/evidence surfaces and do not authorize trades.
@@ -56,17 +57,19 @@ Cross-profile non-live launchability is regression-tested by `tests/test_worksta
 The current workstation is **partially trader-usable** for personal cockpit use:
 
 - Non-live launch and operator cockpit surfaces work for all five final target preserved profiles.
+- The cockpit now includes a fixture-backed five-contract readiness summary, so an operator can see all final target profile ids, startup readiness, market-data availability, query-gate state, blocked reasons, evidence/replay status, and manual-only/preserved-engine boundaries in one place.
 - Quote freshness and pipeline gating are wired through fixture-safe paths and fail closed when data is missing, stale, or mismatched.
-- Real Schwab live data and the five-contract live readiness dashboard are still pending operator-run validation and follow-on UI work.
+- Real Schwab live data and real five-contract live readiness remain pending operator-run validation and sanitized proof.
 
-## Next Highest-Value Implementation Step
+## R22 Summary Surface Status
 
-The next highest-value, non-live, fixture-safe step is a fixture-backed five-contract live readiness summary surface that reads from already-available view models (operator workspace, live observable snapshot v2, trigger state, pipeline query gate) and renders one row per final target contract with: profile, support state, watchman status, trigger state, query gate status, blocked reasons, last preserved pipeline result, and evidence/replay readiness.
+The R22 fixture-backed summary reads from already-available single-profile startup and surface outputs and renders one row per final target contract with: profile, final-target support status, preflight status, startup readiness, market-data availability, trigger/query state, blocked reasons, evidence/replay status, and manual-only/preserved-engine boundaries.
 
-That step:
+That surface:
 
 - does not require Schwab credentials,
 - does not require live data,
+- does not let fixture evidence satisfy real-live proof gates,
 - preserves fail-closed behavior,
 - preserves manual-only execution,
 - preserves the preserved engine as the sole decision authority,
@@ -74,11 +77,11 @@ That step:
 - preserves the rule that no fixture fallback occurs after live failure,
 - preserves the fixture-safe default tests and the default non-live launch.
 
-Real Schwab five-contract live proof remains a separate operator-run gate and is not unblocked by this step.
+Real Schwab five-contract live proof remains a separate operator-run gate and is not unblocked by this surface.
 
 ## Non-Goals
 
-R21 does not:
+R21/R22 does not:
 
 - modify default launch mode,
 - enable live Schwab traffic by default,

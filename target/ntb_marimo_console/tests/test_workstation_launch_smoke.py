@@ -26,6 +26,7 @@ FINAL_TARGET_PRESERVED_PROFILE_BY_CONTRACT: dict[str, str] = {
 
 EXPECTED_COCKPIT_SURFACES: tuple[str, ...] = (
     "session_header",
+    "five_contract_readiness_summary",
     "pre_market_brief",
     "readiness_matrix",
     "trigger_table",

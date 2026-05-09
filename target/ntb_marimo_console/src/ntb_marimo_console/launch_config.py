@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .adapters.contracts import RuntimeMode
 from .market_data import FuturesQuoteServiceConfig, resolve_futures_quote_service_config
+from .readiness_summary import build_five_contract_readiness_summary_surface
 from .runtime_diagnostics import (
     DIAG_INCOMPLETE_PROFILE_DEFINITION,
     DIAG_LAUNCH_PREFLIGHT_MISMATCH,
@@ -367,6 +368,12 @@ def _build_startup_artifacts_from_report(
         )
         shell = _build_startup_shell(failed_report)
         return StartupArtifacts(shell=shell, report=failed_report, ready=False, config=config)
+
+    surfaces = shell.get("surfaces")
+    if isinstance(surfaces, dict):
+        surfaces["five_contract_readiness_summary"] = build_five_contract_readiness_summary_surface(
+            active_profile_id=config.profile.profile_id,
+        )
 
     attach_launch_metadata(shell, report)
     return StartupArtifacts(shell=shell, report=report, ready=True, config=config)

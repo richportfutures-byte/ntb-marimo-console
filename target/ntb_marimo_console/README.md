@@ -158,6 +158,10 @@ Reference-only product-shell ideas remain in `../../reference/ntb_v3_idea`.
 
 8. After startup passes, use the app’s `Session Lifecycle`, `Session Workflow`, and `Live Query` sections:
 
+   - `Five-Contract Readiness Summary` shows one fixture-safe, non-live row each for `ES`, `NQ`, `CL`, `6E`, and `MGC`.
+   - The summary reports profile id, startup readiness, default market-data availability, trigger/query gate state, blocked reasons, evidence/replay status, and the manual-only/preserved-engine boundary.
+   - `Market data unavailable` is expected in default launch because live Schwab access is explicitly opt-in.
+   - The summary is an operator visibility surface only. It does not prove real Schwab readiness and cannot authorize trades.
    - `Live Query Status: ELIGIBLE` means the loaded snapshot satisfies the current query gate.
    - `Query Action Status: AVAILABLE` means the in-app bounded query button can be used.
    - `Decision Review Ready: True` appears only after the bounded query action completes successfully.
@@ -282,6 +286,22 @@ Fixture/demo profile:
 - `fixture_es_demo`: fixture-backed ES regression/demo profile
 
 `MGC` is the Micro Gold contract for this application. `MGC` is not `GC`; `GC` is excluded and must not be used as a synonym, alias, or substitute for `MGC`.
+
+## Five-Contract Readiness Summary
+
+The operator console includes a fixture-backed five-contract readiness summary in non-live mode. It is built without Schwab credentials and appears in the app shell alongside the existing single-profile surfaces.
+
+The summary includes exactly the five final target contracts:
+
+- `ES`
+- `NQ`
+- `CL`
+- `6E`
+- `MGC`
+
+`ZN` and `GC` do not appear as final-target readiness rows. The summary reports default live market data as unavailable unless an explicit fixture/non-live input is provided, and it keeps query readiness blocked when the existing gate conditions are not met.
+
+This surface does not replace real Schwab proof. Real five-contract live readiness still requires explicit live opt-in and a sanitized reviewed proof artifact.
 
 ## Audit Preserved Contract Eligibility
 
