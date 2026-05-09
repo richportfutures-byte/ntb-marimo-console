@@ -23,6 +23,7 @@ LIVE_OBSERVABLE_FIELD_PATHS: tuple[str, ...] = (
     "session_sequence.london_complete",
     "session_sequence.ny_pending",
     "macro_context.macro_release_context_populated",
+    "macro_context.fear_catalyst_state",
     "macro_context.tier1_lockout_active",
     "macro_context.eia_lockout_active",
 )

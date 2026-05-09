@@ -16,7 +16,7 @@ All R00 tests are binary pass/fail. R00 is a documentation/authority reset only.
 | R00-3 | Gold contract naming is checked | `MGC` is the gold contract for this application | `MGC` is never mislabeled as `GC`; `GC` is not used as a synonym for `MGC` |
 | R00-4 | Onboarding targets are classified truthfully | `NQ`, `6E`, and `MGC` are required onboarding targets | They are not described as engine-missing contracts or generic non-target deferred extras |
 | R00-5 | Current runtime profile reality remains factual | Current profiles are fixture `ES`, preserved `ES`, preserved `ZN`, and preserved `CL` | Authority baseline distinguishes current runtime profiles from final target support |
-| R00-6 | Runtime implementation is not claimed complete | Runtime/profile/live-gating work remains future roadmap work | No R00 doc claims `NQ`, `6E`, or `MGC` are current app-profile-supported |
+| R00-6 | Runtime implementation is not claimed complete | Live networking, startup wiring, and authorization work remains future roadmap work | No R00 doc claims final live Schwab workstation implementation is complete |
 | R00-7 | Doctrine remains intact | Engine decision authority, manual-only execution, and fail-closed behavior remain binding | No authority doc adds broker/order/execution/account/fill/P&L behavior or weakens fail-closed language |
 
 ## Current-State Runtime Acceptance Preserved As Factual Baseline
@@ -35,9 +35,9 @@ The following checks remain truthful for the current implementation and may be u
 
 | Test ID | Condition | Expected Result | Pass Criteria |
 |---|---|---|---|
-| SP-1 | Supported profile list command runs | Current runtime profiles are listed | `fixture_es_demo`, `preserved_es_phase1`, `preserved_zn_phase1`, `preserved_cl_phase1` present |
-| SP-2 | Preserved-contract eligibility audit runs | App-profile gaps are reported truthfully | `NQ`, `6E`, and `MGC` remain not current app-profile-supported with named reason categories |
-| SP-3 | Strict preflight runs for current preserved profiles | Preflight passes for current supported preserved profiles | `preserved_es_phase1`, `preserved_zn_phase1`, and `preserved_cl_phase1` report PASS as current-state profiles |
+| SP-1 | Supported profile list command runs | Current runtime profiles are listed | `fixture_es_demo`, `preserved_es_phase1`, `preserved_nq_phase1`, `preserved_6e_phase1`, `preserved_mgc_phase1`, `preserved_zn_phase1`, and `preserved_cl_phase1` present |
+| SP-2 | Preserved-contract eligibility audit runs | App-profile gaps are reported truthfully | No remaining final-target onboarding candidate is reported as blocked |
+| SP-3 | Strict preflight runs for current preserved profiles | Preflight passes for current supported preserved profiles | `preserved_es_phase1`, `preserved_nq_phase1`, `preserved_6e_phase1`, `preserved_mgc_phase1`, `preserved_zn_phase1`, and `preserved_cl_phase1` report PASS as current-state profiles |
 
 ### Watchman Gate
 
@@ -121,7 +121,7 @@ Successful R00 verification proves:
 
 Successful R00 verification does **not** prove:
 
-- `NQ`, `6E`, or `MGC` app-profile support
+- final live Schwab workstation readiness for `NQ`, `6E`, or `MGC`
 - final live Schwab workstation readiness
 - real-provider macro/event ingestion
 - full engine-owned Watchman brief/scoring generation
@@ -135,7 +135,7 @@ A build is rejected if any of the following is true:
 1. the authority docs still define final target support around `ES`, `ZN`, and `CL`
 2. `ZN` appears as required final target support rather than excluded/historical
 3. `GC` appears as supported or as a synonym for `MGC`
-4. `NQ`, `6E`, or `MGC` are treated as engine-missing instead of required onboarding targets
+4. `NQ`, `6E`, or `MGC` are treated as engine-missing instead of final target profile foundations
 5. R00 claims runtime/profile/live-gating implementation is complete
 6. the Watchman gate reads from a manually assigned status instead of Validator output
 7. a blocked, excluded, or unsupported contract appears ready or selectable as supported
@@ -152,7 +152,7 @@ A build is rejected if any of the following is true:
 | Unwired gate | `mo.stop()` exists but is not driven by real Validator output |
 | Excluded contract leakage | `ZN` or `GC` appears as final target support |
 | Gold contract mislabel | `MGC` is labeled, aliased, or onboarded as `GC` |
-| Unsupported contract leakage | `NQ`, `6E`, or `MGC` appears selectable as current app-profile-supported before onboarding is complete |
+| Unsupported contract leakage | A non-final-target or excluded contract appears selectable as current final-target app-profile support |
 | Placeholder history | Run History or Audit / Replay shows fixture-backed placeholders instead of real local JSONL-backed records |
 | Evidence bleed | Recent-session evidence from one profile appears as if it belongs to another |
 | Persistence lie | Restore or write failures are hidden behind a fake healthy status |

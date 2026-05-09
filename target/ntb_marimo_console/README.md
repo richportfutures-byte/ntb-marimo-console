@@ -195,9 +195,9 @@ $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe scripts\run_windows_acceptance
 What it verifies:
 
 - environment/bootstrap imports and target-owned Marimo runtime path preparation
-- supported profile listing for `fixture_es_demo`, `preserved_es_phase1`, `preserved_nq_phase1`, `preserved_6e_phase1`, `preserved_zn_phase1`, and `preserved_cl_phase1`
+- supported profile listing for `fixture_es_demo`, `preserved_es_phase1`, `preserved_nq_phase1`, `preserved_6e_phase1`, `preserved_mgc_phase1`, `preserved_zn_phase1`, and `preserved_cl_phase1`
 - strict preflight for every supported profile
-- fail-closed blocked-contract reporting for `MGC`
+- no remaining blocked final-target onboarding candidate reporting
 - validator-driven Watchman gate regression coverage
 - JSONL-backed Run History / Audit Replay regression coverage
 - retained-evidence regression coverage via the target pytest slice
@@ -272,12 +272,12 @@ Interpretation:
 
 Current blocked candidates:
 
-- `MGC`: `blocked_missing_numeric_cross_asset_source`
+- none
 
 How this appears in the app:
 
 - `Supported Profile Operations` shows the same supported-versus-blocked split in readable operator language.
-- Blocked candidates remain awareness-only until the audit changes; they do not become selectable in `Profile Selector`.
+- Blocked candidates remain awareness-only if the audit reports any in a future roadmap step; they do not become selectable in `Profile Selector`.
 
 Current onboarding rule:
 

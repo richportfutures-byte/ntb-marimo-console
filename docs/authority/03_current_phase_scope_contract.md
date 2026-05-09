@@ -40,11 +40,13 @@ R00 is complete when the authority document set truthfully resets the final prod
 - R00 must preserve the factual baseline that current runtime profiles include:
   - `fixture_es_demo`
   - `preserved_es_phase1`
+  - `preserved_nq_phase1`
+  - `preserved_6e_phase1`
+  - `preserved_mgc_phase1`
   - `preserved_zn_phase1`
   - `preserved_cl_phase1`
-- `ES` and `CL` are current app-profile-supported contracts that still require future live workstation upgrades
-- `NQ`, `6E`, and `MGC` are engine-supported but not current app-profile-supported
-- `NQ`, `6E`, and `MGC` are required onboarding targets for final product completion, not generic deferred/non-target contracts and not engine-missing contracts
+- `ES`, `NQ`, `CL`, `6E`, and `MGC` are current app-profile-supported through fixture-safe foundations that still require future live workstation upgrades
+- `NQ`, `6E`, and `MGC` must not be described as engine-missing contracts
 - `ZN` may remain in code, fixtures, or tests as a legacy/historical artifact during R00, but it is not final target support
 - `GC` is not present as a supported contract and remains excluded
 

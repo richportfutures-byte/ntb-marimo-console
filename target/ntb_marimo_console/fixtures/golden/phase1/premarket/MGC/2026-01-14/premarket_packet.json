@@ -1,0 +1,45 @@
+{
+  "contract": "MGC",
+  "session_date": "2026-01-14",
+  "timezone": "America/New_York",
+  "prior_day": {
+    "high": 2058.1,
+    "low": 2039.5,
+    "close": 2044.2,
+    "poc": 2046.4,
+    "vah": 2048.9,
+    "val": 2043.7,
+    "session_range": 9.1
+  },
+  "current_session": {
+    "vah": 2053.8,
+    "val": 2049.6,
+    "poc": 2051.2,
+    "vwap": 2050.9
+  },
+  "overnight": {
+    "high": 2050.6,
+    "low": 2042.4
+  },
+  "macro_context": {
+    "dxy": 101.85,
+    "dxy_change": -0.18,
+    "cash_10y_yield": 4.12,
+    "cash_10y_yield_change_bps": -3.0,
+    "fear_catalyst_state": "none"
+  },
+  "volatility_context": {
+    "avg_20d_session_range": 18.4,
+    "current_volume_vs_average": 1.02
+  },
+  "metadata": {
+    "packet_version": "pmkt_v1",
+    "generated_at": "2026-01-14T09:55:00-05:00",
+    "provenance": [
+      "source/ntb_engine/tests/fixtures/packets.valid.json",
+      "source/ntb_engine/tests/fixtures/compiler/mgc_historical_input.valid.json",
+      "source/ntb_engine/tests/fixtures/compiler/mgc_extension.valid.json"
+    ],
+    "risk_contract": "Micro Gold"
+  }
+}

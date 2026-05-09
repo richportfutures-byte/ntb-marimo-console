@@ -53,6 +53,15 @@ class RuntimeProfilesTests(unittest.TestCase):
         self.assertEqual(profile.artifact_contract_dir, "6E")
         self.assertEqual(profile.default_model_adapter_ref, "ntb_marimo_console.preserved_fixture_adapter:adapter_6e")
 
+    def test_mgc_preserved_profile_selection_succeeds_without_changing_defaults(self) -> None:
+        profile = get_runtime_profile("preserved_mgc_phase1")
+
+        self.assertEqual(profile.profile_id, "preserved_mgc_phase1")
+        self.assertEqual(profile.runtime_mode, "preserved_engine")
+        self.assertEqual(profile.contract, "MGC")
+        self.assertEqual(profile.artifact_contract_dir, "MGC")
+        self.assertEqual(profile.default_model_adapter_ref, "ntb_marimo_console.preserved_fixture_adapter:adapter_mgc")
+
     def test_unsupported_profile_fails_closed(self) -> None:
         with self.assertRaises(RuntimeProfileError):
             get_runtime_profile("unknown_profile")
@@ -86,6 +95,7 @@ class RuntimeProfilesTests(unittest.TestCase):
                 "preserved_6e_phase1",
                 "preserved_cl_phase1",
                 "preserved_es_phase1",
+                "preserved_mgc_phase1",
                 "preserved_nq_phase1",
                 "preserved_zn_phase1",
             ),

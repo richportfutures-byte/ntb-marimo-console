@@ -1,0 +1,19 @@
+{
+  "contract": "MGC",
+  "timestamp_et": "2026-01-14T10:05:00-05:00",
+  "market": {
+    "current_price": 2053.8,
+    "cumulative_delta": 980.0,
+    "bar_5m_close": 2053.9,
+    "bar_5m_close_count_at_or_beyond_level": 0
+  },
+  "cross_asset": {
+    "dxy": 102.4,
+    "dxy_change": 0.22,
+    "cash_10y_yield": 4.18,
+    "cash_10y_yield_change_bps": 4.0
+  },
+  "macro_context": {
+    "fear_catalyst_state": "none"
+  }
+}

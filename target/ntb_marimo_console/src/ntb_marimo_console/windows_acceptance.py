@@ -23,12 +23,11 @@ EXPECTED_SUPPORTED_PROFILE_IDS: Final[tuple[str, ...]] = (
     "preserved_6e_phase1",
     "preserved_cl_phase1",
     "preserved_es_phase1",
+    "preserved_mgc_phase1",
     "preserved_nq_phase1",
     "preserved_zn_phase1",
 )
-EXPECTED_BLOCKED_CONTRACTS: Final[dict[str, str]] = {
-    "MGC": "blocked_missing_numeric_cross_asset_source",
-}
+EXPECTED_BLOCKED_CONTRACTS: Final[dict[str, str]] = {}
 WATCHMAN_GATE_REGRESSION_TARGETS: Final[tuple[str, ...]] = (
     "tests/test_watchman_gate.py",
 )
@@ -184,6 +183,19 @@ def build_supported_listing_check(output: str) -> AcceptanceCheck:
 
 
 def build_blocked_contract_audit_check(output: str) -> AcceptanceCheck:
+    if not EXPECTED_BLOCKED_CONTRACTS:
+        if "Blocked:\n- none" not in output:
+            return AcceptanceCheck(
+                name="Blocked contracts reported truthfully",
+                passed=False,
+                summary="Blocked contract audit output should report no remaining final-target onboarding candidates.",
+            )
+        return AcceptanceCheck(
+            name="Blocked contracts reported truthfully",
+            passed=True,
+            summary="Blocked contract audit output reports no remaining final-target onboarding candidates.",
+        )
+
     missing: list[str] = []
     for contract, reason in EXPECTED_BLOCKED_CONTRACTS.items():
         expected_fragment = f"- {contract} ->"

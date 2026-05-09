@@ -92,7 +92,7 @@ Engine-blocked items in the deferred register may not reappear in target code as
 | ID | Current-State Finding | Authority Requirement | Classification |
 |---|---|---|---|
 | ID-01 | ES and CL are current app-profile-supported contracts | Final target requires ES and CL plus future live workstation upgrades | Required onboarding |
-| ID-02 | NQ, 6E, and MGC are engine-supported but not app-profile-supported | Final target requires onboarding for all three | Required onboarding |
+| ID-02 | NQ, 6E, and MGC are fixture-safe app-profile-supported foundations | Final target still requires future live workstation networking/startup/authorization work | Required live-workstation upgrades |
 | ID-03 | ZN is an operational preserved profile today | ZN is excluded from final target support | Required scope cleanup |
 | ID-04 | GC is not present today | GC must remain excluded and not alias MGC | Required scope cleanup |
 | ID-05 | Recent-session evidence, Run History, and Audit / Replay are real and local | Evidence/history must remain truthful and fail-closed | Doctrine preservation |

@@ -28,6 +28,7 @@ class WindowsAcceptanceTests(unittest.TestCase):
                 "preserved_6e_phase1\tmode=preserved_engine\tcontract=6E\tsession_date=2026-01-14\tadapter=adapter_6e",
                 "preserved_cl_phase1\tmode=preserved_engine\tcontract=CL\tsession_date=2026-01-14\tadapter=adapter_cl",
                 "preserved_es_phase1\tmode=preserved_engine\tcontract=ES\tsession_date=2026-03-25\tadapter=adapter",
+                "preserved_mgc_phase1\tmode=preserved_engine\tcontract=MGC\tsession_date=2026-01-14\tadapter=adapter_mgc",
                 "preserved_nq_phase1\tmode=preserved_engine\tcontract=NQ\tsession_date=2026-01-14\tadapter=adapter_nq",
                 "preserved_zn_phase1\tmode=preserved_engine\tcontract=ZN\tsession_date=2026-01-14\tadapter=adapter_zn",
             ]
@@ -40,6 +41,7 @@ class WindowsAcceptanceTests(unittest.TestCase):
                 "preserved_6e_phase1",
                 "preserved_cl_phase1",
                 "preserved_es_phase1",
+                "preserved_mgc_phase1",
                 "preserved_nq_phase1",
                 "preserved_zn_phase1",
             ),
@@ -58,14 +60,14 @@ class WindowsAcceptanceTests(unittest.TestCase):
             [
                 "Preserved Contract Eligibility Audit",
                 "Blocked:",
-                "- MGC -> preserved_mgc_phase1: blocked_missing_numeric_cross_asset_source | blocked",
+                "- none",
             ]
         )
 
         check = build_blocked_contract_audit_check(output)
 
         self.assertTrue(check.passed)
-        self.assertIn("fail-closed reason categories", check.summary)
+        self.assertIn("no remaining final-target onboarding candidates", check.summary)
 
     def test_render_acceptance_report_is_categorized_and_readable(self) -> None:
         report = AcceptanceReport(

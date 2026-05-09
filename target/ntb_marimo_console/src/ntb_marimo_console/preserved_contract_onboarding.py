@@ -466,13 +466,7 @@ def build_candidate_profile_template(contract: ContractSymbol) -> PreservedProfi
             ),
         )
     if contract == "MGC":
-        raise PreservedContractOnboardingError(
-            category=BLOCKED_MISSING_NUMERIC_CROSS_ASSET_SOURCE,
-            summary=(
-                "MGC is blocked because the preserved fixtures expose only textual dxy_context/yield_context, not the "
-                "numeric cross_asset.dxy and cross_asset.cash_10y_yield values needed for explicit boolean query gating."
-            ),
-        )
+        return _build_mgc_profile_template()
     raise PreservedContractOnboardingError(
         category=BLOCKED_INCOMPLETE_PROFILE_TEMPLATE,
         summary=f"Unsupported candidate contract template request: {contract}.",
@@ -637,6 +631,171 @@ def _build_cl_profile_template() -> PreservedProfileTemplate:
     )
 
 
+def _build_mgc_profile_template() -> PreservedProfileTemplate:
+    historical = _load_json_fixture("source/ntb_engine/tests/fixtures/compiler/mgc_historical_input.valid.json")
+    extension = _load_json_fixture("source/ntb_engine/tests/fixtures/compiler/mgc_extension.valid.json")
+    required_live_field_paths = (
+        "market.current_price",
+        "market.bar_5m_close_count_at_or_beyond_level",
+        "cross_asset.dxy",
+        "cross_asset.cash_10y_yield",
+        "macro_context.fear_catalyst_state",
+    )
+
+    return PreservedProfileTemplate(
+        profile_id="preserved_mgc_phase1",
+        contract="MGC",
+        session_date="2026-01-14",
+        evaluation_timestamp_iso="2026-01-14T10:05:00-05:00",
+        artifact_contract_dir="MGC",
+        readiness_trigger={"trigger_family": "price_level_touch", "price_level": 2054.2},
+        default_model_adapter_ref="ntb_marimo_console.preserved_fixture_adapter:adapter_mgc",
+        source_fixture_paths=_candidate_source_fixture_paths("MGC"),
+        required_live_field_paths=required_live_field_paths,
+        premarket_packet={
+            "contract": "MGC",
+            "session_date": "2026-01-14",
+            "timezone": "America/New_York",
+            "prior_day": {
+                "high": historical["prior_day_high"],
+                "low": historical["prior_day_low"],
+                "close": historical["prior_day_close"],
+                "poc": historical["previous_session_poc"],
+                "vah": historical["previous_session_vah"],
+                "val": historical["previous_session_val"],
+                "session_range": historical["session_range"],
+            },
+            "current_session": {
+                "vah": historical["current_session_vah"],
+                "val": historical["current_session_val"],
+                "poc": historical["current_session_poc"],
+                "vwap": historical["vwap"],
+            },
+            "overnight": {
+                "high": historical["overnight_high"],
+                "low": historical["overnight_low"],
+            },
+            "macro_context": {
+                "dxy": 101.85,
+                "dxy_change": -0.18,
+                "cash_10y_yield": 4.12,
+                "cash_10y_yield_change_bps": -3.0,
+                "fear_catalyst_state": extension["macro_fear_catalyst_summary"],
+            },
+            "volatility_context": {
+                "avg_20d_session_range": historical["avg_20d_session_range"],
+                "current_volume_vs_average": historical["current_volume_vs_average"],
+            },
+            "metadata": {
+                "packet_version": "pmkt_v1",
+                "generated_at": "2026-01-14T09:55:00-05:00",
+                "provenance": list(_candidate_source_fixture_paths("MGC")),
+                "risk_contract": "Micro Gold",
+            },
+        },
+        premarket_brief={
+            "contract": "MGC",
+            "session_date": "2026-01-14",
+            "status": "READY",
+            "version": "pmkt_brief_v1",
+            "structural_setups": [
+                {
+                    "id": "mgc_setup_1",
+                    "summary": (
+                        "MGC requires explicit numeric DXY and cash 10Y yield confirmation before query-ready "
+                        "read-model state is surfaced."
+                    ),
+                    "description": (
+                        "Fixture-safe Micro Gold profile foundation using numeric dollar and yield context, "
+                        "completed bar confirmation, and explicit fear-catalyst state."
+                    ),
+                    "fields_used": list(required_live_field_paths),
+                    "contract_framework_labels": [
+                        "micro_gold",
+                        "dxy_yield_dual_dependency",
+                        "fear_catalyst_state_explicit",
+                    ],
+                    "stage_b_thesis_links": [
+                        "mgc_dxy_yield_alignment",
+                    ],
+                    "query_triggers": [
+                        {
+                            "id": "mgc_trigger_dxy_yield_alignment",
+                            "logic": "mgc_dxy_yield_alignment",
+                            "description": (
+                                "Trigger only when MGC touches the plan level, completed bars confirm, DXY and "
+                                "cash 10Y yield are explicitly numeric and supportive, and fear-catalyst state "
+                                "is explicit."
+                            ),
+                            "observable_conditions": [
+                                "market.current_price >= 2054.2",
+                                "market.bar_5m_close_count_at_or_beyond_level >= 1",
+                                "cross_asset.dxy <= 102.0",
+                                "cross_asset.cash_10y_yield <= 4.15",
+                                "macro_context.fear_catalyst_state == 'none'",
+                            ],
+                            "fields_used": list(required_live_field_paths),
+                        }
+                    ],
+                    "warnings": [
+                        "Textual DXY or yield commentary is not sufficient when numeric macro context is required.",
+                        "Absolute MGC price action is not sufficient without numeric DXY and yield confirmation.",
+                        "MGC sizing references Micro Gold tick value and must not depend on full-size gold.",
+                    ],
+                }
+            ],
+        },
+        live_snapshot_armed={
+            "contract": "MGC",
+            "timestamp_et": "2026-01-14T10:05:00-05:00",
+            "market": {
+                "current_price": 2054.3,
+                "cumulative_delta": historical["cumulative_delta"],
+                "bar_5m_close": 2054.4,
+                "bar_5m_close_count_at_or_beyond_level": 1,
+            },
+            "cross_asset": {
+                "dxy": 101.85,
+                "dxy_change": -0.18,
+                "cash_10y_yield": 4.12,
+                "cash_10y_yield_change_bps": -3.0,
+            },
+            "macro_context": {
+                "fear_catalyst_state": "none",
+            },
+        },
+        live_snapshot_lockout={
+            "contract": "MGC",
+            "timestamp_et": "2026-01-14T10:05:00-05:00",
+            "market": {
+                "current_price": 2053.8,
+                "cumulative_delta": historical["cumulative_delta"],
+                "bar_5m_close": 2053.9,
+                "bar_5m_close_count_at_or_beyond_level": 0,
+            },
+            "cross_asset": {
+                "dxy": 102.4,
+                "dxy_change": 0.22,
+                "cash_10y_yield": 4.18,
+                "cash_10y_yield_change_bps": 4.0,
+            },
+            "macro_context": {
+                "fear_catalyst_state": "none",
+            },
+        },
+        run_history_rows=(
+            {
+                "run_id": "run_fixture_mgc_001",
+                "logged_at": "2026-01-14T10:05:00-05:00",
+                "contract": "MGC",
+                "run_type": "pipeline",
+                "final_decision": "NO_TRADE",
+                "notes": "Fixture-backed MGC preserved profile foundation row",
+            },
+        ),
+    )
+
+
 def _audit_supported_profile(
     profile: RuntimeProfile,
     *,
@@ -779,11 +938,11 @@ def _readiness_fixture_coverage_check(contract: ContractSymbol) -> EligibilityCh
     if contract == "MGC":
         return EligibilityCheck(
             name="readiness_fixture_coverage",
-            passed=False,
-            category=BLOCKED_MISSING_NUMERIC_CROSS_ASSET_SOURCE,
+            passed=True,
+            category="readiness_fixture_coverage",
             summary=(
-                "MGC readiness is blocked because the available fixtures provide textual DXY/yield context, "
-                "but not numeric DXY or cash 10Y yield observables for explicit boolean query predicates."
+                "MGC readiness has fixture-safe numeric DXY and cash 10Y yield coverage for explicit boolean "
+                "query predicates without relying on full-size gold."
             ),
         )
     return EligibilityCheck(

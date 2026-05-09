@@ -20,6 +20,7 @@ class ProfileOperationsTests(unittest.TestCase):
                 "preserved_6e_phase1",
                 "preserved_cl_phase1",
                 "preserved_es_phase1",
+                "preserved_mgc_phase1",
                 "preserved_nq_phase1",
                 "preserved_zn_phase1",
             ),
@@ -30,25 +31,18 @@ class ProfileOperationsTests(unittest.TestCase):
         self.assertEqual(supported["preserved_cl_phase1"].profile_kind, "Preserved")
         self.assertEqual(supported["preserved_nq_phase1"].contract, "NQ")
         self.assertTrue(supported["preserved_nq_phase1"].operator_selectable)
+        self.assertEqual(supported["preserved_mgc_phase1"].contract, "MGC")
+        self.assertTrue(supported["preserved_mgc_phase1"].operator_selectable)
         self.assertTrue(supported["preserved_es_phase1"].active)
         self.assertTrue(supported["preserved_es_phase1"].operator_selectable)
         self.assertFalse(supported["preserved_zn_phase1"].operator_selectable)
         self.assertEqual(supported["preserved_zn_phase1"].contract_policy, "legacy_historical_excluded")
         self.assertNotIn("preserved_zn_phase1", snapshot.selectable_profile_ids)
 
-    def test_blocked_candidate_visibility_reports_reason_labels(self) -> None:
+    def test_candidate_visibility_is_empty_after_final_target_profile_onboarding(self) -> None:
         snapshot = build_profile_operations_snapshot()
 
-        blocked = {
-            candidate.contract: candidate
-            for candidate in snapshot.candidate_profiles
-            if candidate.status == "blocked"
-        }
-        self.assertEqual(
-            set(blocked),
-            {"MGC"},
-        )
-        self.assertEqual(blocked["MGC"].reason_label, "Missing numeric cross-asset source")
+        self.assertEqual(snapshot.candidate_profiles, ())
 
     def test_supported_profile_switch_evaluation_is_selectable(self) -> None:
         evaluation = evaluate_profile_switch(
@@ -91,6 +85,17 @@ class ProfileOperationsTests(unittest.TestCase):
         self.assertEqual(evaluation.status, "supported")
         self.assertIsNotNone(evaluation.selected_profile)
         self.assertEqual(evaluation.selected_profile.contract, "6E")
+        self.assertIn("supported and selectable", evaluation.summary)
+
+    def test_mgc_profile_switch_is_supported_after_foundation_onboarding(self) -> None:
+        evaluation = evaluate_profile_switch(
+            "preserved_mgc_phase1",
+            current_profile_id="preserved_es_phase1",
+        )
+
+        self.assertEqual(evaluation.status, "supported")
+        self.assertIsNotNone(evaluation.selected_profile)
+        self.assertEqual(evaluation.selected_profile.contract, "MGC")
         self.assertIn("supported and selectable", evaluation.summary)
 
     def test_unknown_profile_switch_fails_closed(self) -> None:
