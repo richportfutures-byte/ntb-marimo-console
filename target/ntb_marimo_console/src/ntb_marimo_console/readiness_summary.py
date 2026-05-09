@@ -21,6 +21,13 @@ PRESERVED_ENGINE_AUTHORITY_STATEMENT: Final[str] = (
 MANUAL_ONLY_BOUNDARY_STATEMENT: Final[str] = (
     "Manual execution only. This summary cannot authorize trades, routing, fills, or platform actions."
 )
+LIVE_RUNTIME_READINESS_STATUS: Final[str] = "NOT_WIRED"
+LIVE_RUNTIME_CACHE_STATUS: Final[str] = "not_wired_to_operator_launch"
+LIVE_RUNTIME_READINESS_BLOCKERS: Final[tuple[str, ...]] = (
+    "five_contract_summary_builds_from_fixture_preserved_shells",
+    "operator_launch_does_not_supply_stream_manager_snapshot",
+    "explicit_opt_in_runtime_cache_reader_not_bound_to_summary",
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +43,10 @@ class FiveContractReadinessRow:
     market_data_status: str
     live_data_available: bool
     missing_live_fields: tuple[str, ...]
+    live_runtime_readiness_state: str
+    runtime_cache_status: str
+    runtime_cache_bound: bool
+    runtime_cache_blocked_reasons: tuple[str, ...]
     trigger_state_summary: str
     trigger_valid_count: int
     trigger_true_count: int
@@ -63,6 +74,10 @@ class FiveContractReadinessRow:
             "market_data_status": self.market_data_status,
             "live_data_available": self.live_data_available,
             "missing_live_fields": list(self.missing_live_fields),
+            "live_runtime_readiness_state": self.live_runtime_readiness_state,
+            "runtime_cache_status": self.runtime_cache_status,
+            "runtime_cache_bound": self.runtime_cache_bound,
+            "runtime_cache_blocked_reasons": list(self.runtime_cache_blocked_reasons),
             "trigger_state_summary": self.trigger_state_summary,
             "trigger_valid_count": self.trigger_valid_count,
             "trigger_true_count": self.trigger_true_count,
@@ -90,6 +105,11 @@ class FiveContractReadinessSummary:
     decision_authority: str = "preserved_engine_only"
     manual_execution_only: bool = True
     summary_can_authorize_trades: bool = False
+    live_runtime_readiness_status: str = LIVE_RUNTIME_READINESS_STATUS
+    explicit_opt_in_runtime_cache_required: bool = True
+    runtime_cache_bound_to_operator_launch: bool = False
+    live_runtime_cache_can_authorize_trades: bool = False
+    live_runtime_readiness_blockers: tuple[str, ...] = LIVE_RUNTIME_READINESS_BLOCKERS
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -104,10 +124,16 @@ class FiveContractReadinessSummary:
             "decision_authority": self.decision_authority,
             "manual_execution_only": self.manual_execution_only,
             "summary_can_authorize_trades": self.summary_can_authorize_trades,
+            "live_runtime_readiness_status": self.live_runtime_readiness_status,
+            "explicit_opt_in_runtime_cache_required": self.explicit_opt_in_runtime_cache_required,
+            "runtime_cache_bound_to_operator_launch": self.runtime_cache_bound_to_operator_launch,
+            "live_runtime_cache_can_authorize_trades": self.live_runtime_cache_can_authorize_trades,
+            "live_runtime_readiness_blockers": list(self.live_runtime_readiness_blockers),
             "rows": [row.to_dict() for row in self.rows],
             "limitations": [
                 "non_live_fixture_summary_only",
                 "live_data_unavailable_until_explicit_opt_in",
+                "explicit_opt_in_live_runtime_cache_not_wired",
                 "real_schwab_readiness_requires_sanitized_live_proof",
             ],
         }
@@ -191,6 +217,10 @@ def _build_row(
         market_data_status=market_data_status,
         live_data_available=market_data_status != "Market data unavailable",
         missing_live_fields=missing_live_fields,
+        live_runtime_readiness_state=LIVE_RUNTIME_READINESS_STATUS,
+        runtime_cache_status=LIVE_RUNTIME_CACHE_STATUS,
+        runtime_cache_bound=False,
+        runtime_cache_blocked_reasons=LIVE_RUNTIME_READINESS_BLOCKERS,
         trigger_state_summary=_trigger_state_summary(shell),
         trigger_valid_count=_trigger_count(shell, field="is_valid"),
         trigger_true_count=_trigger_count(shell, field="is_true"),

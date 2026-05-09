@@ -537,6 +537,8 @@ def _render_surface_section(
             f"- Decision Authority: `{_as_str(panel.get('decision_authority'), default='<unavailable>')}`",
             f"- Manual Execution Only: `{_as_str(panel.get('manual_execution_only'), default=True)}`",
             f"- Summary Can Authorize Trades: `{_as_str(panel.get('summary_can_authorize_trades'), default=False)}`",
+            f"- Live Runtime Readiness: `{_as_str(panel.get('live_runtime_readiness_status'), default='<unavailable>')}`",
+            f"- Runtime Cache Bound To Operator Launch: `{_as_str(panel.get('runtime_cache_bound_to_operator_launch'), default=False)}`",
             "- Rows:",
         ]
         if isinstance(rows, list):
@@ -551,6 +553,7 @@ def _render_surface_section(
                     + f"startup={_as_str(row.get('startup_readiness_state'))}, "
                     + f"operator_ready={_as_str(row.get('operator_ready'))}, "
                     + f"market_data={_as_str(row.get('market_data_status'))}, "
+                    + f"runtime_cache={_as_str(row.get('runtime_cache_status'), default='<unavailable>')}, "
                     + f"trigger={_as_str(row.get('trigger_state_summary'))}, "
                     + f"query={_as_str(row.get('query_gate_status'))}"
                 )

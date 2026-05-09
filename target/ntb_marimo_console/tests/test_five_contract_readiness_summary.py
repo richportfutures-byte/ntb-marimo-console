@@ -10,6 +10,8 @@ from ntb_marimo_console.contract_universe import final_target_contracts
 from ntb_marimo_console.launch_config import build_startup_artifacts_from_env
 from ntb_marimo_console.readiness_summary import (
     FIVE_CONTRACT_READINESS_SUMMARY_SCHEMA,
+    LIVE_RUNTIME_CACHE_STATUS,
+    LIVE_RUNTIME_READINESS_STATUS,
     build_five_contract_readiness_summary,
     build_five_contract_readiness_summary_surface,
 )
@@ -111,6 +113,31 @@ class FiveContractReadinessSummaryTests(unittest.TestCase):
                 self.assertFalse(row["trade_execution_authorized"])
                 self.assertFalse(row["proof_capture_satisfies_live_readiness"])
                 self.assertIn("Manual execution only", row["manual_only_boundary"])
+
+    def test_summary_marks_explicit_opt_in_runtime_cache_not_wired(self) -> None:
+        surface = build_five_contract_readiness_summary_surface()
+
+        self.assertEqual(surface["live_runtime_readiness_status"], LIVE_RUNTIME_READINESS_STATUS)
+        self.assertEqual(surface["live_runtime_readiness_status"], "NOT_WIRED")
+        self.assertTrue(surface["explicit_opt_in_runtime_cache_required"])
+        self.assertFalse(surface["runtime_cache_bound_to_operator_launch"])
+        self.assertFalse(surface["live_runtime_cache_can_authorize_trades"])
+        self.assertIn("explicit_opt_in_live_runtime_cache_not_wired", surface["limitations"])
+        self.assertIn(
+            "operator_launch_does_not_supply_stream_manager_snapshot",
+            surface["live_runtime_readiness_blockers"],
+        )
+
+        for row in surface["rows"]:
+            with self.subTest(contract=row["contract"]):
+                self.assertEqual(row["live_runtime_readiness_state"], LIVE_RUNTIME_READINESS_STATUS)
+                self.assertEqual(row["runtime_cache_status"], LIVE_RUNTIME_CACHE_STATUS)
+                self.assertFalse(row["runtime_cache_bound"])
+                self.assertIn(
+                    "explicit_opt_in_runtime_cache_reader_not_bound_to_summary",
+                    row["runtime_cache_blocked_reasons"],
+                )
+                self.assertFalse(row["trade_execution_authorized"])
 
     def test_preserved_engine_remains_decision_authority(self) -> None:
         surface = build_five_contract_readiness_summary_surface(active_profile_id="preserved_es_phase1")
