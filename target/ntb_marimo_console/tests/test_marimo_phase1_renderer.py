@@ -7,6 +7,10 @@ from ntb_marimo_console.runtime_modes import build_es_app_shell_for_mode
 from ntb_marimo_console.ui.marimo_phase1_renderer import (
     FROZEN_SURFACE_KEYS,
     _flatten_mapping_lines,
+    _render_decision_review_engine_reasoning,
+    _render_decision_review_invalidation,
+    _render_decision_review_risk_authorization,
+    _render_decision_review_trade_thesis,
     build_phase1_render_plan,
     build_profile_operations_markdown,
     build_session_evidence_markdown,
@@ -40,6 +44,92 @@ class MarimoPhase1RendererTests(unittest.TestCase):
         self.assertFalse(query_panel["manual_override_available"])
         self.assertNotIn("stage_e", decision_panel)
         self.assertNotIn("audit_log", decision_panel)
+
+    def test_decision_review_marks_narrative_unavailable_under_fixture_envelope(self) -> None:
+        """Fixture pipeline_result.*.json files are envelope-only.
+
+        The Decision Review surface must explicitly mark each narrative
+        section as unavailable in this run, never as empty success. A future
+        sidecar pipeline_result.<variant>.narrative.json would surface
+        narrative; absent that, the renderer is honest about what is missing.
+        """
+        shell = build_es_app_shell_for_mode(mode="fixture_demo")
+        decision_panel = shell["surfaces"]["decision_review"]
+
+        self.assertTrue(decision_panel["has_result"])
+        self.assertFalse(decision_panel["narrative_available"])
+        self.assertIsNotNone(decision_panel["narrative_unavailable_message"])
+        self.assertFalse(decision_panel["engine_reasoning"]["available"])
+        self.assertFalse(decision_panel["trade_thesis"]["available"])
+        self.assertFalse(decision_panel["risk_authorization_detail"]["available"])
+        self.assertFalse(decision_panel["invalidation"]["available"])
+
+    def test_decision_review_narrative_section_renderers_emit_unavailable_lines_for_absent_sections(self) -> None:
+        """The four section-line builders emit explicit unavailable lines when narrative is absent.
+
+        This locks the contract that the Markdown rendering does not silently
+        omit a section when its data is missing - it always prints the heading
+        and an explicit '_unavailable_' marker, never empty success.
+        """
+        engine_lines = _render_decision_review_engine_reasoning(
+            {"available": False, "unavailable_message": "Engine narrative unavailable in this run."}
+        )
+        thesis_lines = _render_decision_review_trade_thesis(
+            {"available": False, "unavailable_message": "Engine narrative unavailable in this run."}
+        )
+        risk_lines = _render_decision_review_risk_authorization(
+            {"available": False, "unavailable_message": "Engine narrative unavailable in this run."}
+        )
+        invalidation_lines = _render_decision_review_invalidation(
+            {"available": False, "unavailable_message": "Disqualifiers list is unavailable for this run.", "disqualifiers": []}
+        )
+
+        engine_text = "\n".join(engine_lines)
+        thesis_text = "\n".join(thesis_lines)
+        risk_text = "\n".join(risk_lines)
+        invalidation_text = "\n".join(invalidation_lines)
+
+        self.assertIn("### Engine Reasoning", engine_text)
+        self.assertIn("unavailable", engine_text.lower())
+        self.assertIn("### Trade Thesis", thesis_text)
+        self.assertIn("unavailable", thesis_text.lower())
+        self.assertIn("### Risk Authorization", risk_text)
+        self.assertIn("unavailable", risk_text.lower())
+        self.assertIn("### What Would Invalidate This", invalidation_text)
+        self.assertIn("unavailable", invalidation_text.lower())
+
+    def test_decision_review_trade_thesis_no_trade_branch_omits_setup_fields(self) -> None:
+        no_trade_section = {
+            "available": True,
+            "is_no_trade": True,
+            "outcome": "NO_TRADE",
+            "no_trade_reason": "confidence_band_low",
+            "rationale": "ES choppy near VWAP; awaiting resolution.",
+            "direction": None,
+            "setup_class": None,
+            "entry_price": None,
+            "stop_price": None,
+            "target_1": None,
+            "target_2": None,
+            "position_size": None,
+            "risk_dollars": None,
+            "reward_risk_ratio": None,
+            "hold_time_estimate_minutes": None,
+            "sizing_math": None,
+        }
+        lines = _render_decision_review_trade_thesis(no_trade_section)
+        text = "\n".join(lines)
+
+        self.assertIn("NO_TRADE", text)
+        self.assertIn("confidence_band_low", text)
+        self.assertIn("first-class outcome", text)
+        # Setup-only fields must not be rendered when NO_TRADE.
+        self.assertNotIn("- Direction:", text)
+        self.assertNotIn("- Entry Price:", text)
+        self.assertNotIn("- Target 1:", text)
+        # No alternate-trade prose.
+        self.assertNotIn("take trade", text.lower())
+        self.assertNotIn("alternate", text.lower())
 
     def test_raw_json_debug_is_secondary(self) -> None:
         shell = build_es_app_shell_for_mode(mode="fixture_demo")

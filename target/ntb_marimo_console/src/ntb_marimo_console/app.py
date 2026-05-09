@@ -173,12 +173,13 @@ def build_phase1_payload(
             try:
                 pipeline_result = backend.run_pipeline(inputs.pipeline_query)
                 summary = backend.summarize_pipeline_result(pipeline_result)
+                narrative = backend.narrate_pipeline_result(pipeline_result)
             except Exception as exc:
                 session.mark_query_action_failed()
                 error_message = f"Query action failed: {exc}"
             else:
                 session.mark_query_action_completed()
-                pipeline_vm = pipeline_trace_vm_from_summary(summary)
+                pipeline_vm = pipeline_trace_vm_from_summary(summary, narrative)
                 session.mark_decision_review_ready()
                 try:
                     audit_replay = dependencies.audit_replay_store.load_replay(session_target)

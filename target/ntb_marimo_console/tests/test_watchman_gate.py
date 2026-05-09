@@ -96,6 +96,13 @@ class _ReadyWatchmanBackend(PipelineBackend):
             "risk_authorization_decision": None,
         }
 
+    def narrate_pipeline_result(self, result: object) -> dict[str, object]:
+        return {
+            "contract_analysis": None,
+            "proposed_setup": None,
+            "risk_authorization": None,
+        }
+
 
 class WatchmanGateTests(unittest.TestCase):
     def setUp(self) -> None:

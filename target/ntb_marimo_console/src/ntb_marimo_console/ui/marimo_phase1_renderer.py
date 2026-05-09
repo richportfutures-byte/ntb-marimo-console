@@ -648,25 +648,30 @@ def _render_surface_section(
 
     if key == "decision_review":
         if panel.get("has_result") is True:
-            return _render_surface_card(
-                mo.md(
-                    "\n".join(
-                        [
-                            "## Decision Review",
-                            f"- Ready: `{_as_str(panel.get('ready'), default=True)}`",
-                            f"- Status: `{_as_str(panel.get('status'), default='READY')}`",
-                            f"- Message: {_as_str(panel.get('message'), default='Decision Review is ready.')}",
-                            f"- Contract: `{_as_str(panel.get('contract'))}`",
-                            f"- Termination Stage: `{_as_str(panel.get('termination_stage'))}`",
-                            f"- Final Decision: `{_as_str(panel.get('final_decision'))}`",
-                            f"- Stage A: `{_as_str(panel.get('stage_a_status'))}`",
-                            f"- Stage B: `{_as_str(panel.get('stage_b_outcome'))}`",
-                            f"- Stage C: `{_as_str(panel.get('stage_c_outcome'))}`",
-                            f"- Stage D: `{_as_str(panel.get('stage_d_decision'))}`",
-                        ]
-                    )
-                )
-            )
+            lines = [
+                "## Decision Review",
+                "",
+                "### Decision Summary",
+                f"- Ready: `{_as_str(panel.get('ready'), default=True)}`",
+                f"- Status: `{_as_str(panel.get('status'), default='READY')}`",
+                f"- Message: {_as_str(panel.get('message'), default='Decision Review is ready.')}",
+                f"- Contract: `{_as_str(panel.get('contract'))}`",
+                f"- Termination Stage: `{_as_str(panel.get('termination_stage'))}`",
+                f"- Final Decision: `{_as_str(panel.get('final_decision'))}`",
+                f"- Stage A: `{_as_str(panel.get('stage_a_status'))}`",
+                f"- Stage B: `{_as_str(panel.get('stage_b_outcome'))}`",
+                f"- Stage C: `{_as_str(panel.get('stage_c_outcome'))}`",
+                f"- Stage D: `{_as_str(panel.get('stage_d_decision'))}`",
+            ]
+            lines.extend(_render_decision_review_engine_reasoning(panel.get("engine_reasoning")))
+            lines.extend(_render_decision_review_trade_thesis(panel.get("trade_thesis")))
+            lines.extend(_render_decision_review_risk_authorization(panel.get("risk_authorization_detail")))
+            lines.extend(_render_decision_review_invalidation(panel.get("invalidation")))
+            unavailable_message = panel.get("narrative_unavailable_message")
+            if isinstance(unavailable_message, str) and panel.get("narrative_available") is not True:
+                lines.append("")
+                lines.append(f"_{unavailable_message}_")
+            return _render_surface_card(mo.md("\n".join(lines)))
         return _render_surface_card(
             mo.md(
                 "\n".join(
@@ -919,3 +924,193 @@ def _ready_outcome_suffix(state: object, outcome: object) -> str:
     if outcome is None:
         return state_text
     return f"{state_text} ({_as_str(outcome)})"
+
+
+def _render_decision_review_engine_reasoning(section: object) -> list[str]:
+    lines = ["", "### Engine Reasoning"]
+    if not isinstance(section, Mapping) or section.get("available") is not True:
+        message = (
+            section.get("unavailable_message")
+            if isinstance(section, Mapping)
+            else None
+        )
+        lines.append(
+            f"- _{_as_str(message, default='Engine narrative unavailable in this run.')}_"
+        )
+        return lines
+    lines.append(f"- Market Regime: `{_as_str(section.get('market_regime'))}`")
+    lines.append(f"- Directional Bias: `{_as_str(section.get('directional_bias'))}`")
+    lines.append(f"- Confidence Band: `{_as_str(section.get('confidence_band'))}`")
+    lines.append(f"- Evidence Score: `{_as_str(section.get('evidence_score'))}`")
+    lines.append(f"- Stage B Outcome: `{_as_str(section.get('outcome'))}`")
+    structural_notes = section.get("structural_notes")
+    if isinstance(structural_notes, str) and structural_notes:
+        lines.append(f"- Structural Notes: {structural_notes}")
+    else:
+        lines.append("- Structural Notes: _unavailable in this run_")
+    conflicting_signals = section.get("conflicting_signals")
+    if isinstance(conflicting_signals, list) and conflicting_signals:
+        lines.append("- Conflicting Signals:")
+        for entry in conflicting_signals:
+            lines.append(f"    - {_as_str(entry)}")
+    else:
+        lines.append("- Conflicting Signals: _none reported_")
+    assumptions = section.get("assumptions")
+    if isinstance(assumptions, list) and assumptions:
+        lines.append("- Assumptions:")
+        for entry in assumptions:
+            lines.append(f"    - {_as_str(entry)}")
+    else:
+        lines.append("- Assumptions: _none reported_")
+    key_levels = section.get("key_levels")
+    if isinstance(key_levels, Mapping):
+        lines.append("- Key Levels:")
+        lines.append(f"    - Pivot: `{_as_str(key_levels.get('pivot_level'))}`")
+        supports = key_levels.get("support_levels")
+        if isinstance(supports, list) and supports:
+            lines.append(
+                "    - Supports: "
+                + ", ".join(f"`{_as_str(level)}`" for level in supports)
+            )
+        else:
+            lines.append("    - Supports: _none_")
+        resistances = key_levels.get("resistance_levels")
+        if isinstance(resistances, list) and resistances:
+            lines.append(
+                "    - Resistances: "
+                + ", ".join(f"`{_as_str(level)}`" for level in resistances)
+            )
+        else:
+            lines.append("    - Resistances: _none_")
+    else:
+        lines.append("- Key Levels: _unavailable in this run_")
+    return lines
+
+
+def _render_decision_review_trade_thesis(section: object) -> list[str]:
+    lines = ["", "### Trade Thesis"]
+    if not isinstance(section, Mapping) or section.get("available") is not True:
+        message = (
+            section.get("unavailable_message")
+            if isinstance(section, Mapping)
+            else None
+        )
+        lines.append(
+            f"- _{_as_str(message, default='Engine narrative unavailable in this run.')}_"
+        )
+        return lines
+    is_no_trade = section.get("is_no_trade") is True
+    lines.append(f"- Stage C Outcome: `{_as_str(section.get('outcome'))}`")
+    if is_no_trade:
+        lines.append(
+            f"- No-Trade Reason: `{_as_str(section.get('no_trade_reason'), default='unavailable')}`"
+        )
+        lines.append("- _NO_TRADE is a first-class outcome. The engine did not propose a setup for this run._")
+        rationale = section.get("rationale")
+        if isinstance(rationale, str) and rationale:
+            lines.append(f"- Rationale: {rationale}")
+        return lines
+    lines.append(f"- Direction: `{_as_str(section.get('direction'))}`")
+    lines.append(f"- Setup Class: `{_as_str(section.get('setup_class'))}`")
+    lines.append(f"- Entry Price: `{_as_str(section.get('entry_price'))}`")
+    lines.append(f"- Stop Price: `{_as_str(section.get('stop_price'))}`")
+    lines.append(f"- Target 1: `{_as_str(section.get('target_1'))}`")
+    target_2 = section.get("target_2")
+    lines.append(
+        f"- Target 2: `{_as_str(target_2)}`"
+        if target_2 is not None
+        else "- Target 2: _none (single-position target_1 only)_"
+    )
+    lines.append(f"- Position Size: `{_as_str(section.get('position_size'))}`")
+    lines.append(f"- Risk ($): `{_as_str(section.get('risk_dollars'))}`")
+    lines.append(f"- Reward/Risk Ratio: `{_as_str(section.get('reward_risk_ratio'))}`")
+    lines.append(
+        f"- Hold Time Estimate (min): `{_as_str(section.get('hold_time_estimate_minutes'))}`"
+    )
+    rationale = section.get("rationale")
+    if isinstance(rationale, str) and rationale:
+        lines.append(f"- Rationale: {rationale}")
+    else:
+        lines.append("- Rationale: _unavailable in this run_")
+    sizing_math = section.get("sizing_math")
+    if isinstance(sizing_math, Mapping):
+        lines.append("- Sizing Math:")
+        for label, key in (
+            ("Stop Distance (ticks)", "stop_distance_ticks"),
+            ("Risk per Tick", "risk_per_tick"),
+            ("Raw Risk ($)", "raw_risk_dollars"),
+            ("Slippage Cost ($)", "slippage_cost_dollars"),
+            ("Adjusted Risk ($)", "adjusted_risk_dollars"),
+            ("Blended Target Distance (ticks)", "blended_target_distance_ticks"),
+            ("Blended Reward ($)", "blended_reward_dollars"),
+        ):
+            lines.append(f"    - {label}: `{_as_str(sizing_math.get(key))}`")
+    else:
+        lines.append("- Sizing Math: _unavailable in this run_")
+    return lines
+
+
+def _render_decision_review_risk_authorization(section: object) -> list[str]:
+    lines = ["", "### Risk Authorization"]
+    if not isinstance(section, Mapping) or section.get("available") is not True:
+        message = (
+            section.get("unavailable_message")
+            if isinstance(section, Mapping)
+            else None
+        )
+        lines.append(
+            f"- _{_as_str(message, default='Engine narrative unavailable in this run.')}_"
+        )
+        return lines
+    lines.append(f"- Decision: `{_as_str(section.get('decision'))}`")
+    rejection_reasons = section.get("rejection_reasons")
+    if isinstance(rejection_reasons, list) and rejection_reasons:
+        lines.append("- Rejection Reasons:")
+        for reason in rejection_reasons:
+            lines.append(f"    - {_as_str(reason)}")
+    adjusted_position_size = section.get("adjusted_position_size")
+    if adjusted_position_size is not None:
+        lines.append(f"- Adjusted Position Size: `{_as_str(adjusted_position_size)}`")
+    adjusted_risk_dollars = section.get("adjusted_risk_dollars")
+    if adjusted_risk_dollars is not None:
+        lines.append(f"- Adjusted Risk ($): `{_as_str(adjusted_risk_dollars)}`")
+    remaining_daily = section.get("remaining_daily_risk_budget")
+    if remaining_daily is not None:
+        lines.append(f"- Remaining Daily Risk Budget ($): `{_as_str(remaining_daily)}`")
+    remaining_aggregate = section.get("remaining_aggregate_risk_budget")
+    if remaining_aggregate is not None:
+        lines.append(f"- Remaining Aggregate Risk Budget ($): `{_as_str(remaining_aggregate)}`")
+    checks = section.get("checks")
+    if isinstance(checks, list) and checks:
+        lines.append("- Checks:")
+        for check in checks:
+            if not isinstance(check, Mapping):
+                continue
+            lines.append(
+                f"    - [{_as_str(check.get('check_id'))}] {_as_str(check.get('check_name'))}: "
+                f"`{_as_str(check.get('passed_text'))}` — {_as_str(check.get('detail'), default='no detail')}"
+            )
+    else:
+        lines.append("- Checks: _unavailable in this run_")
+    return lines
+
+
+def _render_decision_review_invalidation(section: object) -> list[str]:
+    lines = ["", "### What Would Invalidate This"]
+    if not isinstance(section, Mapping) or section.get("available") is not True:
+        message = (
+            section.get("unavailable_message")
+            if isinstance(section, Mapping)
+            else None
+        )
+        lines.append(
+            f"- _{_as_str(message, default='Disqualifiers list is unavailable for this run.')}_"
+        )
+        return lines
+    disqualifiers = section.get("disqualifiers")
+    if isinstance(disqualifiers, list) and disqualifiers:
+        for token in disqualifiers:
+            lines.append(f"- `{_as_str(token)}`")
+    else:
+        lines.append("- _none reported_")
+    return lines

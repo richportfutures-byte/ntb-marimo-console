@@ -74,6 +74,94 @@ class LiveObservableVM:
     market_data: LiveObservableMarketDataVM = field(default_factory=unavailable_live_observable_market_data_vm)
 
 
+NARRATIVE_UNAVAILABLE_LABEL = "Engine narrative unavailable in this run."
+
+
+@dataclass(frozen=True)
+class EngineReasoningVM:
+    """Stage B contract_analysis narrative, surfaced verbatim from the engine."""
+
+    market_regime: str | None
+    directional_bias: str | None
+    evidence_score: int | None
+    confidence_band: str | None
+    structural_notes: str | None
+    conflicting_signals: tuple[str, ...]
+    assumptions: tuple[str, ...]
+    outcome: str | None
+
+
+@dataclass(frozen=True)
+class KeyLevelsVM:
+    """Stage B key_levels payload, surfaced verbatim from the engine."""
+
+    pivot_level: float | None
+    support_levels: tuple[float, ...]
+    resistance_levels: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class SizingMathVM:
+    """Stage C sizing_math payload, surfaced verbatim from the engine."""
+
+    stop_distance_ticks: float | None
+    risk_per_tick: float | None
+    raw_risk_dollars: float | None
+    slippage_cost_dollars: float | None
+    adjusted_risk_dollars: float | None
+    blended_target_distance_ticks: float | None
+    blended_reward_dollars: float | None
+
+
+@dataclass(frozen=True)
+class TradeThesisVM:
+    """Stage C proposed_setup narrative, surfaced verbatim from the engine.
+
+    Both SETUP_PROPOSED and NO_TRADE shapes are representable. The console
+    does not infer a setup from a NO_TRADE; the trade-thesis fields are None
+    and `no_trade_reason` carries the engine's terminal reason.
+    """
+
+    outcome: str | None
+    no_trade_reason: str | None
+    direction: str | None
+    setup_class: str | None
+    entry_price: float | None
+    stop_price: float | None
+    target_1: float | None
+    target_2: float | None
+    position_size: int | None
+    risk_dollars: float | None
+    reward_risk_ratio: float | None
+    hold_time_estimate_minutes: int | None
+    rationale: str | None
+    disqualifiers: tuple[str, ...]
+    sizing_math: SizingMathVM | None
+
+
+@dataclass(frozen=True)
+class RiskCheckVM:
+    """A single Stage D risk_authorization check, surfaced verbatim."""
+
+    check_id: int
+    check_name: str
+    passed: bool
+    detail: str
+
+
+@dataclass(frozen=True)
+class RiskAuthorizationVM:
+    """Stage D risk_authorization narrative, surfaced verbatim from the engine."""
+
+    decision: str | None
+    checks: tuple[RiskCheckVM, ...]
+    rejection_reasons: tuple[str, ...]
+    adjusted_position_size: int | None
+    adjusted_risk_dollars: float | None
+    remaining_daily_risk_budget: float | None
+    remaining_aggregate_risk_budget: float | None
+
+
 @dataclass(frozen=True)
 class PipelineTraceVM:
     contract: str
@@ -83,6 +171,11 @@ class PipelineTraceVM:
     stage_b_outcome: str | None
     stage_c_outcome: str | None
     stage_d_decision: str | None
+    engine_reasoning: EngineReasoningVM | None = None
+    key_levels: KeyLevelsVM | None = None
+    trade_thesis: TradeThesisVM | None = None
+    risk_authorization: RiskAuthorizationVM | None = None
+    narrative_available: bool = False
 
 
 @dataclass(frozen=True)

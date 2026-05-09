@@ -15,6 +15,7 @@ from .adapters.contracts import (
     JsonDict,
     OperatorRuntimeInputs,
     PipelineBackend,
+    PipelineNarrative,
     PipelineQueryRequest,
     PipelineSummary,
     RuntimeMode,
@@ -54,6 +55,7 @@ class FixturePipelineBackend(PipelineBackend):
         self._profile = profile
         self._lockout = lockout
         self._summary = self._load_json(self._profile.pipeline_result_path(self._root))
+        self._narrative = self._load_optional_narrative()
 
     def sweep_watchman(
         self,
@@ -73,6 +75,32 @@ class FixturePipelineBackend(PipelineBackend):
 
     def summarize_pipeline_result(self, result: object) -> PipelineSummary:
         return self._summary
+
+    def narrate_pipeline_result(self, result: object) -> PipelineNarrative:
+        """Return the optional sidecar narrative for this fixture, if shipped.
+
+        Default fixture pipeline_result.*.json files are envelope-only and
+        carry no narrative. A sibling `pipeline_result.<variant>.narrative.json`
+        may optionally ship Stage B/C/D sections for renderer/tests; absence
+        is the normal case and surfaces as 'unavailable' in Decision Review.
+        """
+        return self._narrative
+
+    def _load_optional_narrative(self) -> PipelineNarrative:
+        envelope_path = self._profile.pipeline_result_path(self._root)
+        narrative_path = envelope_path.with_suffix(".narrative.json")
+        if not narrative_path.exists():
+            return {
+                "contract_analysis": None,
+                "proposed_setup": None,
+                "risk_authorization": None,
+            }
+        payload = self._load_json(narrative_path)
+        return {
+            "contract_analysis": payload.get("contract_analysis") if isinstance(payload.get("contract_analysis"), dict) else None,
+            "proposed_setup": payload.get("proposed_setup") if isinstance(payload.get("proposed_setup"), dict) else None,
+            "risk_authorization": payload.get("risk_authorization") if isinstance(payload.get("risk_authorization"), dict) else None,
+        }
 
     @staticmethod
     def _load_json(path: Path) -> dict[str, object]:

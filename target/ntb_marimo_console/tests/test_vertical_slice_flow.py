@@ -7,7 +7,6 @@ from types import SimpleNamespace
 
 from ntb_marimo_console.app import build_phase1_app
 from ntb_marimo_console.adapters.contracts import (
-    JsonDict,
     OperatorRuntimeInputs,
     PipelineBackend,
     PipelineQueryRequest,
@@ -50,6 +49,14 @@ class _FakeBackend(PipelineBackend):
     def summarize_pipeline_result(self, result: object) -> PipelineSummary:
         self.calls.append("summarize_pipeline_result")
         return self.summary
+
+    def narrate_pipeline_result(self, result: object) -> dict[str, object]:
+        self.calls.append("narrate_pipeline_result")
+        return {
+            "contract_analysis": None,
+            "proposed_setup": None,
+            "risk_authorization": None,
+        }
 
 
 class _MissingWatchmanBackend(_FakeBackend):
@@ -101,7 +108,12 @@ class VerticalSliceFlowTests(unittest.TestCase):
         self.assertIn("DECISION_REVIEW_READY", app["runtime"]["state_history"])
         self.assertEqual(
             backend.calls,
-            ["sweep_watchman", "run_pipeline", "summarize_pipeline_result"],
+            [
+                "sweep_watchman",
+                "run_pipeline",
+                "summarize_pipeline_result",
+                "narrate_pipeline_result",
+            ],
         )
 
     def test_ready_path_without_query_request_stays_live_query_eligible(self) -> None:

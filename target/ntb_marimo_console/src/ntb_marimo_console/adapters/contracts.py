@@ -43,6 +43,25 @@ class PipelineSummary(TypedDict):
     risk_authorization_decision: str | None
 
 
+class PipelineNarrative(TypedDict, total=False):
+    """Optional narrative payload extracted from a preserved-engine pipeline result.
+
+    All keys are optional. Empty/absent keys mean the engine did not produce
+    that stage's output for this run, or the backend has no narrative to
+    surface (e.g. fixture path). The console renderer treats absence as
+    explicitly unavailable, never as success.
+
+    The values are plain mappings/lists of primitive JSON types. They are
+    extracted by the backend adapter from the preserved engine output without
+    interpretation, derivation, ranking, or string parsing. The console must
+    not introduce new market claims based on these payloads.
+    """
+
+    contract_analysis: dict[str, object] | None
+    proposed_setup: dict[str, object] | None
+    risk_authorization: dict[str, object] | None
+
+
 class RunHistoryRowRecord(TypedDict):
     run_id: str
     logged_at: str
@@ -157,6 +176,8 @@ class PipelineBackend(Protocol):
     def run_pipeline(self, request: PipelineQueryRequest) -> object: ...
 
     def summarize_pipeline_result(self, result: object) -> PipelineSummary: ...
+
+    def narrate_pipeline_result(self, result: object) -> PipelineNarrative: ...
 
 
 class PreMarketArtifactStore(Protocol):
