@@ -2,13 +2,41 @@
   "contract": "MGC",
   "session_date": "2026-01-14",
   "status": "READY",
-  "version": "pmkt_brief_v1",
+  "version": "live_thesis_brief_v1",
+  "source_context": {
+    "required_context": [
+      "market.current_price",
+      "market.bar_5m_close_count_at_or_beyond_level",
+      "cross_asset.dxy",
+      "cross_asset.cash_10y_yield",
+      "macro_context.fear_catalyst_state"
+    ],
+    "missing_required_context": [],
+    "unavailable_required_context": []
+  },
+  "unavailable_fields": [
+    {
+      "field": "GC",
+      "reason": "GC is excluded and is not a source, alias, or dependency for MGC"
+    },
+    {
+      "field": "aggressive_order_flow",
+      "reason": "not present in CHART_FUTURES or Level One fixture inputs"
+    }
+  ],
   "structural_setups": [
     {
       "id": "mgc_setup_1",
       "summary": "MGC requires explicit numeric DXY and cash 10Y yield confirmation before query-ready read-model state is surfaced.",
       "description": "Fixture-safe Micro Gold profile foundation using numeric dollar and yield context, completed bar confirmation, and explicit fear-catalyst state.",
       "fields_used": [
+        "market.current_price",
+        "market.bar_5m_close_count_at_or_beyond_level",
+        "cross_asset.dxy",
+        "cross_asset.cash_10y_yield",
+        "macro_context.fear_catalyst_state"
+      ],
+      "required_live_fields": [
         "market.current_price",
         "market.bar_5m_close_count_at_or_beyond_level",
         "cross_asset.dxy",
@@ -41,13 +69,32 @@
             "cross_asset.dxy",
             "cross_asset.cash_10y_yield",
             "macro_context.fear_catalyst_state"
+          ],
+          "required_live_fields": [
+            "market.current_price",
+            "market.bar_5m_close_count_at_or_beyond_level",
+            "cross_asset.dxy",
+            "cross_asset.cash_10y_yield",
+            "macro_context.fear_catalyst_state"
+          ],
+          "invalidators": [
+            {
+              "id": "mgc_dxy_or_yield_failure",
+              "condition": "cross_asset.dxy > 102.0 OR cross_asset.cash_10y_yield > 4.15",
+              "action": "block_query_ready_read_model"
+            },
+            {
+              "id": "mgc_fear_state_missing",
+              "condition": "macro_context.fear_catalyst_state == None",
+              "action": "block_query_ready_read_model"
+            }
           ]
         }
       ],
       "warnings": [
         "Textual DXY or yield commentary is not sufficient when numeric macro context is required.",
         "Absolute MGC price action is not sufficient without numeric DXY and yield confirmation.",
-        "MGC sizing references Micro Gold tick value and must not depend on full-size gold."
+        "Verify MGC sizing against Micro Gold tick value; do not use full-size gold risk math."
       ]
     }
   ]

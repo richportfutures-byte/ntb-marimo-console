@@ -2,13 +2,39 @@
   "contract": "CL",
   "session_date": "2026-01-14",
   "status": "READY",
-  "version": "pmkt_brief_v1",
+  "version": "live_thesis_brief_v1",
+  "source_context": {
+    "required_context": [
+      "market.current_price",
+      "market.cumulative_delta",
+      "volatility_context.current_volume_vs_average",
+      "macro_context.eia_lockout_active"
+    ],
+    "missing_required_context": [],
+    "unavailable_required_context": []
+  },
+  "unavailable_fields": [
+    {
+      "field": "dom",
+      "reason": "not present in CHART_FUTURES or Level One fixture inputs"
+    },
+    {
+      "field": "sweep",
+      "reason": "not present in CHART_FUTURES or Level One fixture inputs"
+    }
+  ],
   "structural_setups": [
     {
       "id": "cl_setup_1",
       "summary": "CL remains queryable above developing value while EIA is scheduled but not yet locked out.",
       "description": "Schema-anchored CL preserved profile narrative using EIA timing, volume pace, and explicit observable query conditions.",
       "fields_used": [
+        "market.current_price",
+        "market.cumulative_delta",
+        "volatility_context.current_volume_vs_average",
+        "macro_context.eia_lockout_active"
+      ],
+      "required_live_fields": [
         "market.current_price",
         "market.cumulative_delta",
         "volatility_context.current_volume_vs_average",
@@ -38,12 +64,31 @@
             "market.cumulative_delta",
             "volatility_context.current_volume_vs_average",
             "macro_context.eia_lockout_active"
+          ],
+          "required_live_fields": [
+            "market.current_price",
+            "market.cumulative_delta",
+            "volatility_context.current_volume_vs_average",
+            "macro_context.eia_lockout_active"
+          ],
+          "invalidators": [
+            {
+              "id": "cl_eia_lockout_active",
+              "condition": "macro_context.eia_lockout_active == True",
+              "action": "lockout_read_model"
+            },
+            {
+              "id": "cl_volume_or_delta_failure",
+              "condition": "market.cumulative_delta <= 0 OR volatility_context.current_volume_vs_average < 1.0",
+              "action": "block_query_ready_read_model"
+            }
           ]
         }
       ],
       "warnings": [
         "If the EIA lockout activates, keep the query blocked.",
-        "If delta weakens or volume pace drops below average, keep the query blocked."
+        "If delta weakens or volume pace drops below average, keep the query blocked.",
+        "Reduce trust in the read model around headline spikes; do not infer sweep or DOM evidence from quote or bar data."
       ]
     }
   ]

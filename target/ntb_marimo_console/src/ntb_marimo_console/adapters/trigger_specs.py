@@ -28,12 +28,12 @@ def trigger_specs_from_brief(brief: Mapping[str, Any]) -> list[TriggerSpec]:
                 continue
             trigger_id = str(trigger.get("id", ""))
             observable = trigger.get("observable_conditions", [])
-            fields_used = trigger.get("fields_used", [])
-            if not trigger_id or not isinstance(observable, list) or not isinstance(fields_used, list):
+            required_fields = trigger.get("required_live_fields", trigger.get("fields_used", []))
+            if not trigger_id or not isinstance(observable, list) or not isinstance(required_fields, list):
                 continue
 
             predicate = " AND ".join(str(item) for item in observable if isinstance(item, str)).strip()
-            dependencies = tuple(str(item) for item in fields_used if isinstance(item, str))
+            dependencies = tuple(str(item) for item in required_fields if isinstance(item, str))
             if not predicate or not dependencies:
                 continue
 

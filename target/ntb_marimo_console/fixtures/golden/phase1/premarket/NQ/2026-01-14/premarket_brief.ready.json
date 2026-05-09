@@ -2,13 +2,35 @@
   "contract": "NQ",
   "session_date": "2026-01-14",
   "status": "READY",
-  "version": "pmkt_brief_v1",
+  "version": "live_thesis_brief_v1",
+  "source_context": {
+    "required_context": [
+      "market.current_price",
+      "market.bar_5m_close",
+      "market.bar_5m_close_count_at_or_beyond_level",
+      "cross_asset.relative_strength_vs_es"
+    ],
+    "missing_required_context": [],
+    "unavailable_required_context": []
+  },
+  "unavailable_fields": [
+    {
+      "field": "cross_asset.index_cash_tone",
+      "reason": "not present in the current NQ fixture snapshot; ES-relative strength is the required cross-asset gate"
+    }
+  ],
   "structural_setups": [
     {
       "id": "nq_setup_1",
       "summary": "NQ requires explicit ES-relative confirmation before any query-ready read-model state is surfaced.",
       "description": "Fixture-safe NQ profile foundation using explicit NQ and ES anchors with deterministic relative-strength gating.",
       "fields_used": [
+        "market.current_price",
+        "market.bar_5m_close",
+        "market.bar_5m_close_count_at_or_beyond_level",
+        "cross_asset.relative_strength_vs_es"
+      ],
+      "required_live_fields": [
         "market.current_price",
         "market.bar_5m_close",
         "market.bar_5m_close_count_at_or_beyond_level",
@@ -37,12 +59,31 @@
             "market.bar_5m_close",
             "market.bar_5m_close_count_at_or_beyond_level",
             "cross_asset.relative_strength_vs_es"
+          ],
+          "required_live_fields": [
+            "market.current_price",
+            "market.bar_5m_close",
+            "market.bar_5m_close_count_at_or_beyond_level",
+            "cross_asset.relative_strength_vs_es"
+          ],
+          "invalidators": [
+            {
+              "id": "nq_relative_strength_failure",
+              "condition": "cross_asset.relative_strength_vs_es < 0.001",
+              "action": "block_query_ready_read_model"
+            },
+            {
+              "id": "nq_completed_bar_confirmation_missing",
+              "condition": "market.bar_5m_close_count_at_or_beyond_level < 1",
+              "action": "block_query_ready_read_model"
+            }
           ]
         }
       ],
       "warnings": [
         "Absolute NQ price action is not sufficient when ES-relative confirmation is required.",
-        "Missing NQ or ES anchors must keep the read model blocked."
+        "Missing NQ or ES anchors must keep the read model blocked.",
+        "Do not treat NQ as ready if ES-relative strength is unavailable or below threshold."
       ]
     }
   ]

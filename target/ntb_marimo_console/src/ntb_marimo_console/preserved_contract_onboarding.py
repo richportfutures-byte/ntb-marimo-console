@@ -254,6 +254,11 @@ def validate_profile_template(template: PreservedProfileTemplate) -> PreservedPr
             category=BLOCKED_INCOMPLETE_PROFILE_TEMPLATE,
             summary="Profile template trigger fields must exactly match required_live_field_paths.",
         )
+    if tuple(trigger.get("required_live_fields", [])) != template.required_live_field_paths:
+        raise PreservedContractOnboardingError(
+            category=BLOCKED_INCOMPLETE_PROFILE_TEMPLATE,
+            summary="Profile template trigger required_live_fields must exactly match required_live_field_paths.",
+        )
     return template
 
 
@@ -554,13 +559,29 @@ def _build_cl_profile_template() -> PreservedProfileTemplate:
             "contract": "CL",
             "session_date": "2026-01-14",
             "status": "READY",
-            "version": "pmkt_brief_v1",
+            "version": "live_thesis_brief_v1",
+            "source_context": {
+                "required_context": list(required_live_field_paths),
+                "missing_required_context": [],
+                "unavailable_required_context": [],
+            },
+            "unavailable_fields": [
+                {
+                    "field": "dom",
+                    "reason": "not present in CHART_FUTURES or Level One fixture inputs",
+                },
+                {
+                    "field": "sweep",
+                    "reason": "not present in CHART_FUTURES or Level One fixture inputs",
+                },
+            ],
             "structural_setups": [
                 {
                     "id": "cl_setup_1",
                     "summary": "CL remains queryable above developing value while EIA is scheduled but not yet locked out.",
                     "description": "Schema-anchored CL preserved profile narrative using EIA timing, volume pace, and explicit observable query conditions.",
                     "fields_used": list(required_live_field_paths),
+                    "required_live_fields": list(required_live_field_paths),
                     "contract_framework_labels": [
                         "volatility_primary",
                         "eia_timing",
@@ -581,11 +602,31 @@ def _build_cl_profile_template() -> PreservedProfileTemplate:
                                 "macro_context.eia_lockout_active == False",
                             ],
                             "fields_used": list(required_live_field_paths),
+                            "required_live_fields": list(required_live_field_paths),
+                            "invalidators": [
+                                {
+                                    "id": "cl_eia_lockout_active",
+                                    "condition": "macro_context.eia_lockout_active == True",
+                                    "action": "lockout_read_model",
+                                },
+                                {
+                                    "id": "cl_volume_or_delta_failure",
+                                    "condition": (
+                                        "market.cumulative_delta <= 0 OR "
+                                        "volatility_context.current_volume_vs_average < 1.0"
+                                    ),
+                                    "action": "block_query_ready_read_model",
+                                },
+                            ],
                         }
                     ],
                     "warnings": [
                         "If the EIA lockout activates, keep the query blocked.",
                         "If delta weakens or volume pace drops below average, keep the query blocked.",
+                        (
+                            "Reduce trust in the read model around headline spikes; do not infer sweep or DOM "
+                            "evidence from quote or bar data."
+                        ),
                     ],
                 }
             ],
@@ -697,7 +738,22 @@ def _build_mgc_profile_template() -> PreservedProfileTemplate:
             "contract": "MGC",
             "session_date": "2026-01-14",
             "status": "READY",
-            "version": "pmkt_brief_v1",
+            "version": "live_thesis_brief_v1",
+            "source_context": {
+                "required_context": list(required_live_field_paths),
+                "missing_required_context": [],
+                "unavailable_required_context": [],
+            },
+            "unavailable_fields": [
+                {
+                    "field": "GC",
+                    "reason": "GC is excluded and is not a source, alias, or dependency for MGC",
+                },
+                {
+                    "field": "aggressive_order_flow",
+                    "reason": "not present in CHART_FUTURES or Level One fixture inputs",
+                },
+            ],
             "structural_setups": [
                 {
                     "id": "mgc_setup_1",
@@ -710,6 +766,7 @@ def _build_mgc_profile_template() -> PreservedProfileTemplate:
                         "completed bar confirmation, and explicit fear-catalyst state."
                     ),
                     "fields_used": list(required_live_field_paths),
+                    "required_live_fields": list(required_live_field_paths),
                     "contract_framework_labels": [
                         "micro_gold",
                         "dxy_yield_dual_dependency",
@@ -735,12 +792,25 @@ def _build_mgc_profile_template() -> PreservedProfileTemplate:
                                 "macro_context.fear_catalyst_state == 'none'",
                             ],
                             "fields_used": list(required_live_field_paths),
+                            "required_live_fields": list(required_live_field_paths),
+                            "invalidators": [
+                                {
+                                    "id": "mgc_dxy_or_yield_failure",
+                                    "condition": "cross_asset.dxy > 102.0 OR cross_asset.cash_10y_yield > 4.15",
+                                    "action": "block_query_ready_read_model",
+                                },
+                                {
+                                    "id": "mgc_fear_state_missing",
+                                    "condition": "macro_context.fear_catalyst_state == None",
+                                    "action": "block_query_ready_read_model",
+                                },
+                            ],
                         }
                     ],
                     "warnings": [
                         "Textual DXY or yield commentary is not sufficient when numeric macro context is required.",
                         "Absolute MGC price action is not sufficient without numeric DXY and yield confirmation.",
-                        "MGC sizing references Micro Gold tick value and must not depend on full-size gold.",
+                        "Verify MGC sizing against Micro Gold tick value; do not use full-size gold risk math.",
                     ],
                 }
             ],

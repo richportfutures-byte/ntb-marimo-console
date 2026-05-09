@@ -2,22 +2,50 @@
   "contract": "ES",
   "session_date": "2026-03-25",
   "status": "READY",
-  "version": "pmkt_brief_v1",
+  "version": "live_thesis_brief_v1",
+  "source_context": {
+    "required_context": [
+      "market.current_price",
+      "market.cumulative_delta",
+      "cross_asset.breadth.current_advancers_pct"
+    ],
+    "missing_required_context": [],
+    "unavailable_required_context": []
+  },
+  "unavailable_fields": [
+    {
+      "field": "cross_asset.index_cash_tone",
+      "reason": "not present in the current ES fixture snapshot; breadth is the available cross-asset proxy"
+    }
+  ],
   "structural_setups": [
     {
       "id": "es_setup_1",
-      "summary": "Acceptance above resistance cluster activates long thesis.",
-      "description": "Schema-anchored fixture narrative.",
+      "summary": "ES acceptance above the resistance cluster requires price, delta, and breadth confirmation.",
+      "description": "Schema-anchored ES live thesis foundation using current price, cumulative delta, and available breadth context as the deterministic value-migration proxy.",
       "fields_used": [
         "market.current_price",
         "market.cumulative_delta",
         "cross_asset.breadth.current_advancers_pct"
       ],
+      "required_live_fields": [
+        "market.current_price",
+        "market.cumulative_delta",
+        "cross_asset.breadth.current_advancers_pct"
+      ],
+      "contract_framework_labels": [
+        "index_value_migration",
+        "breadth_confirmation",
+        "fail_closed_read_model"
+      ],
+      "stage_b_thesis_links": [
+        "es_value_acceptance_above_cluster"
+      ],
       "query_triggers": [
         {
           "id": "es_trigger_acceptance",
           "logic": "acceptance_above_cluster",
-          "description": "Trigger when price acceptance confirms.",
+          "description": "Trigger only when ES trades above the plan level with positive delta and breadth confirmation.",
           "observable_conditions": [
             "market.current_price >= 5604",
             "market.cumulative_delta > 0",
@@ -27,11 +55,29 @@
             "market.current_price",
             "market.cumulative_delta",
             "cross_asset.breadth.current_advancers_pct"
+          ],
+          "required_live_fields": [
+            "market.current_price",
+            "market.cumulative_delta",
+            "cross_asset.breadth.current_advancers_pct"
+          ],
+          "invalidators": [
+            {
+              "id": "es_delta_breadth_failure",
+              "condition": "market.cumulative_delta <= 0 OR cross_asset.breadth.current_advancers_pct <= 0.55",
+              "action": "block_query_ready_read_model"
+            },
+            {
+              "id": "es_price_back_inside_cluster",
+              "condition": "market.current_price < 5604",
+              "action": "block_query_ready_read_model"
+            }
           ]
         }
       ],
       "warnings": [
-        "Neither thesis is live until trigger conditions are met."
+        "Keep the read model blocked if breadth falls to 55% advancers or lower.",
+        "Do not treat ES price above the level as sufficient without positive delta and breadth confirmation."
       ]
     }
   ]

@@ -4,6 +4,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from .adapters.contracts import LIVE_OBSERVABLE_FIELD_PATHS
+from .contract_universe import is_final_target_contract, is_never_supported_contract, normalize_contract_symbol
+
 
 WatchmanValidatorStatus = Literal["READY", "NEEDS_REVIEW", "FAILED"]
 _PASS = "PASS"
@@ -36,8 +39,12 @@ class WatchmanValidatorResult:
 def validate_watchman_brief(brief: Mapping[str, object]) -> WatchmanValidatorResult:
     checks: list[WatchmanValidatorCheck] = []
     checks.append(_validate_contract_present(brief))
+    checks.append(_validate_contract_supported(brief))
     checks.append(_validate_session_date_present(brief))
+    checks.append(_validate_version_present(brief))
     checks.append(_validate_artifact_status_shape(brief))
+    checks.append(_validate_source_context(brief))
+    checks.append(_validate_unavailable_fields(brief))
 
     setups = brief.get("structural_setups")
     setup_mappings: list[Mapping[str, object]] = []
@@ -90,9 +97,16 @@ def validate_watchman_brief(brief: Mapping[str, object]) -> WatchmanValidatorRes
 
     if setup_mappings:
         checks.append(_validate_narrative_substance(setup_mappings))
+        checks.append(_validate_setup_ids(setup_mappings))
+        checks.append(_validate_setup_required_fields(setup_mappings))
         checks.append(_validate_query_triggers(setup_mappings))
+        checks.append(_validate_trigger_ids(setup_mappings))
+        checks.append(_validate_trigger_descriptions(setup_mappings))
         checks.append(_validate_observable_conditions(setup_mappings))
+        checks.append(_validate_trigger_required_fields(setup_mappings))
+        checks.append(_validate_trigger_invalidators(setup_mappings))
         checks.append(_validate_warnings_present(setup_mappings))
+        checks.append(_validate_warnings_actionable(setup_mappings))
 
     failing_checks = tuple(check for check in checks if check.status != _PASS)
     if any(check.status == _FAILED for check in failing_checks):
@@ -183,6 +197,28 @@ def _validate_contract_present(brief: Mapping[str, object]) -> WatchmanValidator
     )
 
 
+def _validate_contract_supported(brief: Mapping[str, object]) -> WatchmanValidatorCheck:
+    contract = brief.get("contract")
+    if not isinstance(contract, str) or not contract.strip():
+        return WatchmanValidatorCheck(
+            name="brief_contract_supported",
+            status=_FAILED,
+            summary="Pre-market brief contract support cannot be evaluated without a contract.",
+        )
+    normalized = normalize_contract_symbol(contract)
+    if is_never_supported_contract(normalized) or not is_final_target_contract(normalized):
+        return WatchmanValidatorCheck(
+            name="brief_contract_supported",
+            status=_FAILED,
+            summary=f"Pre-market brief contract {normalized} is not a final target contract.",
+        )
+    return WatchmanValidatorCheck(
+        name="brief_contract_supported",
+        status=_PASS,
+        summary="Pre-market brief contract is a final target contract.",
+    )
+
+
 def _validate_session_date_present(brief: Mapping[str, object]) -> WatchmanValidatorCheck:
     session_date = brief.get("session_date")
     if not isinstance(session_date, str) or not session_date.strip():
@@ -195,6 +231,21 @@ def _validate_session_date_present(brief: Mapping[str, object]) -> WatchmanValid
         name="brief_session_date_present",
         status=_PASS,
         summary="Pre-market brief session_date is populated.",
+    )
+
+
+def _validate_version_present(brief: Mapping[str, object]) -> WatchmanValidatorCheck:
+    version = brief.get("version")
+    if not isinstance(version, str) or not version.strip():
+        return WatchmanValidatorCheck(
+            name="brief_version_present",
+            status=_FAILED,
+            summary="Pre-market brief version marker must be a non-empty string.",
+        )
+    return WatchmanValidatorCheck(
+        name="brief_version_present",
+        status=_PASS,
+        summary="Pre-market brief version marker is populated.",
     )
 
 
@@ -216,6 +267,75 @@ def _validate_artifact_status_shape(brief: Mapping[str, object]) -> WatchmanVali
         name="artifact_status_shape",
         status=_PASS,
         summary="Pre-market brief artifact status uses an allowed value and remains informational only.",
+    )
+
+
+def _validate_source_context(brief: Mapping[str, object]) -> WatchmanValidatorCheck:
+    source_context = brief.get("source_context")
+    if source_context is None:
+        return WatchmanValidatorCheck(
+            name="required_source_context_available",
+            status=_PASS,
+            summary="Pre-market brief does not declare source-context gaps.",
+        )
+    if not isinstance(source_context, Mapping):
+        return WatchmanValidatorCheck(
+            name="required_source_context_available",
+            status=_FAILED,
+            summary="Pre-market brief source_context must be a JSON object when provided.",
+        )
+    missing = _string_items(source_context.get("missing_required_context"))
+    unavailable = _string_items(source_context.get("unavailable_required_context"))
+    if missing or unavailable:
+        gaps = ", ".join((*missing, *unavailable))
+        return WatchmanValidatorCheck(
+            name="required_source_context_available",
+            status=_REVIEW,
+            summary=f"Required source context is missing or unavailable: {gaps}.",
+        )
+    return WatchmanValidatorCheck(
+        name="required_source_context_available",
+        status=_PASS,
+        summary="Required source context is available for this brief foundation.",
+    )
+
+
+def _validate_unavailable_fields(brief: Mapping[str, object]) -> WatchmanValidatorCheck:
+    unavailable_fields = brief.get("unavailable_fields")
+    if unavailable_fields is None:
+        return WatchmanValidatorCheck(
+            name="unavailable_fields_labeled",
+            status=_PASS,
+            summary="Pre-market brief does not declare unavailable optional fields.",
+        )
+    if not isinstance(unavailable_fields, list):
+        return WatchmanValidatorCheck(
+            name="unavailable_fields_labeled",
+            status=_FAILED,
+            summary="Pre-market brief unavailable_fields must be a JSON array when provided.",
+        )
+    malformed = [
+        str(index)
+        for index, item in enumerate(unavailable_fields, start=1)
+        if not isinstance(item, Mapping)
+        or not isinstance(item.get("field"), str)
+        or not str(item.get("field")).strip()
+        or not isinstance(item.get("reason"), str)
+        or not str(item.get("reason")).strip()
+    ]
+    if malformed:
+        return WatchmanValidatorCheck(
+            name="unavailable_fields_labeled",
+            status=_FAILED,
+            summary=(
+                "Unavailable fields must each declare a non-empty field and reason. "
+                f"Malformed positions: {', '.join(malformed)}."
+            ),
+        )
+    return WatchmanValidatorCheck(
+        name="unavailable_fields_labeled",
+        status=_PASS,
+        summary="Unavailable optional fields are labeled with explicit reasons.",
     )
 
 
@@ -243,6 +363,52 @@ def _validate_narrative_substance(
     )
 
 
+def _validate_setup_ids(
+    setups: list[Mapping[str, object]],
+) -> WatchmanValidatorCheck:
+    missing = [
+        str(index)
+        for index, setup in enumerate(setups, start=1)
+        if not isinstance(setup.get("id"), str) or not str(setup.get("id")).strip()
+    ]
+    if missing:
+        return WatchmanValidatorCheck(
+            name="setup_ids_present",
+            status=_FAILED,
+            summary=f"Structural setup IDs are missing for setup positions: {', '.join(missing)}.",
+        )
+    return WatchmanValidatorCheck(
+        name="setup_ids_present",
+        status=_PASS,
+        summary="Every structural setup declares a setup ID.",
+    )
+
+
+def _validate_setup_required_fields(
+    setups: list[Mapping[str, object]],
+) -> WatchmanValidatorCheck:
+    for setup in setups:
+        required_fields = setup.get("required_live_fields")
+        if not isinstance(required_fields, list) or not _string_items(required_fields):
+            return WatchmanValidatorCheck(
+                name="setup_required_live_fields_present",
+                status=_FAILED,
+                summary="Every structural setup must declare non-empty required_live_fields.",
+            )
+        unknown = _unknown_live_field_paths(required_fields)
+        if unknown:
+            return WatchmanValidatorCheck(
+                name="setup_required_live_fields_present",
+                status=_FAILED,
+                summary="Structural setup declares unknown live field paths: " + ", ".join(unknown),
+            )
+    return WatchmanValidatorCheck(
+        name="setup_required_live_fields_present",
+        status=_PASS,
+        summary="Every structural setup declares known required live fields.",
+    )
+
+
 def _validate_query_triggers(
     setups: list[Mapping[str, object]],
 ) -> WatchmanValidatorCheck:
@@ -261,29 +427,141 @@ def _validate_query_triggers(
     )
 
 
+def _validate_trigger_ids(
+    setups: list[Mapping[str, object]],
+) -> WatchmanValidatorCheck:
+    missing: list[str] = []
+    for setup_index, trigger in _iter_query_triggers(setups):
+        if not isinstance(trigger.get("id"), str) or not str(trigger.get("id")).strip():
+            missing.append(str(setup_index))
+    if missing:
+        return WatchmanValidatorCheck(
+            name="query_trigger_ids_present",
+            status=_FAILED,
+            summary="Every query trigger must declare an ID. Missing under setup positions: " + ", ".join(missing),
+        )
+    return WatchmanValidatorCheck(
+        name="query_trigger_ids_present",
+        status=_PASS,
+        summary="Every query trigger declares an ID.",
+    )
+
+
+def _validate_trigger_descriptions(
+    setups: list[Mapping[str, object]],
+) -> WatchmanValidatorCheck:
+    missing: list[str] = []
+    for setup_index, trigger in _iter_query_triggers(setups):
+        if not isinstance(trigger.get("description"), str) or not str(trigger.get("description")).strip():
+            missing.append(str(setup_index))
+    if missing:
+        return WatchmanValidatorCheck(
+            name="query_trigger_descriptions_present",
+            status=_REVIEW,
+            summary=(
+                "Every query trigger must include an operator-readable description. "
+                "Missing under setup positions: " + ", ".join(missing)
+            ),
+        )
+    return WatchmanValidatorCheck(
+        name="query_trigger_descriptions_present",
+        status=_PASS,
+        summary="Every query trigger includes an operator-readable description.",
+    )
+
+
 def _validate_observable_conditions(
     setups: list[Mapping[str, object]],
 ) -> WatchmanValidatorCheck:
-    for setup in setups:
-        triggers = setup.get("query_triggers")
-        if not isinstance(triggers, list):
-            continue
-        for trigger in triggers:
-            if not isinstance(trigger, Mapping):
-                continue
-            observable_conditions = trigger.get("observable_conditions")
-            if isinstance(observable_conditions, list) and any(
-                isinstance(condition, str) and condition.strip() for condition in observable_conditions
-            ):
-                return WatchmanValidatorCheck(
-                    name="observable_conditions_present",
-                    status=_PASS,
-                    summary="At least one query trigger contains observable conditions.",
-                )
+    for _, trigger in _iter_query_triggers(setups):
+        observable_conditions = trigger.get("observable_conditions")
+        if not isinstance(observable_conditions, list) or not _string_items(observable_conditions):
+            return WatchmanValidatorCheck(
+                name="observable_conditions_present",
+                status=_REVIEW,
+                summary="Each briefed query trigger must include at least one observable condition.",
+            )
     return WatchmanValidatorCheck(
         name="observable_conditions_present",
-        status=_REVIEW,
-        summary="Each briefed query trigger must include at least one observable condition.",
+        status=_PASS,
+        summary="Every query trigger contains observable conditions.",
+    )
+
+
+def _validate_trigger_required_fields(
+    setups: list[Mapping[str, object]],
+) -> WatchmanValidatorCheck:
+    for _, trigger in _iter_query_triggers(setups):
+        required_fields = trigger.get("required_live_fields")
+        if not isinstance(required_fields, list) or not _string_items(required_fields):
+            return WatchmanValidatorCheck(
+                name="trigger_required_live_fields_present",
+                status=_FAILED,
+                summary="Every query trigger must declare non-empty required_live_fields.",
+            )
+        fields_used = trigger.get("fields_used")
+        if not isinstance(fields_used, list) or not _string_items(fields_used):
+            return WatchmanValidatorCheck(
+                name="trigger_required_live_fields_present",
+                status=_FAILED,
+                summary="Every query trigger must declare non-empty fields_used.",
+            )
+        unknown = _unknown_live_field_paths(required_fields)
+        if unknown:
+            return WatchmanValidatorCheck(
+                name="trigger_required_live_fields_present",
+                status=_FAILED,
+                summary="Query trigger declares unknown live field paths: " + ", ".join(unknown),
+            )
+        if tuple(_string_items(required_fields)) != tuple(_string_items(fields_used)):
+            return WatchmanValidatorCheck(
+                name="trigger_required_live_fields_present",
+                status=_FAILED,
+                summary="Query trigger required_live_fields must match fields_used for deterministic gating.",
+            )
+    return WatchmanValidatorCheck(
+        name="trigger_required_live_fields_present",
+        status=_PASS,
+        summary="Every query trigger declares known required live fields.",
+    )
+
+
+def _validate_trigger_invalidators(
+    setups: list[Mapping[str, object]],
+) -> WatchmanValidatorCheck:
+    for _, trigger in _iter_query_triggers(setups):
+        invalidators = trigger.get("invalidators")
+        if isinstance(invalidators, list) and invalidators:
+            malformed = [
+                str(index)
+                for index, invalidator in enumerate(invalidators, start=1)
+                if not isinstance(invalidator, Mapping)
+                or not isinstance(invalidator.get("id"), str)
+                or not str(invalidator.get("id")).strip()
+                or not isinstance(invalidator.get("condition"), str)
+                or not str(invalidator.get("condition")).strip()
+            ]
+            if malformed:
+                return WatchmanValidatorCheck(
+                    name="trigger_invalidators_declared",
+                    status=_FAILED,
+                    summary=(
+                        "Trigger invalidators must each include non-empty id and condition. "
+                        f"Malformed positions: {', '.join(malformed)}."
+                    ),
+                )
+            continue
+        policy = trigger.get("invalidator_policy")
+        if not isinstance(policy, str) or not policy.strip():
+            return WatchmanValidatorCheck(
+                name="trigger_invalidators_declared",
+                status=_REVIEW,
+                summary="Every query trigger must declare invalidators or explain why none are applicable.",
+            )
+    return WatchmanValidatorCheck(
+        name="trigger_invalidators_declared",
+        status=_PASS,
+        summary="Every query trigger declares invalidators or an explicit invalidator policy.",
     )
 
 
@@ -305,7 +583,74 @@ def _validate_warnings_present(
     )
 
 
+def _validate_warnings_actionable(
+    setups: list[Mapping[str, object]],
+) -> WatchmanValidatorCheck:
+    weak: list[str] = []
+    for setup_index, setup in enumerate(setups, start=1):
+        warnings = setup.get("warnings")
+        if not isinstance(warnings, list):
+            continue
+        for warning_index, warning in enumerate(warnings, start=1):
+            if not isinstance(warning, str) or not warning.strip():
+                weak.append(f"{setup_index}.{warning_index}")
+                continue
+            normalized = warning.lower()
+            if not any(verb in normalized for verb in _ACTIONABLE_WARNING_TERMS):
+                weak.append(f"{setup_index}.{warning_index}")
+    if weak:
+        return WatchmanValidatorCheck(
+            name="warnings_actionable",
+            status=_REVIEW,
+            summary="Warnings must be operator-actionable. Weak warning positions: " + ", ".join(weak),
+        )
+    return WatchmanValidatorCheck(
+        name="warnings_actionable",
+        status=_PASS,
+        summary="Every warning is operator-actionable.",
+    )
+
+
+def _iter_query_triggers(
+    setups: list[Mapping[str, object]],
+) -> tuple[tuple[int, Mapping[str, object]], ...]:
+    triggers: list[tuple[int, Mapping[str, object]]] = []
+    for setup_index, setup in enumerate(setups, start=1):
+        query_triggers = setup.get("query_triggers")
+        if not isinstance(query_triggers, list):
+            continue
+        triggers.extend((setup_index, trigger) for trigger in query_triggers if isinstance(trigger, Mapping))
+    return tuple(triggers)
+
+
+def _unknown_live_field_paths(paths: object) -> tuple[str, ...]:
+    return tuple(path for path in _string_items(paths) if path not in LIVE_OBSERVABLE_FIELD_PATHS)
+
+
+def _string_items(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(str(item).strip() for item in value if isinstance(item, str) and item.strip())
+
+
 def _as_str(value: object, *, default: str = "<missing>") -> str:
     if value is None:
         return default
     return str(value)
+
+
+_ACTIONABLE_WARNING_TERMS: tuple[str, ...] = (
+    "block",
+    "keep",
+    "do not",
+    "don't",
+    "wait",
+    "reduce",
+    "verify",
+    "avoid",
+    "confirm",
+    "treat",
+    "hold",
+    "require",
+    "stop",
+)

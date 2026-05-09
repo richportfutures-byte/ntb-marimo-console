@@ -2,13 +2,39 @@
   "contract": "6E",
   "session_date": "2026-01-14",
   "status": "READY",
-  "version": "pmkt_brief_v1",
+  "version": "live_thesis_brief_v1",
+  "source_context": {
+    "required_context": [
+      "market.current_price",
+      "market.bar_5m_close_count_at_or_beyond_level",
+      "cross_asset.dxy",
+      "session_sequence.asia_complete",
+      "session_sequence.london_complete",
+      "session_sequence.ny_pending"
+    ],
+    "missing_required_context": [],
+    "unavailable_required_context": []
+  },
+  "unavailable_fields": [
+    {
+      "field": "dxy_textual_context",
+      "reason": "textual DXY is intentionally not accepted as a substitute for numeric DXY"
+    }
+  ],
   "structural_setups": [
     {
       "id": "sixe_setup_1",
       "summary": "6E requires explicit numeric DXY and Asia to London to NY sequence confirmation before query-ready read-model state is surfaced.",
       "description": "Fixture-safe 6E profile foundation using numeric DXY, completed bar confirmation, session segmentation, and thin-liquidity lockout inputs.",
       "fields_used": [
+        "market.current_price",
+        "market.bar_5m_close_count_at_or_beyond_level",
+        "cross_asset.dxy",
+        "session_sequence.asia_complete",
+        "session_sequence.london_complete",
+        "session_sequence.ny_pending"
+      ],
+      "required_live_fields": [
         "market.current_price",
         "market.bar_5m_close_count_at_or_beyond_level",
         "cross_asset.dxy",
@@ -44,6 +70,26 @@
             "session_sequence.asia_complete",
             "session_sequence.london_complete",
             "session_sequence.ny_pending"
+          ],
+          "required_live_fields": [
+            "market.current_price",
+            "market.bar_5m_close_count_at_or_beyond_level",
+            "cross_asset.dxy",
+            "session_sequence.asia_complete",
+            "session_sequence.london_complete",
+            "session_sequence.ny_pending"
+          ],
+          "invalidators": [
+            {
+              "id": "sixe_numeric_dxy_failure",
+              "condition": "cross_asset.dxy > 102.0",
+              "action": "block_query_ready_read_model"
+            },
+            {
+              "id": "sixe_session_sequence_incomplete",
+              "condition": "session_sequence.asia_complete != True OR session_sequence.london_complete != True OR session_sequence.ny_pending == True",
+              "action": "block_query_ready_read_model"
+            }
           ]
         }
       ],

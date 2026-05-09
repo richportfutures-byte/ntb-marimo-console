@@ -201,13 +201,26 @@ class WatchmanGatePayloadTests(unittest.TestCase):
             {
                 "contract": "ES",
                 "session_date": "2026-03-25",
+                "version": "live_thesis_brief_v1",
                 "structural_setups": [
                     {
+                        "id": "es_setup_test",
                         "description": "Narrative substance",
-                        "warnings": ["warning"],
+                        "required_live_fields": ["market.current_price"],
+                        "warnings": ["Keep the test brief blocked if the price condition is missing."],
                         "query_triggers": [
                             {
+                                "id": "es_trigger_test",
+                                "description": "Trigger when the fixture price reaches the test level.",
                                 "observable_conditions": ["market.current_price >= 5604"],
+                                "fields_used": ["market.current_price"],
+                                "required_live_fields": ["market.current_price"],
+                                "invalidators": [
+                                    {
+                                        "id": "es_test_price_failure",
+                                        "condition": "market.current_price < 5604",
+                                    }
+                                ],
                             }
                         ],
                     }
