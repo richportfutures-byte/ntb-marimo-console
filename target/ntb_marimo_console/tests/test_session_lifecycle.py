@@ -11,6 +11,7 @@ from ntb_marimo_console.contract_universe import (
     excluded_final_target_contracts,
     final_target_contracts,
 )
+from ntb_marimo_console.market_data.stream_cache import StreamCacheRecord, StreamCacheSnapshot
 from ntb_marimo_console.session_lifecycle import (
     load_session_lifecycle_from_env,
     reload_current_profile,
@@ -28,6 +29,47 @@ FINAL_TARGET_PRESERVED_PROFILE_BY_CONTRACT = {
     "6E": "preserved_6e_phase1",
     "MGC": "preserved_mgc_phase1",
 }
+NOW = "2026-05-06T14:00:00+00:00"
+RUNTIME_SYMBOL_BY_CONTRACT = {
+    "ES": "/ESM26",
+    "NQ": "/NQM26",
+    "CL": "/CLM26",
+    "6E": "/6EM26",
+    "MGC": "/MGCM26",
+}
+
+
+def runtime_record(contract: str) -> StreamCacheRecord:
+    return StreamCacheRecord(
+        provider="schwab",
+        service="LEVELONE_FUTURES",
+        symbol=RUNTIME_SYMBOL_BY_CONTRACT[contract],
+        contract=contract,
+        message_type="quote",
+        fields=(
+            ("bid", 100.0),
+            ("ask", 100.25),
+            ("last", 100.125),
+            ("quote_time", NOW),
+            ("trade_time", NOW),
+        ),
+        updated_at=NOW,
+        age_seconds=0.0,
+        fresh=True,
+        blocking_reasons=(),
+    )
+
+
+def runtime_cache_snapshot() -> StreamCacheSnapshot:
+    return StreamCacheSnapshot(
+        generated_at=NOW,
+        provider="schwab",
+        provider_status="active",
+        cache_max_age_seconds=15.0,
+        records=tuple(runtime_record(contract) for contract in final_target_contracts()),
+        blocking_reasons=(),
+        stale_symbols=(),
+    )
 
 
 class SessionLifecycleTests(unittest.TestCase):
@@ -99,6 +141,23 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertEqual(refreshed.shell["lifecycle"]["reload_result"], "RELOADED_UNCHANGED")
         self.assertEqual(refreshed.shell["runtime"]["session_state"], "LIVE_QUERY_ELIGIBLE")
         self.assertEqual(refreshed.shell["workflow"]["query_action_status"], "AVAILABLE")
+
+    def test_lifecycle_preserves_runtime_cache_derived_summary_across_operator_actions(self) -> None:
+        snapshot = runtime_cache_snapshot()
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env(runtime_snapshot=snapshot)
+            queried = request_query_action(lifecycle)
+            refreshed = reload_current_profile(queried)
+            reset = reset_session(queried)
+
+        for item in (lifecycle, queried, refreshed, reset):
+            with self.subTest(action=item.last_action):
+                summary = item.shell["surfaces"]["five_contract_readiness_summary"]
+                self.assertEqual(summary["readiness_source"], "runtime_cache_derived")
+                self.assertEqual(summary["live_runtime_readiness_status"], "LIVE_RUNTIME_CONNECTED")
+                self.assertTrue(summary["runtime_cache_bound_to_operator_launch"])
+                self.assertTrue(summary["runtime_cache_snapshot_ready"])
+                self.assertIs(item.runtime_snapshot, snapshot)
 
     def test_refresh_success_path_in_second_preserved_mode(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_nq_phase1"}, clear=True):

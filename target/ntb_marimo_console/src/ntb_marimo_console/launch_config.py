@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .adapters.contracts import RuntimeMode
 from .market_data import FuturesQuoteServiceConfig, resolve_futures_quote_service_config
-from .readiness_summary import build_five_contract_readiness_summary_surface
+from .readiness_summary import RuntimeReadinessSnapshot, build_five_contract_readiness_summary_surface
 from .runtime_diagnostics import (
     DIAG_INCOMPLETE_PROFILE_DEFINITION,
     DIAG_LAUNCH_PREFLIGHT_MISMATCH,
@@ -60,11 +60,13 @@ def build_launch_artifacts_from_env(
     *,
     default_mode: RuntimeMode = "fixture_demo",
     default_profile_id: str | None = None,
+    runtime_snapshot: RuntimeReadinessSnapshot | None = None,
 ) -> LaunchArtifacts:
     startup = build_startup_artifacts_from_env(
         default_mode=default_mode,
         default_profile_id=default_profile_id,
         query_action_requested=True,
+        runtime_snapshot=runtime_snapshot,
     )
     if startup.config is None:
         raise PreflightFailedError(startup.report)
@@ -80,12 +82,14 @@ def build_shell_from_env(
     *,
     default_mode: RuntimeMode = "fixture_demo",
     default_profile_id: str | None = None,
+    runtime_snapshot: RuntimeReadinessSnapshot | None = None,
 ) -> LaunchArtifacts:
     """Backward-compatible alias for env-driven app bootstrapping."""
 
     return build_launch_artifacts_from_env(
         default_mode=default_mode,
         default_profile_id=default_profile_id,
+        runtime_snapshot=runtime_snapshot,
     )
 
 
@@ -94,6 +98,7 @@ def build_startup_artifacts_from_env(
     default_mode: RuntimeMode = "fixture_demo",
     default_profile_id: str | None = None,
     query_action_requested: bool = False,
+    runtime_snapshot: RuntimeReadinessSnapshot | None = None,
 ) -> StartupArtifacts:
     try:
         request = resolve_launch_request_from_env(
@@ -112,6 +117,7 @@ def build_startup_artifacts_from_env(
     return build_startup_artifacts(
         request,
         query_action_requested=query_action_requested,
+        runtime_snapshot=runtime_snapshot,
     )
 
 
@@ -119,11 +125,13 @@ def build_startup_artifacts(
     request: LaunchRequest,
     *,
     query_action_requested: bool = False,
+    runtime_snapshot: RuntimeReadinessSnapshot | None = None,
 ) -> StartupArtifacts:
     report = build_preflight_report(request)
     return _build_startup_artifacts_from_report(
         report,
         query_action_requested=query_action_requested,
+        runtime_snapshot=runtime_snapshot,
     )
 
 
@@ -312,10 +320,31 @@ def _attach_startup_payload(shell: dict[str, object], report: PreflightReport) -
     )
 
 
-def attach_launch_metadata(shell: dict[str, object], report: PreflightReport) -> dict[str, object]:
+def attach_launch_metadata(
+    shell: dict[str, object],
+    report: PreflightReport,
+    *,
+    runtime_snapshot: RuntimeReadinessSnapshot | None = None,
+) -> dict[str, object]:
+    _attach_five_contract_readiness_summary(shell, report, runtime_snapshot=runtime_snapshot)
     _attach_runtime_identity(shell, report)
     _attach_startup_payload(shell, report)
     return shell
+
+
+def _attach_five_contract_readiness_summary(
+    shell: dict[str, object],
+    report: PreflightReport,
+    *,
+    runtime_snapshot: RuntimeReadinessSnapshot | None,
+) -> None:
+    surfaces = shell.get("surfaces")
+    if not isinstance(surfaces, dict) or report.request is None:
+        return
+    surfaces["five_contract_readiness_summary"] = build_five_contract_readiness_summary_surface(
+        active_profile_id=report.request.profile.profile_id,
+        runtime_snapshot=runtime_snapshot,
+    )
 
 
 def _build_startup_shell(report: PreflightReport) -> dict[str, object]:
@@ -332,6 +361,7 @@ def _build_startup_artifacts_from_report(
     report: PreflightReport,
     *,
     query_action_requested: bool,
+    runtime_snapshot: RuntimeReadinessSnapshot | None,
 ) -> StartupArtifacts:
     if not report.passed or report.request is None:
         shell = _build_startup_shell(report)
@@ -369,13 +399,7 @@ def _build_startup_artifacts_from_report(
         shell = _build_startup_shell(failed_report)
         return StartupArtifacts(shell=shell, report=failed_report, ready=False, config=config)
 
-    surfaces = shell.get("surfaces")
-    if isinstance(surfaces, dict):
-        surfaces["five_contract_readiness_summary"] = build_five_contract_readiness_summary_surface(
-            active_profile_id=config.profile.profile_id,
-        )
-
-    attach_launch_metadata(shell, report)
+    attach_launch_metadata(shell, report, runtime_snapshot=runtime_snapshot)
     return StartupArtifacts(shell=shell, report=report, ready=True, config=config)
 
 

@@ -531,6 +531,7 @@ def _render_surface_section(
         lines = [
             "## Five-Contract Readiness Summary",
             f"- Mode: `{_as_str(panel.get('mode'), default='<unavailable>')}`",
+            f"- Readiness Source: `{_as_str(panel.get('readiness_source'), default='<unavailable>')}`",
             f"- Active Profile: `{_as_str(panel.get('active_profile_id'), default='<none>')}`",
             f"- Default Launch Live: `{_as_str(panel.get('default_launch_live'), default=False)}`",
             f"- Live Credentials Required: `{_as_str(panel.get('live_credentials_required'), default=False)}`",
@@ -539,6 +540,9 @@ def _render_surface_section(
             f"- Summary Can Authorize Trades: `{_as_str(panel.get('summary_can_authorize_trades'), default=False)}`",
             f"- Live Runtime Readiness: `{_as_str(panel.get('live_runtime_readiness_status'), default='<unavailable>')}`",
             f"- Runtime Cache Bound To Operator Launch: `{_as_str(panel.get('runtime_cache_bound_to_operator_launch'), default=False)}`",
+            f"- Runtime Cache Source: `{_as_str(panel.get('runtime_cache_source_type'), default='<unavailable>')}`",
+            f"- Runtime Provider Status: `{_as_str(panel.get('runtime_cache_provider_status'), default='<unavailable>')}`",
+            f"- Runtime Snapshot Ready: `{_as_str(panel.get('runtime_cache_snapshot_ready'), default=False)}`",
             "- Rows:",
         ]
         if isinstance(rows, list):
@@ -553,6 +557,8 @@ def _render_surface_section(
                     + f"startup={_as_str(row.get('startup_readiness_state'))}, "
                     + f"operator_ready={_as_str(row.get('operator_ready'))}, "
                     + f"market_data={_as_str(row.get('market_data_status'))}, "
+                    + f"source={_as_str(row.get('readiness_source'), default='<unavailable>')}, "
+                    + f"live_state={_as_str(row.get('live_runtime_readiness_state'), default='<unavailable>')}, "
                     + f"runtime_cache={_as_str(row.get('runtime_cache_status'), default='<unavailable>')}, "
                     + f"trigger={_as_str(row.get('trigger_state_summary'))}, "
                     + f"query={_as_str(row.get('query_gate_status'))}"

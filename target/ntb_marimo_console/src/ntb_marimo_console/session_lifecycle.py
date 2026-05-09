@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from .launch_config import (
     LaunchConfig,
+    RuntimeReadinessSnapshot,
     StartupArtifacts,
     attach_launch_metadata,
     build_startup_artifacts,
@@ -72,6 +73,7 @@ class SessionLifecycle:
     evidence_last_persistence_message: str
     evidence_last_persistence_at_utc: str | None
     evidence_history: tuple[SessionEvidenceRecord, ...]
+    runtime_snapshot: RuntimeReadinessSnapshot | None = None
 
 
 def load_session_lifecycle_from_env(
@@ -79,6 +81,7 @@ def load_session_lifecycle_from_env(
     default_mode: str = "fixture_demo",
     default_profile_id: str | None = None,
     evidence_store_path: str | Path | None = None,
+    runtime_snapshot: RuntimeReadinessSnapshot | None = None,
 ) -> SessionLifecycle:
     restore_snapshot = restore_session_evidence_history(path=evidence_store_path)
     app_session_id = uuid4().hex
@@ -86,6 +89,7 @@ def load_session_lifecycle_from_env(
         default_mode=default_mode,
         default_profile_id=default_profile_id,
         query_action_requested=False,
+        runtime_snapshot=runtime_snapshot,
     )
     assembly = _assemble_runtime(startup)
     artifact_snapshot = _artifact_snapshot_for_report(startup.report)
@@ -123,6 +127,7 @@ def load_session_lifecycle_from_env(
         evidence_history=restore_snapshot.history,
         evidence_originating_profile_id=_selected_profile_id_from_shell(current_shell),
         evidence_requested_profile_id=None,
+        runtime_snapshot=runtime_snapshot,
     )
 
 
@@ -140,7 +145,7 @@ def request_query_action(lifecycle: SessionLifecycle) -> SessionLifecycle:
         lifecycle.assembly,
         query_action_requested=True,
     )
-    attach_launch_metadata(current_shell, lifecycle.report)
+    attach_launch_metadata(current_shell, lifecycle.report, runtime_snapshot=lifecycle.runtime_snapshot)
     lifecycle_history = _continue_history(
         lifecycle.lifecycle_history,
         runtime_shell=current_shell,
@@ -176,6 +181,7 @@ def request_query_action(lifecycle: SessionLifecycle) -> SessionLifecycle:
         evidence_history=lifecycle.evidence_history,
         evidence_originating_profile_id=_selected_profile_id(lifecycle),
         evidence_requested_profile_id=None,
+        runtime_snapshot=lifecycle.runtime_snapshot,
     )
 
 
@@ -230,6 +236,7 @@ def reset_session(lifecycle: SessionLifecycle) -> SessionLifecycle:
         evidence_history=lifecycle.evidence_history,
         evidence_originating_profile_id=_selected_profile_id(lifecycle),
         evidence_requested_profile_id=None,
+        runtime_snapshot=lifecycle.runtime_snapshot,
     )
 
 
@@ -247,6 +254,7 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
     startup = build_startup_artifacts(
         request,
         query_action_requested=False,
+        runtime_snapshot=lifecycle.runtime_snapshot,
     )
     artifact_snapshot = _artifact_snapshot_for_report(startup.report)
     reload_changed_sources = _compare_artifact_snapshots(
@@ -294,6 +302,7 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
             evidence_history=lifecycle.evidence_history,
             evidence_originating_profile_id=_selected_profile_id(lifecycle),
             evidence_requested_profile_id=None,
+            runtime_snapshot=lifecycle.runtime_snapshot,
         )
 
     current_shell = deepcopy(startup.shell)
@@ -333,6 +342,7 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
         evidence_history=lifecycle.evidence_history,
         evidence_originating_profile_id=_selected_profile_id(lifecycle),
         evidence_requested_profile_id=None,
+        runtime_snapshot=lifecycle.runtime_snapshot,
     )
 
 
@@ -389,6 +399,7 @@ def clear_retained_evidence(lifecycle: SessionLifecycle) -> SessionLifecycle:
         evidence_originating_profile_id=_selected_profile_id(lifecycle),
         evidence_requested_profile_id=None,
         record_evidence=False,
+        runtime_snapshot=lifecycle.runtime_snapshot,
     )
 
 
@@ -436,6 +447,7 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
             evidence_history=lifecycle.evidence_history,
             evidence_originating_profile_id=active_profile_id,
             evidence_requested_profile_id=profile_id,
+            runtime_snapshot=lifecycle.runtime_snapshot,
         )
 
     request = _switch_request_from_lifecycle(
@@ -445,6 +457,7 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
     startup = build_startup_artifacts(
         request,
         query_action_requested=False,
+        runtime_snapshot=lifecycle.runtime_snapshot,
     )
     if not startup.ready:
         failure_categories = [check.category for check in startup.report.checks if not check.passed]
@@ -492,6 +505,7 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
             evidence_history=lifecycle.evidence_history,
             evidence_originating_profile_id=active_profile_id,
             evidence_requested_profile_id=profile_id,
+            runtime_snapshot=lifecycle.runtime_snapshot,
         )
 
     current_shell = deepcopy(startup.shell)
@@ -532,6 +546,7 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
         evidence_history=lifecycle.evidence_history,
         evidence_originating_profile_id=active_profile_id,
         evidence_requested_profile_id=profile_id,
+        runtime_snapshot=lifecycle.runtime_snapshot,
     )
 
 
@@ -794,6 +809,7 @@ def _blocked_action(lifecycle: SessionLifecycle, *, summary: str) -> SessionLife
         evidence_originating_profile_id=_selected_profile_id(lifecycle),
         evidence_requested_profile_id=None,
         record_evidence=False,
+        runtime_snapshot=lifecycle.runtime_snapshot,
     )
 
 
@@ -827,6 +843,7 @@ def _finalize_lifecycle(
     evidence_originating_profile_id: str | None,
     evidence_requested_profile_id: str | None,
     record_evidence: bool = True,
+    runtime_snapshot: RuntimeReadinessSnapshot | None = None,
 ) -> SessionLifecycle:
     shell["lifecycle"] = _build_lifecycle_panel(
         shell=shell,
@@ -898,6 +915,7 @@ def _finalize_lifecycle(
         evidence_last_persistence_message=evidence_last_persistence_message,
         evidence_last_persistence_at_utc=evidence_last_persistence_at_utc,
         evidence_history=updated_evidence_history,
+        runtime_snapshot=runtime_snapshot,
     )
 
 

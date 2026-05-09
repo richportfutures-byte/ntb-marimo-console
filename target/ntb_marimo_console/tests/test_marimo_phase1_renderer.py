@@ -61,6 +61,18 @@ class MarimoPhase1RendererTests(unittest.TestCase):
         self.assertIn("## Session Workflow", source)
         self.assertIn("Preflight Status", source)
 
+    def test_five_contract_summary_renderer_exposes_runtime_cache_readiness_fields(self) -> None:
+        source = (PACKAGE_ROOT / "src" / "ntb_marimo_console" / "ui" / "marimo_phase1_renderer.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Readiness Source", source)
+        self.assertIn("Live Runtime Readiness", source)
+        self.assertIn("Runtime Cache Source", source)
+        self.assertIn("Runtime Provider Status", source)
+        self.assertIn("Runtime Snapshot Ready", source)
+        self.assertIn("live_runtime_readiness_state", source)
+
     def test_primary_surfaces_do_not_use_code_editor_json(self) -> None:
         source = (PACKAGE_ROOT / "src" / "ntb_marimo_console" / "ui" / "marimo_phase1_renderer.py").read_text(
             encoding="utf-8"
