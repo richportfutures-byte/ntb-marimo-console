@@ -20,6 +20,7 @@ FORBIDDEN_COMMAND_FRAGMENTS = (
     "prepare_schwab_oauth_token",
     "probe_schwab",
     "run_schwab_market_data_live_harness",
+    "run_manual_live_rehearsal",
     "0DTE",
     "SPX",
     "marimo run",

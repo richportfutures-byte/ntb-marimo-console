@@ -22,6 +22,8 @@ Run from the repository root:
 env PYTHONDONTWRITEBYTECODE=1 python3 target/ntb_marimo_console/scripts/run_schwab_market_data_live_harness.py --live --symbol /ESM26 --fields 0,1,2,3,4,5 --timeout-seconds 10 --token-path target/ntb_marimo_console/.state/schwab/token.json
 ```
 
+For the R18 five-contract rehearsal checklist and fixture-safe dry-run path, see `docs/manual_live_rehearsal.md`.
+
 ## Expected sanitized success shape
 
 ```text

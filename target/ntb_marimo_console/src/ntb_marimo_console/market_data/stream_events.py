@@ -72,6 +72,7 @@ class StreamEvent:
 
 def redact_sensitive_text(value: object) -> str:
     text = str(value)
+    text = re.sub(r"(?i)authorization:\s*bearer\s+[A-Za-z0-9._~+/=-]+", "Authorization: [REDACTED]", text)
     text = re.sub(
         r"(?i)(access_token|refresh_token|auth(?:orization)?|secret|app_key|app_secret|credential|token)"
         r"([:=]\s*|=)([^&\s,}\"']+)",
