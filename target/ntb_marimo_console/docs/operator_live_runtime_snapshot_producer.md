@@ -88,13 +88,15 @@ R29 is ready for explicit manual live rehearsal **provided** the operator suppli
 
 If the user-preference probe reports that the local token file has an access token but no refresh token, treat the artifact as non-refresh-capable and blocked. Do not proceed to userPreference, streamer credentials, or operator runtime rehearsal from a token artifact unless the sanitized token contract reports `access_token_present=yes`, `refresh_token_present=yes`, and `token_contract_valid=yes`. Perform a fresh OAuth authorization-code flow locally before retrying the live probes. The OAuth prep script prints status fields only. It must not print the raw authorization URL, callback URL, authorization code, app credentials, token JSON, access token, refresh token, request payload, auth header, raw token response body, customer ID, correl ID, streamer URL, or account ID.
 
-Run from `target/ntb_marimo_console/`:
+Run from the repo root, `/Users/stu/Projects/ntb-marimo-console`:
 
 ```
+cd /Users/stu/Projects/ntb-marimo-console
 set -a && . .state/secrets/schwab_live.env && set +a
 SCHWAB_OAUTH_LIVE=true \
-PYTHONPATH=src:../../source/ntb_engine/src \
-python3 scripts/prepare_schwab_oauth_token.py --write-authorization-url
+SCHWAB_TOKEN_PATH=.state/schwab/token.json \
+PYTHONPATH=target/ntb_marimo_console/src:source/ntb_engine/src \
+python3 target/ntb_marimo_console/scripts/prepare_schwab_oauth_token.py --write-authorization-url
 ```
 
 The command writes the raw authorization URL to `target/ntb_marimo_console/.state/schwab/oauth_authorization_url.txt` with owner-only permissions and prints only the relative path plus sanitized status fields. Open that local file outside chat, complete the browser authorization, then paste the redirected callback URL or raw authorization code only into the local terminal prompt. Do not paste the authorization URL, callback URL, authorization code, token JSON, or token values into chat, docs, logs, commits, or proof artifacts.
@@ -105,26 +107,31 @@ If token exchange fails after pasting a code, do not retry the same code. Schwab
 
 `TOKEN_WRITE_PASS` requires both `access_token` and `refresh_token` in the token response, and token writes remain owner-only under `target/ntb_marimo_console/.state/`. After `TOKEN_WRITE_PASS`, rerun `scripts/probe_schwab_user_preference.py` under the existing explicit live gate. Rerun `scripts/run_operator_live_runtime_rehearsal.py --live` only after streamerInfo / streamer credentials are obtained. A user-preference failure remains blocking; the operator runtime must not fall back to fixtures after a live failure.
 
-### Manual rehearsal command
+### R30 Command Contract
 
 R30 ships an explicit live-gated rehearsal at `scripts/run_operator_live_runtime_rehearsal.py`. The command wires R29's `OperatorSchwabStreamerSession` through R28's stream client factory and R27's launcher, drives a bounded `dispatch_one` receive loop into the manager's `ingest_message` cache path, and prints **boolean/status keys only** — no Schwab-sensitive values appear in stdout, stderr, or the JSON payload. The script does not open `.state/secrets/schwab_live.env`; the operator sources that file in their shell first.
 
-The expected manual command, run from `target/ntb_marimo_console/`:
+Run the R30 structural rehearsal from the repo root, `/Users/stu/Projects/ntb-marimo-console`. The canonical live-runtime opt-in for this command is `NTB_OPERATOR_RUNTIME_MODE=OPERATOR_LIVE_RUNTIME`. The lower-level runtime resolver also accepts compatibility forms such as `NTB_OPERATOR_RUNTIME_MODE=LIVE_RUNTIME`, `NTB_OPERATOR_RUNTIME_MODE=LIVE`, and `NTB_OPERATOR_LIVE_RUNTIME=1`, but those are not the documented R30 command contract. `OPERATOR_LIVE_RUNTIME=true` is not wired as an accepted opt-in.
+
+The target-relative token path is `SCHWAB_TOKEN_PATH=.state/schwab/token.json`; the harness resolves it under `target/ntb_marimo_console/.state/`. Do not pass `target/ntb_marimo_console/.state/schwab/token.json` as a relative token path to this command, because the harness treats relative token paths as target-root relative and rejects double-nested values.
 
 ```
+cd /Users/stu/Projects/ntb-marimo-console
 set -a && . .state/secrets/schwab_live.env && set +a
 NTB_OPERATOR_RUNTIME_MODE=OPERATOR_LIVE_RUNTIME \
-PYTHONPATH=src:../../source/ntb_engine/src \
-python3 scripts/run_operator_live_runtime_rehearsal.py --live --duration 10
+SCHWAB_TOKEN_PATH=.state/schwab/token.json \
+PYTHONPATH=target/ntb_marimo_console/src:source/ntb_engine/src \
+python3 target/ntb_marimo_console/scripts/run_operator_live_runtime_rehearsal.py --live --duration 30
 ```
 
 Required preconditions enforced by the command:
 
 - `--live` flag (without it: `mode=blocked`, `live_flag=no`, exit 2).
-- `NTB_OPERATOR_RUNTIME_MODE=OPERATOR_LIVE_RUNTIME` (without it: `operator_live_runtime_env=no`, exit 2).
+- Canonical `NTB_OPERATOR_RUNTIME_MODE=OPERATOR_LIVE_RUNTIME` (without it: `operator_live_runtime_env=no`, exit 2).
 - `SCHWAB_APP_KEY`, `SCHWAB_APP_SECRET`, `SCHWAB_TOKEN_PATH` present (boolean only).
 - `SCHWAB_TOKEN_PATH` resolves under `target/ntb_marimo_console/.state/`.
 - Token file present.
+- Token contract valid with both access and refresh tokens present.
 
 Output keys (text-mode `key=value` lines or `--json` payload, sanitized):
 
@@ -155,9 +162,46 @@ duration_seconds=N
 values_printed=no
 ```
 
+Expected structural pass fields:
+
+```
+mode=live
+status=ok
+operator_live_runtime_env=yes
+env_keys_present=yes
+token_path_under_target_state=yes
+token_contract_valid=yes
+streamer_credentials_obtained=yes
+runtime_start_attempted=yes
+live_login_succeeded=yes
+live_subscribe_succeeded=yes
+subscribed_contracts_count=5
+repeated_login_on_refresh=no
+cleanup_status=ok
+values_printed=no
+```
+
+During off-hours or weekend runs, a structural pass can still report:
+
+```
+market_data_received=no
+received_contracts_count=0
+```
+
+Open-market tick-flow evidence requires:
+
+```
+market_data_received=yes
+received_contracts_count>=1
+```
+
+R30 structural rehearsal is verified after login, subscribe, and cleanup pass. Market-data tick-flow evidence remains pending until `market_data_received=yes` appears during an open market session.
+
 Active front-month symbol resolution defaults to ES=`/ESM26`, NQ=`/NQM26`, CL=`/CLM26`, 6E=`/6EM26`, MGC=`/MGCM26` (calendar-dependent). Operators override at roll dates via `--symbol ROOT=KEY` (repeatable). `ZN` and `GC` are rejected at argparse and never appear in any subscription payload. The duration is clamped to `[1, 30]` seconds. The receive loop only invokes `session.dispatch_one(handler=manager.ingest_message)`; it never re-invokes login, subscribe, websocket connect, or `manager.start`. Cleanup via `stop_operator_live_runtime` runs in a `finally` block.
 
 This step does not write into `target/ntb_marimo_console/docs/live_proof/`. Operators capture proof artifacts via the existing `scripts/capture_five_contract_live_proof.py --live` flow; that path remains unchanged.
+
+Do not paste authorization URLs, callback URLs, authorization codes, token contents, secrets, streamer URLs, customer IDs, correl IDs, account IDs, or auth headers into chat, logs, commits, or proof artifacts.
 
 ## Safety Boundaries
 

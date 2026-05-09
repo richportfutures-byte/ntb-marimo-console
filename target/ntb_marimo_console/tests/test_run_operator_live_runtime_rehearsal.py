@@ -36,6 +36,7 @@ from ntb_marimo_console.operator_live_runtime import (  # noqa: E402
     build_operator_runtime_snapshot_producer_from_env,
     clear_operator_live_runtime_registration,
     get_registered_operator_live_runtime_producer,
+    operator_runtime_mode_from_env,
     resolve_operator_runtime_snapshot,
 )
 from ntb_marimo_console.schwab_streamer_session import (  # noqa: E402
@@ -326,6 +327,12 @@ def _full_env(target_root: Path, *, override: dict[str, str] | None = None) -> d
     return base
 
 
+def _full_env_without_runtime_mode(target_root: Path, *, override: dict[str, str] | None = None) -> dict[str, str]:
+    env = _full_env(target_root, override=override)
+    env.pop("NTB_OPERATOR_RUNTIME_MODE", None)
+    return env
+
+
 def _ensure_token_file(target_root: Path) -> Path:
     """Create a placeholder token file under target/.state/ for tests that need token_file_present=yes."""
     token_path = target_root / ".state" / "schwab" / "token.json"
@@ -398,6 +405,75 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertFalse(report.runtime_start_attempted)
         self.assertEqual(report.blocking_reason, "operator_live_runtime_opt_in_required")
 
+    def test_canonical_operator_live_runtime_opt_in_is_honored_without_aliases(self) -> None:
+        _ensure_token_file(self.target_root)
+        report = rehearsal.run_with_dependencies(
+            args=_make_args(live=True),
+            env=_full_env(self.target_root),
+            target_root=self.target_root,
+            deps=rehearsal.RehearsalDependencies(
+                token_provider=FakeTokenProvider(),
+                credentials_provider=FakeCredentialsProvider(exception=RuntimeError("stop before runtime start")),
+                websocket_factory=FakeWebsocketFactory(),
+            ),
+        )
+
+        self.assertTrue(report.operator_live_runtime_env)
+        self.assertEqual(report.blocking_reason, "streamer_credentials_unavailable")
+        self.assertFalse(report.runtime_start_attempted)
+
+    def test_unsupported_or_misspelled_rehearsal_opt_in_does_not_pass(self) -> None:
+        _ensure_token_file(self.target_root)
+        for value in ("OPERATOR_LIVE_RUNTME", "true", "1", "LIVE_RUNTIME_ENABLED"):
+            with self.subTest(value=value):
+                report = rehearsal.run_with_dependencies(
+                    args=_make_args(live=True),
+                    env=_full_env(self.target_root, override={"NTB_OPERATOR_RUNTIME_MODE": value}),
+                    target_root=self.target_root,
+                )
+                self.assertFalse(report.operator_live_runtime_env)
+                self.assertEqual(report.blocking_reason, "operator_live_runtime_opt_in_required")
+                self.assertFalse(report.runtime_start_attempted)
+
+    def test_lower_level_runtime_compatibility_opt_ins_are_not_rehearsal_command_contract(self) -> None:
+        self.assertEqual(
+            operator_runtime_mode_from_env({"NTB_OPERATOR_RUNTIME_MODE": "OPERATOR_LIVE_RUNTIME"}),
+            OPERATOR_LIVE_RUNTIME,
+        )
+        self.assertEqual(
+            operator_runtime_mode_from_env({"NTB_OPERATOR_RUNTIME_MODE": "LIVE_RUNTIME"}),
+            OPERATOR_LIVE_RUNTIME,
+        )
+        self.assertEqual(
+            operator_runtime_mode_from_env({"NTB_OPERATOR_RUNTIME_MODE": "LIVE"}),
+            OPERATOR_LIVE_RUNTIME,
+        )
+        self.assertEqual(
+            operator_runtime_mode_from_env({"NTB_OPERATOR_LIVE_RUNTIME": "1"}),
+            OPERATOR_LIVE_RUNTIME,
+        )
+        self.assertEqual(
+            operator_runtime_mode_from_env({"OPERATOR_LIVE_RUNTIME": "true"}),
+            "SAFE_NON_LIVE",
+        )
+
+        _ensure_token_file(self.target_root)
+        for env in (
+            _full_env(self.target_root, override={"NTB_OPERATOR_RUNTIME_MODE": "LIVE_RUNTIME"}),
+            _full_env(self.target_root, override={"NTB_OPERATOR_RUNTIME_MODE": "LIVE"}),
+            _full_env_without_runtime_mode(self.target_root, override={"NTB_OPERATOR_LIVE_RUNTIME": "1"}),
+            _full_env_without_runtime_mode(self.target_root, override={"OPERATOR_LIVE_RUNTIME": "true"}),
+        ):
+            with self.subTest(env=env):
+                report = rehearsal.run_with_dependencies(
+                    args=_make_args(live=True),
+                    env=env,
+                    target_root=self.target_root,
+                )
+                self.assertFalse(report.operator_live_runtime_env)
+                self.assertEqual(report.blocking_reason, "operator_live_runtime_opt_in_required")
+                self.assertFalse(report.runtime_start_attempted)
+
     def test_missing_required_env_keys_blocks_before_token_access(self) -> None:
         env = {"NTB_OPERATOR_RUNTIME_MODE": OPERATOR_LIVE_RUNTIME}
         report = rehearsal.run_with_dependencies(
@@ -426,6 +502,39 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertFalse(report.token_path_under_target_state)
         self.assertEqual(report.blocking_reason, "token_path_outside_target_state")
         self.assertFalse(report.runtime_start_attempted)
+
+    def test_target_relative_token_path_resolves_under_target_state_without_reading_contents(self) -> None:
+        ok, token_path = rehearsal._validate_token_path_under_target_state(
+            {"SCHWAB_TOKEN_PATH": ".state/schwab/token.json"},
+            self.target_root,
+        )
+
+        self.assertTrue(ok)
+        self.assertEqual(token_path, (self.target_root / ".state" / "schwab" / "token.json").resolve())
+
+    def test_double_nested_relative_token_path_is_rejected_without_reading_contents(self) -> None:
+        ok, token_path = rehearsal._validate_token_path_under_target_state(
+            {"SCHWAB_TOKEN_PATH": "target/ntb_marimo_console/.state/schwab/token.json"},
+            self.target_root,
+        )
+
+        self.assertFalse(ok)
+        self.assertEqual(
+            token_path,
+            (self.target_root / "target" / "ntb_marimo_console" / ".state" / "schwab" / "token.json").resolve(),
+        )
+
+    def test_absolute_token_path_outside_target_state_is_rejected_without_reading_contents(self) -> None:
+        sentinel_open = unittest.mock.MagicMock(side_effect=AssertionError("token_contents_must_not_be_read"))
+        with patch("builtins.open", new=sentinel_open):
+            ok, token_path = rehearsal._validate_token_path_under_target_state(
+                {"SCHWAB_TOKEN_PATH": "/tmp/not-under-target-state/token.json"},
+                self.target_root,
+            )
+
+        self.assertFalse(ok)
+        self.assertEqual(token_path, Path("/tmp/not-under-target-state/token.json").resolve())
+        sentinel_open.assert_not_called()
 
     def test_does_not_open_secrets_env_file(self) -> None:
         _ensure_token_file(self.target_root)
