@@ -38,6 +38,17 @@ R27 adds an explicit operator entry point — `ntb_marimo_console.operator_live_
 
 The launcher does not select, construct, or ship a concrete `SchwabStreamClient` implementation. That is intentionally operator-supplied (or test-supplied) so this step adds the construction boundary without committing the workstation to a particular client wiring.
 
+### Concrete client factory
+
+R28 adds a concrete `SchwabStreamClient` wrapper at `ntb_marimo_console.schwab_stream_client`:
+
+- `OperatorSchwabStreamClient(session)` — implements the three-method `SchwabStreamClient` Protocol by delegating to an operator-supplied `StreamerSession` collaborator. Any exception or non-success result is sanitized via `redact_sensitive_text` before reaching readiness, the renderer, or the operator-facing failure surface.
+- `StreamerSession` (Protocol) — minimal abstraction with `login(config)`, `subscribe(request)`, `close()`. Operators (or a future step) supply a concrete websocket implementation.
+- `StreamerSessionFactory = Callable[[SchwabStreamManagerConfig], StreamerSession]`.
+- `build_operator_schwab_stream_client_factory(streamer_session_factory=...) -> ClientFactory` — returns a callable consumable by `start_operator_live_runtime(client_factory=...)`. The `streamer_session_factory` keyword is required; there is no implicit default. The builder is lazy: it does not invoke the session factory, read credentials, read tokens, fetch streamer metadata, open websockets, or perform any network work. The returned factory only invokes the session factory when the launcher itself invokes it under explicit `OPERATOR_LIVE_RUNTIME` opt-in.
+
+R28 deliberately does not ship a concrete websocket-based `StreamerSession` implementation. Wiring `scripts/probe_schwab_levelone_futures.py` (or an equivalent in-process implementation) into a `StreamerSession` is a separate downstream step. Until that step lands, the explicit `OPERATOR_LIVE_RUNTIME` opt-in path can be exercised end-to-end with operator-supplied or test-supplied collaborators while CI/import/default behavior remains non-live and credential-free.
+
 ## Safety Boundaries
 
 - The final readiness universe remains `ES`, `NQ`, `CL`, `6E`, and `MGC`.
