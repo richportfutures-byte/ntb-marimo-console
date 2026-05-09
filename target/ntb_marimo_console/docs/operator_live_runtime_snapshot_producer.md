@@ -84,6 +84,56 @@ Manual rehearsal entry point::
 
 R29 is ready for explicit manual live rehearsal **provided** the operator supplies a fresh `StreamerCredentials` (e.g., via `scripts/probe_schwab_user_preference.py`) and a fresh access token. Auto-fetch of user preferences, OAuth refresh inside src/, and a managed receive thread remain documented downstream-step candidates.
 
+### Manual rehearsal command
+
+R30 ships an explicit live-gated rehearsal at `scripts/run_operator_live_runtime_rehearsal.py`. The command wires R29's `OperatorSchwabStreamerSession` through R28's stream client factory and R27's launcher, drives a bounded `dispatch_one` receive loop into the manager's `ingest_message` cache path, and prints **boolean/status keys only** — no Schwab-sensitive values appear in stdout, stderr, or the JSON payload. The script does not open `.state/secrets/schwab_live.env`; the operator sources that file in their shell first.
+
+The expected manual command, run from `target/ntb_marimo_console/`:
+
+```
+set -a && . .state/secrets/schwab_live.env && set +a
+NTB_OPERATOR_RUNTIME_MODE=OPERATOR_LIVE_RUNTIME \
+PYTHONPATH=src:../../source/ntb_engine/src \
+python3 scripts/run_operator_live_runtime_rehearsal.py --live --duration 10
+```
+
+Required preconditions enforced by the command:
+
+- `--live` flag (without it: `mode=blocked`, `live_flag=no`, exit 2).
+- `NTB_OPERATOR_RUNTIME_MODE=OPERATOR_LIVE_RUNTIME` (without it: `operator_live_runtime_env=no`, exit 2).
+- `SCHWAB_APP_KEY`, `SCHWAB_APP_SECRET`, `SCHWAB_TOKEN_PATH` present (boolean only).
+- `SCHWAB_TOKEN_PATH` resolves under `target/ntb_marimo_console/.state/`.
+- Token file present.
+
+Output keys (text-mode `key=value` lines or `--json` payload, sanitized):
+
+```
+mode=live|blocked
+status=ok|blocked|error
+repo_check=yes|no
+live_flag=yes|no
+operator_live_runtime_env=yes|no
+env_keys_present=yes|no
+token_path_under_target_state=yes|no
+token_file_present=yes|no
+token_fresh=yes|no|unknown
+streamer_credentials_obtained=yes|no
+runtime_start_attempted=yes|no
+live_login_succeeded=yes|no
+live_subscribe_succeeded=yes|no
+subscribed_contracts_count=5
+market_data_received=yes|no
+received_contracts_count=N
+repeated_login_on_refresh=no
+cleanup_status=ok|skipped|error
+duration_seconds=N
+values_printed=no
+```
+
+Active front-month symbol resolution defaults to ES=`/ESM26`, NQ=`/NQM26`, CL=`/CLM26`, 6E=`/6EM26`, MGC=`/MGCM26` (calendar-dependent). Operators override at roll dates via `--symbol ROOT=KEY` (repeatable). `ZN` and `GC` are rejected at argparse and never appear in any subscription payload. The duration is clamped to `[1, 30]` seconds. The receive loop only invokes `session.dispatch_one(handler=manager.ingest_message)`; it never re-invokes login, subscribe, websocket connect, or `manager.start`. Cleanup via `stop_operator_live_runtime` runs in a `finally` block.
+
+This step does not write into `target/ntb_marimo_console/docs/live_proof/`. Operators capture proof artifacts via the existing `scripts/capture_five_contract_live_proof.py --live` flow; that path remains unchanged.
+
 ## Safety Boundaries
 
 - The final readiness universe remains `ES`, `NQ`, `CL`, `6E`, and `MGC`.
