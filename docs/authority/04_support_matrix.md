@@ -10,7 +10,7 @@
 | Contract | Final Target Status | Current App-Profile Status | R00 Classification |
 |---|---|---|---|
 | ES | Required final target | Supported today through fixture and preserved profiles | Retain current profile; future live workstation upgrades required |
-| NQ | Required final target | Not app-profile-supported today | Required onboarding target |
+| NQ | Required final target | Supported today through preserved profile foundation | Retain profile foundation; future live workstation upgrades required |
 | CL | Required final target | Supported today through preserved profile | Retain current profile; future live workstation upgrades required |
 | 6E | Required final target | Not app-profile-supported today | Required onboarding target |
 | MGC | Required final target | Not app-profile-supported today | Required onboarding target; gold contract for this application |
@@ -35,6 +35,7 @@ The current target runtime profile registry contains:
 
 - `fixture_es_demo`
 - `preserved_es_phase1`
+- `preserved_nq_phase1`
 - `preserved_zn_phase1`
 - `preserved_cl_phase1`
 
@@ -42,10 +43,10 @@ This current registry is factual baseline, not final target authority. `ZN` exis
 
 ## Supported vs Onboarding vs Excluded Policy
 
-1. `ES` and `CL` are currently app-profile-supported and require future live workstation upgrades.
-2. `NQ`, `6E`, and `MGC` are required onboarding targets for the final roadmap.
+1. `ES`, `NQ`, and `CL` are currently app-profile-supported and require future live workstation upgrades.
+2. `6E` and `MGC` are required onboarding targets for the final roadmap.
 3. `NQ`, `6E`, and `MGC` must not be described as engine-missing contracts; the engine schema includes them today.
-4. `NQ`, `6E`, and `MGC` must remain truthfully classified as not current app-profile-supported until runtime/profile/live-gating work promotes them.
+4. `6E` and `MGC` must remain truthfully classified as not current app-profile-supported until runtime/profile/live-gating work promotes them.
 5. `ZN` may remain only as legacy/historical code, fixture, or test artifact until cleanup work removes or quarantines it.
 6. `ZN` must not be presented as final target support.
 7. `GC` must remain excluded and must not appear as supported, onboarded, or synonymous with `MGC`.
@@ -67,7 +68,7 @@ Fixtures, preserved artifacts, or live provider outputs are acceptable only when
 | Contract | Pre-Market Brief | Watchman Gate | Final Target Status |
 |---|---|---|---|
 | ES | Required for final target | Validator-driven `mo.stop()` hard gate | Required; current preserved profile exists |
-| NQ | Required for final target | Validator-driven `mo.stop()` hard gate | Required onboarding target |
+| NQ | Required for final target | Validator-driven `mo.stop()` hard gate | Required; current preserved profile foundation exists |
 | CL | Required for final target | Validator-driven `mo.stop()` hard gate | Required; current preserved profile exists |
 | 6E | Required for final target | Validator-driven `mo.stop()` hard gate | Required onboarding target |
 | MGC | Required for final target | Validator-driven `mo.stop()` hard gate | Required onboarding target; gold contract |
@@ -91,7 +92,9 @@ Fixtures, preserved artifacts, or live provider outputs are acceptable only when
 
 ## Required Onboarding Boundary
 
-`NQ`, `6E`, and `MGC` are not current app-profile-supported yet. They are required onboarding targets for the final target roadmap and must be promoted only through explicit future runtime/profile/live-gating work. They are not optional deferred extras and not blocked because the engine lacks schema support.
+`6E` and `MGC` are not current app-profile-supported yet. They are required onboarding targets for the final target roadmap and must be promoted only through explicit future runtime/profile/live-gating work. They are not optional deferred extras and not blocked because the engine lacks schema support.
+
+`NQ` now has a preserved profile and deterministic ES-relative live workstation read-model foundation. That foundation does not authorize trades, make default launch live, wire live Schwab startup, or make absolute NQ price action sufficient by itself.
 
 ## Exclusion Boundary
 

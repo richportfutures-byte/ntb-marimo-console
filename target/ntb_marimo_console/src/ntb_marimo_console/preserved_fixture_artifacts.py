@@ -218,7 +218,7 @@ def _apply_overlay(
         _require_str(target_premarket.get("session_date"), "session_date", "target pre-market packet"),
     )
 
-    if profile.contract in {"ES", "NQ"}:
+    if profile.contract == "ES":
         breadth_pct = _extract_breadth_pct(target_snapshot)
         contract_specific_extension["breadth"] = (
             f"positive {breadth_pct:.0%} advancers"

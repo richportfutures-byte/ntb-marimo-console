@@ -27,6 +27,7 @@ class WindowsAcceptanceTests(unittest.TestCase):
                 "fixture_es_demo\tmode=fixture_demo\tcontract=ES\tsession_date=2026-03-25\tadapter=n/a",
                 "preserved_cl_phase1\tmode=preserved_engine\tcontract=CL\tsession_date=2026-01-14\tadapter=adapter_cl",
                 "preserved_es_phase1\tmode=preserved_engine\tcontract=ES\tsession_date=2026-03-25\tadapter=adapter",
+                "preserved_nq_phase1\tmode=preserved_engine\tcontract=NQ\tsession_date=2026-01-14\tadapter=adapter_nq",
                 "preserved_zn_phase1\tmode=preserved_engine\tcontract=ZN\tsession_date=2026-01-14\tadapter=adapter_zn",
             ]
         )
@@ -37,6 +38,7 @@ class WindowsAcceptanceTests(unittest.TestCase):
                 "fixture_es_demo",
                 "preserved_cl_phase1",
                 "preserved_es_phase1",
+                "preserved_nq_phase1",
                 "preserved_zn_phase1",
             ),
         )
@@ -56,7 +58,6 @@ class WindowsAcceptanceTests(unittest.TestCase):
                 "Blocked:",
                 "- 6E -> preserved_6e_phase1: blocked_missing_numeric_cross_asset_source | blocked",
                 "- MGC -> preserved_mgc_phase1: blocked_missing_numeric_cross_asset_source | blocked",
-                "- NQ -> preserved_nq_phase1: blocked_unsupported_query_observable_contract | blocked",
             ]
         )
 

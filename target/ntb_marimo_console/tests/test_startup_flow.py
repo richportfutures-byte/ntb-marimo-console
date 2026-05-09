@@ -55,6 +55,17 @@ class StartupFlowTests(unittest.TestCase):
         self.assertEqual(startup.shell["startup"]["readiness_state"], "OPERATOR_SURFACES_READY")
         self.assertEqual(startup.shell["startup"]["current_session_state"], "LIVE_QUERY_ELIGIBLE")
 
+    def test_startup_flow_nq_preserved_profile_is_fixture_safe_and_non_live(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_nq_phase1"}, clear=True):
+            startup = build_startup_artifacts_from_env()
+
+        self.assertTrue(startup.ready)
+        self.assertEqual(startup.shell["startup"]["selected_profile_id"], "preserved_nq_phase1")
+        self.assertEqual(startup.shell["startup"]["contract"], "NQ")
+        self.assertEqual(startup.shell["startup"]["running_as"], "Preserved-Engine-Backed")
+        self.assertEqual(startup.shell["startup"]["readiness_state"], "OPERATOR_SURFACES_READY")
+        self.assertEqual(startup.config.market_data_config.provider, "disabled")
+
     def test_fixture_profile_query_action_completion_reaches_decision_and_audit_ready(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):
             startup = build_startup_artifacts_from_env(query_action_requested=True)
@@ -149,11 +160,12 @@ class StartupFlowTests(unittest.TestCase):
                 "fixture_es_demo",
                 "preserved_cl_phase1",
                 "preserved_es_phase1",
+                "preserved_nq_phase1",
             },
         )
         self.assertEqual(legacy_ids, {"preserved_zn_phase1"})
         self.assertNotIn("preserved_zn_phase1", startup.shell["startup"]["supported_profile_ids"])
-        self.assertEqual(blocked_contracts, {"NQ", "6E", "MGC"})
+        self.assertEqual(blocked_contracts, {"6E", "MGC"})
         self.assertTrue(startup.shell["startup"]["candidate_audit_available"])
 
 

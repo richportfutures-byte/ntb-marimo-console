@@ -19,11 +19,14 @@ class ProfileOperationsTests(unittest.TestCase):
                 "fixture_es_demo",
                 "preserved_cl_phase1",
                 "preserved_es_phase1",
+                "preserved_nq_phase1",
                 "preserved_zn_phase1",
             ),
         )
         self.assertEqual(supported["fixture_es_demo"].profile_kind, "Demo")
         self.assertEqual(supported["preserved_cl_phase1"].profile_kind, "Preserved")
+        self.assertEqual(supported["preserved_nq_phase1"].contract, "NQ")
+        self.assertTrue(supported["preserved_nq_phase1"].operator_selectable)
         self.assertTrue(supported["preserved_es_phase1"].active)
         self.assertTrue(supported["preserved_es_phase1"].operator_selectable)
         self.assertFalse(supported["preserved_zn_phase1"].operator_selectable)
@@ -40,9 +43,8 @@ class ProfileOperationsTests(unittest.TestCase):
         }
         self.assertEqual(
             set(blocked),
-            {"NQ", "6E", "MGC"},
+            {"6E", "MGC"},
         )
-        self.assertEqual(blocked["NQ"].reason_category, "blocked_unsupported_query_observable_contract")
         self.assertEqual(blocked["6E"].reason_label, "Missing numeric cross-asset source")
 
     def test_supported_profile_switch_evaluation_is_selectable(self) -> None:
@@ -66,15 +68,16 @@ class ProfileOperationsTests(unittest.TestCase):
         self.assertIn("legacy historical profile", evaluation.summary)
         self.assertIn("excluded from final target operator selector surfaces", evaluation.summary)
 
-    def test_blocked_candidate_profile_switch_fails_closed(self) -> None:
+    def test_nq_profile_switch_is_supported_after_foundation_onboarding(self) -> None:
         evaluation = evaluate_profile_switch(
             "preserved_nq_phase1",
             current_profile_id="preserved_es_phase1",
         )
 
-        self.assertEqual(evaluation.status, "blocked")
-        self.assertIn("not currently supported", evaluation.summary)
-        self.assertIn("Unsupported query observable contract", evaluation.summary)
+        self.assertEqual(evaluation.status, "supported")
+        self.assertIsNotNone(evaluation.selected_profile)
+        self.assertEqual(evaluation.selected_profile.contract, "NQ")
+        self.assertIn("supported and selectable", evaluation.summary)
 
     def test_unknown_profile_switch_fails_closed(self) -> None:
         evaluation = evaluate_profile_switch(

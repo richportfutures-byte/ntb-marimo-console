@@ -1,0 +1,49 @@
+{
+  "contract": "NQ",
+  "session_date": "2026-01-14",
+  "status": "READY",
+  "version": "pmkt_brief_v1",
+  "structural_setups": [
+    {
+      "id": "nq_setup_1",
+      "summary": "NQ requires explicit ES-relative confirmation before any query-ready read-model state is surfaced.",
+      "description": "Fixture-safe NQ profile foundation using explicit NQ and ES anchors with deterministic relative-strength gating.",
+      "fields_used": [
+        "market.current_price",
+        "market.bar_5m_close",
+        "market.bar_5m_close_count_at_or_beyond_level",
+        "cross_asset.relative_strength_vs_es"
+      ],
+      "contract_framework_labels": [
+        "index_relative_strength",
+        "completed_bar_confirmation",
+        "fail_closed_read_model"
+      ],
+      "stage_b_thesis_links": [
+        "nq_es_relative_strength_breakout"
+      ],
+      "query_triggers": [
+        {
+          "id": "nq_trigger_es_relative_breakout",
+          "logic": "nq_es_relative_breakout",
+          "description": "Trigger only when NQ touches the plan level, completed bars confirm, and NQ is stronger than ES from explicit anchors.",
+          "observable_conditions": [
+            "market.current_price >= 18142.0",
+            "market.bar_5m_close_count_at_or_beyond_level >= 1",
+            "cross_asset.relative_strength_vs_es >= 0.001"
+          ],
+          "fields_used": [
+            "market.current_price",
+            "market.bar_5m_close",
+            "market.bar_5m_close_count_at_or_beyond_level",
+            "cross_asset.relative_strength_vs_es"
+          ]
+        }
+      ],
+      "warnings": [
+        "Absolute NQ price action is not sufficient when ES-relative confirmation is required.",
+        "Missing NQ or ES anchors must keep the read model blocked."
+      ]
+    }
+  ]
+}

@@ -37,7 +37,7 @@ This audit uses these exact files to establish truth:
 | Contract | Final target status | Engine schema literal | Stage A/B prompt/system spec | Runtime profile today | Current app/live gating status | Required final action |
 |---|---|---|---|---|---|---|
 | ES | Final target | Yes | Yes | Yes: `fixture_es_demo`, `preserved_es_phase1` | Partial | Live upgrade |
-| NQ | Final target | Yes | Yes | No | No | Onboard profile and ES-relative live gating |
+| NQ | Final target | Yes | Yes | Yes: `preserved_nq_phase1` | Partial | Live upgrade |
 | CL | Final target | Yes | Yes | Yes: `preserved_cl_phase1` | Partial | Live upgrade |
 | 6E | Final target | Yes | Yes | No | No | Onboard profile and DXY/session gating |
 | MGC | Final target; not `GC` | Yes | Yes | No | No | Onboard profile and DXY/yield gating |
@@ -56,10 +56,11 @@ Runtime profiles currently include:
 
 - fixture `ES` through `fixture_es_demo`
 - preserved `ES` through `preserved_es_phase1`
+- preserved `NQ` through `preserved_nq_phase1`
 - preserved `ZN` through `preserved_zn_phase1`
 - preserved `CL` through `preserved_cl_phase1`
 
-`NQ`, `6E`, and `MGC` profile onboarding remains future work. They require onboarding rather than engine creation.
+`6E` and `MGC` profile onboarding remains future work. `NQ` now has a preserved profile foundation, but live startup wiring and trade authorization remain out of scope. Remaining contracts require onboarding rather than engine creation.
 
 R02 adds a target-owned final contract universe guard. That guard does not delete runtime profiles; it separates final-target operator selection from legacy/historical runtime availability.
 
@@ -69,7 +70,7 @@ Current app/live gating is not complete for the final universe.
 
 Known blockers, stated at the level already present in code and authority docs:
 
-- `NQ` requires ES-relative live observable support.
+- `NQ` has a deterministic ES-relative read-model/profile foundation; live startup wiring and production ES-relative data remain deferred.
 - `6E` requires numeric DXY and session-sequence support.
 - `MGC` requires numeric DXY and yield context.
 

@@ -1,0 +1,42 @@
+{
+  "contract": "NQ",
+  "session_date": "2026-01-14",
+  "timezone": "America/New_York",
+  "prior_day": {
+    "high": 18188.0,
+    "low": 17982.0,
+    "close": 18024.75,
+    "poc": 18012.25,
+    "vah": 18046.0,
+    "val": 17988.0,
+    "session_range": 206.0
+  },
+  "current_session": {
+    "vah": 18128.0,
+    "val": 18062.25,
+    "poc": 18094.5,
+    "vwap": 18098.25
+  },
+  "overnight": {
+    "high": 18105.5,
+    "low": 17996.0
+  },
+  "relative_strength_context": {
+    "anchor_kind": "rth_open",
+    "nq_anchor": 18055.5,
+    "es_anchor": 5018.25,
+    "required": true
+  },
+  "volatility_context": {
+    "avg_20d_session_range": 255.0,
+    "current_volume_vs_average": 1.14
+  },
+  "metadata": {
+    "packet_version": "pmkt_v1",
+    "generated_at": "2026-01-14T09:30:00-05:00",
+    "provenance": [
+      "source/ntb_engine/tests/fixtures/compiler/nq_historical_input.valid.json",
+      "source/ntb_engine/tests/fixtures/compiler/nq_relative_strength.valid.json"
+    ]
+  }
+}

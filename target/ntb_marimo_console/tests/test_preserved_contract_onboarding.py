@@ -6,7 +6,6 @@ from dataclasses import replace
 
 from ntb_marimo_console.preserved_contract_onboarding import (
     BLOCKED_MISSING_NUMERIC_CROSS_ASSET_SOURCE,
-    BLOCKED_UNSUPPORTED_QUERY_OBSERVABLE_CONTRACT,
     build_candidate_profile_template,
     build_contract_eligibility_snapshot,
     render_contract_eligibility_report,
@@ -23,14 +22,14 @@ class PreservedContractOnboardingTests(unittest.TestCase):
 
         self.assertEqual(
             supported_ids,
-            {"preserved_es_phase1", "preserved_zn_phase1", "preserved_cl_phase1"},
+            {"preserved_es_phase1", "preserved_nq_phase1", "preserved_zn_phase1", "preserved_cl_phase1"},
         )
 
     def test_blocked_candidates_are_reported_with_reason_categories(self) -> None:
         snapshot = build_contract_eligibility_snapshot()
         blocked = {result.contract: result.reason_category for result in snapshot.blocked}
 
-        self.assertEqual(blocked["NQ"], BLOCKED_UNSUPPORTED_QUERY_OBSERVABLE_CONTRACT)
+        self.assertNotIn("NQ", blocked)
         self.assertEqual(blocked["6E"], BLOCKED_MISSING_NUMERIC_CROSS_ASSET_SOURCE)
         self.assertEqual(blocked["MGC"], BLOCKED_MISSING_NUMERIC_CROSS_ASSET_SOURCE)
 
@@ -40,7 +39,7 @@ class PreservedContractOnboardingTests(unittest.TestCase):
         self.assertIn("Final Target Contracts: ES, NQ, CL, 6E, MGC", report)
         self.assertIn("Excluded Final Target Contracts: ZN, GC", report)
         self.assertIn("ZN -> preserved_zn_phase1: legacy_historical", report)
-        self.assertIn("NQ -> preserved_nq_phase1: final_target", report)
+        self.assertIn("NQ -> preserved_nq_phase1: final_target | supported_profile", report)
 
     def test_profile_template_checklist_is_readable_and_complete(self) -> None:
         template = validate_profile_template(build_candidate_profile_template("CL"))

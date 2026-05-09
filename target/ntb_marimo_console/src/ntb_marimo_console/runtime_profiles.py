@@ -107,6 +107,17 @@ PROFILE_REGISTRY: Final[dict[str, RuntimeProfile]] = {
         readiness_trigger={"trigger_family": "price_level_touch", "price_level": 73.35},
         default_model_adapter_ref="ntb_marimo_console.preserved_fixture_adapter:adapter_cl",
     ),
+    "preserved_nq_phase1": RuntimeProfile(
+        profile_id="preserved_nq_phase1",
+        runtime_mode="preserved_engine",
+        contract="NQ",
+        session_date="2026-01-14",
+        evaluation_timestamp_iso="2026-01-14T10:05:00-05:00",
+        artifact_root_relative=Path("."),
+        artifact_contract_dir="NQ",
+        readiness_trigger={"trigger_family": "price_level_touch", "price_level": 18142.0},
+        default_model_adapter_ref="ntb_marimo_console.preserved_fixture_adapter:adapter_nq",
+    ),
 }
 
 DEFAULT_PROFILE_ID_BY_MODE: Final[dict[RuntimeMode, str]] = {

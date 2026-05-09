@@ -88,6 +88,24 @@ def _cl_fixture_analysis() -> dict[str, object]:
     )
 
 
+def _nq_fixture_analysis() -> dict[str, object]:
+    profile = get_runtime_profile("preserved_nq_phase1")
+    historical = _load_json_fixture("source/ntb_engine/tests/fixtures/compiler/nq_historical_input.valid.json")
+    relative = _load_json_fixture("source/ntb_engine/tests/fixtures/compiler/nq_relative_strength.valid.json")
+    return _valid_contract_analysis_no_trade(
+        contract=profile.contract,
+        timestamp=profile.evaluation_timestamp_iso,
+        support_level=float(historical["current_session_val"]),
+        resistance_level=float(historical["prior_day_high"]),
+        pivot_level=float(historical["current_session_poc"]),
+        structural_notes=(
+            "NQ is bounded to fixture-safe NO_TRADE with explicit ES context at "
+            f"{float(relative['es_current_price']):.2f}; the live workstation read model must still "
+            "fail closed unless ES-relative gates pass."
+        ),
+    )
+
+
 def _zn_fixture_analysis() -> dict[str, object]:
     profile = get_runtime_profile("preserved_zn_phase1")
     historical = _load_json_fixture("source/ntb_engine/tests/fixtures/compiler/zn_historical_input.valid.json")
@@ -111,6 +129,7 @@ def build_profile_fixture_adapter(profile_id: str = "preserved_es_phase1") -> In
     analysis_by_profile_id = {
         "preserved_es_phase1": _es_fixture_analysis,
         "preserved_cl_phase1": _cl_fixture_analysis,
+        "preserved_nq_phase1": _nq_fixture_analysis,
         "preserved_zn_phase1": _zn_fixture_analysis,
     }
     analysis_builder = analysis_by_profile_id.get(profile.profile_id)
@@ -122,5 +141,6 @@ def build_profile_fixture_adapter(profile_id: str = "preserved_es_phase1") -> In
 
 adapter_es = build_profile_fixture_adapter("preserved_es_phase1")
 adapter_cl = build_profile_fixture_adapter("preserved_cl_phase1")
+adapter_nq = build_profile_fixture_adapter("preserved_nq_phase1")
 adapter_zn = build_profile_fixture_adapter("preserved_zn_phase1")
 adapter = adapter_es

@@ -22,10 +22,10 @@ EXPECTED_SUPPORTED_PROFILE_IDS: Final[tuple[str, ...]] = (
     "fixture_es_demo",
     "preserved_cl_phase1",
     "preserved_es_phase1",
+    "preserved_nq_phase1",
     "preserved_zn_phase1",
 )
 EXPECTED_BLOCKED_CONTRACTS: Final[dict[str, str]] = {
-    "NQ": "blocked_unsupported_query_observable_contract",
     "6E": "blocked_missing_numeric_cross_asset_source",
     "MGC": "blocked_missing_numeric_cross_asset_source",
 }

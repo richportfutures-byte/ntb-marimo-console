@@ -23,10 +23,11 @@
 
 - `fixture_es_demo`: available as a fixture/demo runtime path
 - `preserved_es_phase1`: operational current preserved profile
+- `preserved_nq_phase1`: fixture-safe preserved profile foundation
 - `preserved_zn_phase1`: operational current preserved legacy/historical profile
 - `preserved_cl_phase1`: operational current preserved profile
-- `NQ`, `6E`, and `MGC`: engine-supported but not final app-profile-supported yet
-- current final target mismatch: `NQ`, `6E`, and `MGC` are required final target onboarding contracts but do not yet have app-profile support
+- `6E` and `MGC`: engine-supported but not final app-profile-supported yet
+- current final target mismatch: `6E` and `MGC` are required final target onboarding contracts but do not yet have app-profile support
 - `ZN`: current preserved profile exists, but it is now excluded from final target support
 - `GC`: not present and excluded
 - target-owned `contract_universe.py` now encodes final target contracts, legacy/historical contracts, and never-supported contracts
@@ -49,8 +50,8 @@
 
 ### Preserved Engine Execution Path
 
-- preserved ES, ZN, and CL profiles can execute the bounded preserved-engine query path
-- profile switching across ES, ZN, and CL is implemented and fail-closed as current-state behavior
+- preserved ES, NQ, ZN, and CL profiles can execute the bounded preserved-engine query path
+- profile switching across ES, NQ, ZN, and CL is implemented and fail-closed as current-state behavior
 - stale per-profile session state is cleared on successful switch
 - this current-state behavior does not make `ZN` final target support
 
@@ -102,6 +103,17 @@
 - no trade, broker, order, execution, fill, account, or P&L behavior is added
 - the preserved engine remains the sole decision authority
 
+### NQ Live Workstation Foundation
+
+- target-owned NQ live workstation foundation exists under `live_workstation/`
+- the foundation is deterministic and requires explicit NQ quote, ES quote, NQ anchor, ES anchor, completed bar, preserved artifact, trigger, and event-lockout inputs
+- `relative_strength_vs_es` is computed only from explicit anchors and quote prices
+- absolute NQ price action alone cannot produce `QUERY_READY` when ES-relative confirmation is required
+- `QUERY_READY` is a read-model state only and does not enable pipeline query authorization
+- missing ES live data, missing NQ/ES anchors, stale data, malformed data, unsupported contracts, excluded contracts, and incomplete confirmation fail closed
+- default launch remains non-live and no real Schwab networking is opened by this layer
+- no trade, broker, order, execution, fill, account, or P&L behavior is added
+
 ### Primary App Surface
 
 - startup, workflow, profile, and evidence surfaces render readably
@@ -130,7 +142,7 @@
 
 | Item | Status |
 |---|---|
-| `NQ` app-profile support | Not implemented |
+| `NQ` app-profile support | R08 preserved profile and read-model foundation exists; live networking/startup wiring and authorization remain not implemented |
 | `6E` app-profile support | Not implemented |
 | `MGC` app-profile support | Not implemented |
 | Future live workstation upgrades for current `ES` support | R06 read-model foundation exists; live networking/startup wiring and authorization remain not implemented |

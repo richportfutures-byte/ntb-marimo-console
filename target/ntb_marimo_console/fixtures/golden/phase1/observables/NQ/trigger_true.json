@@ -1,0 +1,19 @@
+{
+  "contract": "NQ",
+  "timestamp_et": "2026-01-14T10:05:00-05:00",
+  "market": {
+    "current_price": 18142.0,
+    "cumulative_delta": 8430.0,
+    "bar_5m_close": 18144.0,
+    "bar_5m_close_count_at_or_beyond_level": 1
+  },
+  "cross_asset": {
+    "breadth": {
+      "current_advancers_pct": 0.62
+    },
+    "relative_strength_vs_es": 0.0021,
+    "es_current_price": 5032.5,
+    "nq_anchor": 18055.5,
+    "es_anchor": 5018.25
+  }
+}
