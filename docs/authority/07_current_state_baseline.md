@@ -89,6 +89,19 @@
 - `ZN` and `GC` are excluded from final target bar state, and `GC` is not aliased to `MGC`
 - R05 does not wire bar state into trigger-state logic, pipeline query authorization, live networking, or UI redesign
 
+### ES Live Workstation Foundation
+
+- target-owned ES live workstation foundation exists under `live_workstation/`
+- the foundation is a deterministic read-model layer only; it is not a decision authority
+- it consumes fixture or mocked ES quote, live observable quality, completed bar state, preserved premarket artifact, event lockout, and explicit trigger inputs
+- it can report `UNAVAILABLE`, `DORMANT`, `APPROACHING`, `TOUCHED`, `ARMED`, `QUERY_READY`, `INVALIDATED`, `BLOCKED`, `STALE`, `LOCKOUT`, and `ERROR`
+- `QUERY_READY` is a read-model state only and does not enable pipeline query authorization
+- completed five-minute confirmation requires completed one-minute support; partial or building bars do not count
+- missing artifacts, stale data, malformed data, unsupported contracts, excluded contracts, and incomplete confirmation fail closed with stable blocking reasons
+- default launch remains non-live and no real Schwab networking is opened by this layer
+- no trade, broker, order, execution, fill, account, or P&L behavior is added
+- the preserved engine remains the sole decision authority
+
 ### Primary App Surface
 
 - startup, workflow, profile, and evidence surfaces render readably
@@ -120,7 +133,7 @@
 | `NQ` app-profile support | Not implemented |
 | `6E` app-profile support | Not implemented |
 | `MGC` app-profile support | Not implemented |
-| Future live workstation upgrades for current `ES` support | Not implemented in R00 |
+| Future live workstation upgrades for current `ES` support | R06 read-model foundation exists; live networking/startup wiring and authorization remain not implemented |
 | Future live workstation upgrades for current `CL` support | Not implemented in R00 |
 | Additional `ZN` exclusion cleanup beyond selector/final-target guard | Not implemented |
 | Additional `GC` exclusion guard beyond target-owned contract universe | Not implemented |

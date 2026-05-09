@@ -174,3 +174,21 @@ The target project added a fixture-tested CHART_FUTURES bar builder foundation u
 ### Explicit Non-Implementation Boundary
 
 R05 does not implement real Schwab WebSocket networking, trigger-state engine states, pipeline query enablement, broker/order/execution/account/fill/P&L behavior, UI redesign, or runtime profile onboarding for `NQ`, `6E`, or `MGC`.
+
+## 2026-05-06 R06 ES Live Workstation Foundation
+
+The target project added a fixture-tested ES live workstation read-model foundation under `live_workstation/` without changing launch behavior, engine code, Schwab adapter code, runtime profiles, live networking, query authorization, or UI wiring.
+
+### Scope Changes
+
+- added deterministic ES workstation input and read-model contracts
+- added explicit states for `UNAVAILABLE`, `DORMANT`, `APPROACHING`, `TOUCHED`, `ARMED`, `QUERY_READY`, `INVALIDATED`, `BLOCKED`, `STALE`, `LOCKOUT`, and `ERROR`
+- consumes fixture or mocked ES quote fields, live observable quality fields, completed CHART_FUTURES bar facts, preserved premarket artifacts, event lockout status, invalidators, and explicit trigger definitions
+- emits stable blocking reasons and source classifications for observed Schwab-shaped quote input, derived quote/bar facts, preserved artifacts, manual operator input, and unavailable sources
+- treats `QUERY_READY` as a read-model state only, with pipeline query authorization still false
+- requires completed five-minute confirmation backed by completed one-minute bars; partial or building bars do not count
+- keeps `ZN` and `GC` excluded, does not alias `GC` to `MGC`, and does not onboard `NQ`, `6E`, or `MGC`
+
+### Explicit Non-Implementation Boundary
+
+R06 does not implement real Schwab WebSocket networking, default live launch, live workstation startup wiring, preserved-pipeline query authorization, broker/order/execution/account/fill/P&L behavior, UI redesign, or runtime profile onboarding for `NQ`, `6E`, or `MGC`. The preserved engine remains the sole decision authority.

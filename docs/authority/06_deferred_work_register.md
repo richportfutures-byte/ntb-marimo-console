@@ -14,7 +14,7 @@ These items are not generic deferred extras. They are required work for final pr
 | Promote `NQ` to app-profile-supported final target status | REQUIRED ONBOARDING | R00 support-matrix reset | Future runtime/profile/live-gating roadmap step |
 | Promote `6E` to app-profile-supported final target status | REQUIRED ONBOARDING | R00 support-matrix reset | Future runtime/profile/live-gating roadmap step |
 | Promote `MGC` to app-profile-supported final target status | REQUIRED ONBOARDING | R00 support-matrix reset | Future runtime/profile/live-gating roadmap step |
-| Live workstation upgrades for current `ES` support | REQUIRED ONBOARDING | R00 support-matrix reset | Future Schwab-backed live workstation step |
+| Remaining live workstation upgrades for current `ES` support after the R06 read-model foundation | REQUIRED ONBOARDING | R00 support-matrix reset and R06 foundation | Future Schwab-backed live workstation startup/wiring step |
 | Live workstation upgrades for current `CL` support | REQUIRED ONBOARDING | R00 support-matrix reset | Future Schwab-backed live workstation step |
 | `ZN` exclusion cleanup | REQUIRED SCOPE CLEANUP | R00 support-matrix reset | Future cleanup step; do not delete engine code or fixtures in R00 |
 | `GC` exclusion guard | REQUIRED SCOPE CLEANUP | R00 support-matrix reset | Future guard/test step; `GC` must not become supported or alias `MGC` |
