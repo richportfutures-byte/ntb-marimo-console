@@ -5,6 +5,7 @@ import stat
 import sys
 import urllib.error
 import urllib.parse
+from email.message import Message
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -30,6 +31,30 @@ def valid_env() -> dict[str, str]:
     }
 
 
+def assert_no_sensitive_oauth_output(output: str) -> None:
+    blocked_fragments = (
+        "authorization_url=https://",
+        "client_id=",
+        "client_secret=",
+        "redirect_uri=",
+        "Authorization: Basic",
+        "Basic ",
+        "dummy-app-key",
+        "dummy-app-secret",
+        "https://127.0.0.1",
+        "api.schwabapi.com/v1/oauth/authorize",
+        "access-token-value",
+        "refresh-token-value",
+        "secret-access",
+        "secret-refresh",
+        "raw-code",
+        "callback-secret-code",
+        "sensitive-auth-code",
+    )
+    for fragment in blocked_fragments:
+        assert fragment not in output
+
+
 @pytest.fixture(autouse=True)
 def isolated_target_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     target_root = tmp_path / "target" / "ntb_marimo_console"
@@ -51,13 +76,13 @@ def test_dry_run_succeeds_with_dummy_values(capsys: pytest.CaptureFixture[str]) 
     assert "authorization_url_present=yes" in output
     assert "authorization_url_printed=no" in output
     assert "authorization_url_written=no" in output
+    assert "callback_url_present=yes" in output
+    assert "callback_url_printed=no" in output
+    assert "token_url_present=yes" in output
+    assert "token_url_printed=no" in output
     assert "values_printed=no" in output
     assert raw_authorization_url not in output
-    assert "authorization_url=https://" not in output
-    assert "client_id=" not in output
-    assert "redirect_uri=" not in output
-    assert "dummy-app-key" not in output
-    assert "dummy-app-secret" not in output
+    assert_no_sensitive_oauth_output(output)
     assert "SCHWAB_APP_KEY" not in output
     assert "SCHWAB_APP_SECRET" not in output
 
@@ -81,9 +106,7 @@ def test_write_authorization_url_writes_state_file_without_printing_raw_values(
     assert "authorization_url_written=yes" in output
     assert "authorization_url_printed=no" in output
     assert raw_authorization_url not in output
-    assert "dummy-app-key" not in output
-    assert "client_id=" not in output
-    assert "dummy-app-secret" not in output
+    assert_no_sensitive_oauth_output(output)
 
 
 def test_authorization_url_file_path_is_under_target_state() -> None:
@@ -158,8 +181,7 @@ def test_open_browser_requires_live_mode(capsys: pytest.CaptureFixture[str]) -> 
     output = capsys.readouterr().out
     assert exit_code == 1
     assert "--open-browser requires" in output
-    assert "client_id=" not in output
-    assert "dummy-app-key" not in output
+    assert_no_sensitive_oauth_output(output)
 
 
 @pytest.mark.parametrize(
@@ -204,6 +226,7 @@ def test_secret_and_tokens_are_not_printed(capsys: pytest.CaptureFixture[str]) -
     assert "super-secret-access" not in output
     assert "super-secret-refresh" not in output
     assert "CO.safe-code" not in output
+    assert_no_sensitive_oauth_output(output)
 
 
 def test_callback_url_with_code_is_not_emitted_to_stdout_or_stderr(
@@ -239,6 +262,7 @@ def test_callback_url_with_code_is_not_emitted_to_stdout_or_stderr(
     assert "CO.callback-secret-code" not in output
     assert "access-token-value" not in output
     assert "refresh-token-value" not in output
+    assert_no_sensitive_oauth_output(output)
 
 
 def test_run_rejects_token_response_without_refresh_token(
@@ -309,7 +333,9 @@ def test_existing_token_overwrite_requires_confirmation_logic(tmp_path: Path) ->
     oauth.confirm_overwrite(token_path, input_func=lambda prompt: "OVERWRITE")
 
 
-def test_http_error_diagnostics_are_safe(capsys: pytest.CaptureFixture[str]) -> None:
+def test_token_endpoint_http_400_json_error_is_summarized_without_raw_body(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     env = valid_env()
     env["SCHWAB_OAUTH_LIVE"] = "true"
 
@@ -335,10 +361,52 @@ def test_http_error_diagnostics_are_safe(capsys: pytest.CaptureFixture[str]) -> 
     assert "TOKEN_ENDPOINT_FAIL" in output
     assert "http_status=400" in output
     assert "exception_class=HTTPError" in output
-    assert "invalid_grant" in output
+    assert "token_error_present=yes" in output
+    assert "token_error_code=invalid_grant" in output
+    assert "token_error_description_present=yes" in output
+    assert "token_error_description_class=authorization_code_or_grant" in output
+    assert "response_content_type=unknown" in output
+    assert "response_decode_status=ok" in output
+    assert "error_body=" not in output
+    assert "bad code" not in output
     assert "CO.sensitive-auth-code" not in output
     assert "secret-access" not in output
     assert "secret-refresh" not in output
+    assert_no_sensitive_oauth_output(output)
+
+
+def test_token_endpoint_unreadable_body_is_classified_without_raw_body(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    env = valid_env()
+    env["SCHWAB_OAUTH_LIVE"] = "true"
+
+    def secret_input_func(prompt: str) -> str:
+        return "CO.sensitive-auth-code"
+
+    def exchange_func(config: object, code: str) -> dict[str, str]:
+        raise oauth.TokenEndpointError(
+            http_status=400,
+            body=b"\x1f\x8b\x08\x00\xff",
+            content_type="application/json; charset=utf-8",
+            exception_class="HTTPError",
+        )
+
+    exit_code = oauth.run([], env=env, secret_input_func=secret_input_func, exchange_func=exchange_func)
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "TOKEN_ENDPOINT_FAIL" in output
+    assert "http_status=400" in output
+    assert "token_error_present=no" in output
+    assert "token_error_code=unavailable" in output
+    assert "token_error_description_present=no" in output
+    assert "token_error_description_class=decode_failed" in output
+    assert "response_content_type=application/json" in output
+    assert "response_decode_status=failed" in output
+    assert "error_body=" not in output
+    assert "\\x1f" not in output
+    assert_no_sensitive_oauth_output(output)
 
 
 def test_token_endpoint_failure_without_status_reports_exception_class(
@@ -370,9 +438,10 @@ def test_token_endpoint_failure_without_status_reports_exception_class(
     assert "C0.short" not in output
     assert "C0.secret-code" not in output
     assert "secret-access" not in output
+    assert_no_sensitive_oauth_output(output)
 
 
-def test_exchange_http_error_body_is_sanitized(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_exchange_http_error_body_is_summarized(monkeypatch: pytest.MonkeyPatch) -> None:
     env = valid_env()
     config = oauth.load_config(env)
 
@@ -385,11 +454,13 @@ def test_exchange_http_error_body_is_sanitized(monkeypatch: pytest.MonkeyPatch) 
             )
 
     def fake_urlopen(request: object, timeout: int) -> object:
+        headers = Message()
+        headers["Content-Type"] = "application/json"
         raise FakeHTTPError(
             url="https://api.schwabapi.com/v1/oauth/token",
             code=401,
             msg="Unauthorized",
-            hdrs=None,
+            hdrs=headers,
             fp=None,
         )
 
@@ -398,14 +469,15 @@ def test_exchange_http_error_body_is_sanitized(monkeypatch: pytest.MonkeyPatch) 
     with pytest.raises(oauth.TokenEndpointError) as exc_info:
         oauth.exchange_authorization_code(config, "CO.hidden-code")
 
-    safe_body = oauth._safe_error_body(exc_info.value.body)
+    summary = oauth.summarize_token_endpoint_error(exc_info.value)
     assert exc_info.value.http_status == 401
     assert exc_info.value.exception_class == "FakeHTTPError"
-    assert "invalid_client" in safe_body
-    assert "CO.hidden-code" not in safe_body
-    assert "hidden-access" not in safe_body
-    assert "hidden-refresh" not in safe_body
-    assert "https://127.0.0.1/?code=" not in safe_body
+    assert summary.token_error_present == "yes"
+    assert summary.token_error_code == "invalid_client"
+    assert summary.token_error_description_present == "yes"
+    assert summary.token_error_description_class == "redirect_uri_or_callback"
+    assert summary.response_content_type == "application/json"
+    assert summary.response_decode_status == "ok"
 
 
 def test_http_error_is_caught_before_urlerror_and_reports_status(

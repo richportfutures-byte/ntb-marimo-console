@@ -52,6 +52,7 @@ def test_refresh_request_body_and_basic_auth_are_constructed() -> None:
     assert request.get_method() == "POST"
     assert request.get_header("Content-type") == "application/x-www-form-urlencoded"
     assert request.get_header("Accept") == "application/json"
+    assert request.get_header("Accept-encoding") == "identity"
     assert parsed == {"grant_type": ["refresh_token"], "refresh_token": ["dummy-refresh-token"]}
     assert decoded == "dummy-app-key:dummy-app-secret"
     assert "dummy-app-secret" not in str(request.headers)

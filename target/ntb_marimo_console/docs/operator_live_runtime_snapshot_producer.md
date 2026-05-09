@@ -99,6 +99,8 @@ python3 scripts/prepare_schwab_oauth_token.py --write-authorization-url
 
 The command writes the raw authorization URL to `target/ntb_marimo_console/.state/schwab/oauth_authorization_url.txt` with owner-only permissions and prints only the relative path plus sanitized status fields. Open that local file outside chat, complete the browser authorization, then paste the redirected callback URL or raw authorization code only into the local terminal prompt. Do not paste the authorization URL, callback URL, authorization code, token JSON, or token values into chat, docs, logs, commits, or proof artifacts.
 
+If token exchange fails after pasting a code, do not retry the same code. Schwab authorization codes are single-use and time-sensitive. Inspect only the sanitized `token_error_code`, `token_error_description_class`, `response_content_type`, and `response_decode_status` fields printed by the prep script. Use those fields to distinguish likely `invalid_grant` code reuse/expiry, redirect URI/callback mismatch, `invalid_client` app credential problems, malformed request shape, or unreadable/compressed response handling. Verify callback URL exactness locally in the shell or browser configuration without printing or pasting the callback URL. Rerun a fresh OAuth browser flow only after the diagnostics are readable and sanitized.
+
 After the token file is written, rerun `scripts/probe_schwab_user_preference.py` under the existing explicit live gate. Rerun `scripts/run_operator_live_runtime_rehearsal.py --live` only after streamer credentials are obtained. A user-preference failure remains blocking; the operator runtime must not fall back to fixtures after a live failure.
 
 ### Manual rehearsal command

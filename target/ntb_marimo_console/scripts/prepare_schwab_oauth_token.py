@@ -32,7 +32,8 @@ class TokenEndpointError(OAuthPrepError):
         self,
         *,
         http_status: int | None,
-        body: str = "",
+        body: bytes | str = b"",
+        content_type: str = "",
         exception_class: str | None = None,
         reason_class: str | None = None,
         reason: object | None = None,
@@ -40,6 +41,7 @@ class TokenEndpointError(OAuthPrepError):
         super().__init__("TOKEN_ENDPOINT_FAIL")
         self.http_status = http_status
         self.body = body
+        self.content_type = content_type
         self.exception_class = exception_class
         self.reason_class = reason_class
         self.reason = reason
@@ -58,6 +60,16 @@ class OAuthConfig:
     token_url: str
     target_root: Path
     repo_root: Path
+
+
+@dataclass(frozen=True)
+class TokenErrorSummary:
+    token_error_present: str
+    token_error_code: str
+    token_error_description_present: str
+    token_error_description_class: str
+    response_content_type: str
+    response_decode_status: str
 
 
 def _target_root() -> Path:
@@ -200,6 +212,89 @@ def _safe_error_body(raw_body: str) -> str:
     return _sanitize_diagnostic_text(raw_body)
 
 
+def _safe_content_type(value: str) -> str:
+    content_type = value.split(";", maxsplit=1)[0].strip().lower()
+    if not content_type:
+        return "unknown"
+    if not re.fullmatch(r"[a-z0-9][a-z0-9.+/-]{0,80}", content_type):
+        return "unsafe"
+    return content_type
+
+
+def _safe_token_error_code(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return "unavailable"
+    token_error_code = value.strip().lower()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", token_error_code):
+        return "unsafe"
+    return token_error_code
+
+
+def _decode_response_body(body: bytes | str) -> tuple[str, str]:
+    if isinstance(body, str):
+        return body, "ok"
+    if not body:
+        return "", "ok"
+    try:
+        return body.decode("utf-8"), "ok"
+    except UnicodeDecodeError:
+        return "", "failed"
+
+
+def _classify_token_error_description(error_code: str, description: object) -> str:
+    if not isinstance(description, str) or not description.strip():
+        return "none"
+
+    text = description.lower()
+    if "redirect_uri" in text or "redirect uri" in text or "callback" in text:
+        return "redirect_uri_or_callback"
+    if "authorization code" in text or "code" in text or "grant" in text or error_code == "invalid_grant":
+        return "authorization_code_or_grant"
+    if "client" in text or "secret" in text or "basic" in text or error_code == "invalid_client":
+        return "client_auth"
+    if "request" in text or "grant_type" in text or error_code in {"invalid_request", "unsupported_grant_type"}:
+        return "malformed_request"
+    if "token" in text:
+        return "token_value"
+    return "present"
+
+
+def summarize_token_endpoint_error(error: TokenEndpointError) -> TokenErrorSummary:
+    body_text, decode_status = _decode_response_body(error.body)
+    response_content_type = _safe_content_type(error.content_type)
+    fallback_description_class = "decode_failed" if decode_status == "failed" else "non_json"
+    if not body_text.strip():
+        fallback_description_class = "decode_failed" if decode_status == "failed" else "empty"
+
+    try:
+        parsed = json.loads(body_text) if body_text.strip() and decode_status == "ok" else None
+    except json.JSONDecodeError:
+        parsed = None
+
+    if not isinstance(parsed, dict):
+        return TokenErrorSummary(
+            token_error_present="no",
+            token_error_code="unavailable",
+            token_error_description_present="no",
+            token_error_description_class=fallback_description_class,
+            response_content_type=response_content_type,
+            response_decode_status=decode_status,
+        )
+
+    raw_error = parsed.get("error")
+    error_code = _safe_token_error_code(raw_error)
+    raw_description = parsed.get("error_description")
+    description_present = isinstance(raw_description, str) and bool(raw_description.strip())
+    return TokenErrorSummary(
+        token_error_present="yes" if raw_error is not None else "no",
+        token_error_code=error_code,
+        token_error_description_present="yes" if description_present else "no",
+        token_error_description_class=_classify_token_error_description(error_code, raw_description),
+        response_content_type=response_content_type,
+        response_decode_status=decode_status,
+    )
+
+
 def _safe_reason(reason: object | None) -> str:
     if reason is None:
         return ""
@@ -241,10 +336,15 @@ def exchange_authorization_code(config: OAuthConfig, code: str) -> dict[str, Any
             body = response.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         try:
-            body = exc.read().decode("utf-8", errors="replace")
+            body = exc.read()
         except Exception:
-            body = ""
-        raise TokenEndpointError(http_status=exc.code, body=body, exception_class=exc.__class__.__name__) from exc
+            body = b""
+        raise TokenEndpointError(
+            http_status=exc.code,
+            body=body,
+            content_type=exc.headers.get("Content-Type", "") if exc.headers is not None else "",
+            exception_class=exc.__class__.__name__,
+        ) from exc
     except urllib.error.URLError as exc:
         reason = getattr(exc, "reason", None)
         raise TokenEndpointError(
@@ -330,7 +430,10 @@ def print_safe_summary(
     print(f"target_root={_repo_relative(config.target_root, repo_root=config.repo_root)}")
     print(f"oauth_live={config.oauth_live}")
     print("oauth_credentials_present=yes")
-    print("callback_url=present")
+    print("callback_url_present=yes")
+    print("callback_url_printed=no")
+    print("token_url_present=yes")
+    print("token_url_printed=no")
     print(f"token_path={config.token_path_display}")
     print("token_path_safety=UNDER_TARGET_STATE")
     print("authorization_url_present=yes")
@@ -405,9 +508,14 @@ def run(
                 print(f"http_status={exc.http_status}")
             if exc.exception_class:
                 print(f"exception_class={exc.exception_class}")
-            safe_body = _safe_error_body(exc.body)
-            if safe_body:
-                print(f"error_body={safe_body}")
+            summary = summarize_token_endpoint_error(exc)
+            print(f"token_error_present={summary.token_error_present}")
+            print(f"token_error_code={summary.token_error_code}")
+            print(f"token_error_description_present={summary.token_error_description_present}")
+            print(f"token_error_description_class={summary.token_error_description_class}")
+            print(f"response_content_type={summary.response_content_type}")
+            print(f"response_decode_status={summary.response_decode_status}")
+            print("values_printed=no")
             if exc.reason_class:
                 print(f"reason_class={exc.reason_class}")
             safe_reason = _safe_reason(exc.reason)
