@@ -16,6 +16,7 @@ from __future__ import annotations
 import unittest
 
 from ntb_marimo_console.adapters.contracts import PipelineNarrative, PipelineSummary
+from ntb_marimo_console.decision_review_audit import DECISION_REVIEW_AUDIT_EVENT_SCHEMA
 from ntb_marimo_console.ui.surfaces.decision_review import (
     DISQUALIFIERS_UNAVAILABLE_DETAIL,
     NARRATIVE_UNAVAILABLE_DETAIL,
@@ -349,6 +350,8 @@ class DecisionReviewSurfaceTests(unittest.TestCase):
         panel = render_decision_review_panel(None)
         self.assertFalse(panel["has_result"])
         self.assertFalse(panel["narrative_available"])
+        self.assertEqual(panel["narrative_audit_event"]["schema"], DECISION_REVIEW_AUDIT_EVENT_SCHEMA)
+        self.assertFalse(panel["narrative_audit_event"]["decision_review_narrative"]["narrative_available"])
 
     def test_status_envelope_keys_remain_unchanged_when_narrative_absent(self) -> None:
         trace = pipeline_trace_vm_from_summary(_approved_summary(), narrative=None)
@@ -362,6 +365,8 @@ class DecisionReviewSurfaceTests(unittest.TestCase):
         self.assertEqual(panel["stage_b_outcome"], "ANALYSIS_COMPLETE")
         self.assertEqual(panel["stage_c_outcome"], "SETUP_PROPOSED")
         self.assertEqual(panel["stage_d_decision"], "APPROVED")
+        self.assertEqual(panel["narrative_audit_event"]["schema"], DECISION_REVIEW_AUDIT_EVENT_SCHEMA)
+        self.assertFalse(panel["narrative_audit_event"]["decision_review_narrative"]["narrative_available"])
 
     def test_narrative_absent_marks_each_section_explicitly_unavailable(self) -> None:
         trace = pipeline_trace_vm_from_summary(_approved_summary(), narrative=None)
@@ -392,6 +397,9 @@ class DecisionReviewSurfaceTests(unittest.TestCase):
         self.assertEqual(len(section["conflicting_signals"]), 1)
         self.assertEqual(len(section["assumptions"]), 1)
         self.assertIsInstance(section["key_levels"], dict)
+        audit = panel["narrative_audit_event"]
+        self.assertTrue(audit["decision_review_narrative"]["engine_reasoning_available"])
+        self.assertEqual(audit["engine_reasoning_summary"]["market_regime"], "trending_up")
 
     def test_full_narrative_renders_trade_thesis_with_sizing_math(self) -> None:
         trace = pipeline_trace_vm_from_summary(_approved_summary(), narrative=_full_narrative())

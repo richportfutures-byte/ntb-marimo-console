@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ...decision_review_audit import build_decision_review_audit_event
 from ...viewmodels.models import (
     EngineReasoningVM,
     KeyLevelsVM,
@@ -32,12 +33,16 @@ def render_decision_review_panel(trace: PipelineTraceVM | None) -> dict[str, obj
     """
 
     if trace is None:
-        return {
+        panel = {
             "surface": "Decision Review",
             "has_result": False,
             "message": "No pipeline result loaded.",
             "narrative_available": False,
         }
+        panel["narrative_audit_event"] = build_decision_review_audit_event(
+            decision_review=panel,
+        ).to_dict()
+        return panel
 
     panel: dict[str, object] = {
         "surface": "Decision Review",
@@ -59,6 +64,9 @@ def render_decision_review_panel(trace: PipelineTraceVM | None) -> dict[str, obj
     panel["narrative_unavailable_message"] = (
         None if trace.narrative_available else NARRATIVE_UNAVAILABLE_DETAIL
     )
+    panel["narrative_audit_event"] = build_decision_review_audit_event(
+        decision_review=panel,
+    ).to_dict()
 
     return panel
 

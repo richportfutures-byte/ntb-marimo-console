@@ -14,6 +14,7 @@ from .adapters.contracts import (
     WatchmanContextLike,
 )
 from .adapters.trigger_evaluator import TriggerEvaluator
+from .decision_review_audit import build_decision_review_audit_event
 from .market_data import FuturesQuoteService
 from .adapters.trigger_specs import trigger_specs_from_brief
 from .state.session_state import OperatorSessionMachine, SessionState
@@ -291,6 +292,11 @@ def build_phase1_app(
                     "message": _decision_review_message(artifacts.workflow_status),
                 }
             )
+            decision_panel["narrative_audit_event"] = build_decision_review_audit_event(
+                decision_review=decision_panel,
+                profile_id=inputs.selection.profile_id,
+                source=artifacts.run_history_source,
+            ).to_dict()
 
         audit_panel = surfaces.get("audit_replay")
         if isinstance(audit_panel, dict):

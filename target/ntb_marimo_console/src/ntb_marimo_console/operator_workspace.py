@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from ntb_marimo_console.contract_universe import contract_policy_label, is_final_target_contract, normalize_contract_symbol
+from ntb_marimo_console.decision_review_audit import build_decision_review_audit_event
 from ntb_marimo_console.live_observables.schema_v2 import LiveObservableSnapshotV2
 from ntb_marimo_console.market_data.stream_events import redact_sensitive_text
 from ntb_marimo_console.pipeline_query_gate import PipelineQueryGateResult
@@ -84,7 +85,12 @@ def build_operator_workspace_view_model(request: OperatorWorkspaceRequest) -> Op
     live_thesis = _build_live_thesis_monitor(trigger)
     pipeline_gate = _build_pipeline_gate(gate)
     last_pipeline_result = _build_last_pipeline_result(request.last_pipeline_result)
-    evidence = _build_evidence_and_replay(request)
+    evidence = _build_evidence_and_replay(
+        request,
+        contract=contract,
+        live_thesis_monitor=live_thesis,
+        last_pipeline_result=last_pipeline_result,
+    )
     return OperatorWorkspaceViewModel(
         header=header,
         premarket_plan=premarket_plan,
@@ -216,7 +222,13 @@ def _build_last_pipeline_result(last_pipeline_result: Mapping[str, Any] | None) 
     }
 
 
-def _build_evidence_and_replay(request: OperatorWorkspaceRequest) -> dict[str, object]:
+def _build_evidence_and_replay(
+    request: OperatorWorkspaceRequest,
+    *,
+    contract: str,
+    live_thesis_monitor: Mapping[str, Any],
+    last_pipeline_result: Mapping[str, Any],
+) -> dict[str, object]:
     reasons = tuple(_safe_text(reason) for reason in request.evidence_unavailable_reasons if str(reason).strip())
     if not reasons:
         reasons = (
@@ -225,13 +237,53 @@ def _build_evidence_and_replay(request: OperatorWorkspaceRequest) -> dict[str, o
             "Operator notes source not wired in this foundation.",
             "Trigger transition log source not wired in this foundation.",
         )
+    decision_review_audit_event = build_decision_review_audit_event(
+        decision_review=_decision_review_payload_from_last_pipeline_result(
+            last_pipeline_result,
+            contract=contract,
+        ),
+        live_thesis_monitor=live_thesis_monitor,
+        profile_id=request.profile_id,
+        created_at=request.evaluated_at,
+    ).to_dict()
     return {
         "run_history_status": _safe_status(request.run_history_status or "unavailable"),
         "audit_replay_status": _safe_status(request.audit_replay_status or "unavailable"),
         "operator_notes_status": _safe_status(request.operator_notes_status or "unavailable"),
         "trigger_transition_log_status": _safe_status(request.trigger_transition_log_status or "unavailable"),
         "unavailable_reasons": list(reasons),
+        "decision_review_audit_event": decision_review_audit_event,
         "replay_statement": _NO_SYNTHETIC_REPLAY_STATEMENT,
+    }
+
+
+def _decision_review_payload_from_last_pipeline_result(
+    last_pipeline_result: Mapping[str, Any],
+    *,
+    contract: str,
+) -> dict[str, object]:
+    summary = last_pipeline_result.get("summary")
+    if not isinstance(summary, Mapping) or not summary:
+        return {
+            "surface": "Decision Review",
+            "has_result": False,
+            "contract": contract,
+            "message": _safe_text(last_pipeline_result.get("unavailable_reason") or _NO_PIPELINE_RESULT_REASON),
+            "narrative_available": False,
+        }
+    return {
+        "surface": "Decision Review",
+        "has_result": True,
+        "contract": _safe_text(summary.get("contract") or contract),
+        "status": _safe_status(last_pipeline_result.get("status") or "available"),
+        "termination_stage": _safe_text(summary.get("termination_stage") or "unavailable"),
+        "final_decision": _safe_text(summary.get("final_decision") or "unavailable"),
+        "stage_a_status": _safe_text(summary.get("sufficiency_gate_status") or "unavailable"),
+        "stage_b_outcome": _safe_text(summary.get("contract_analysis_outcome") or "unavailable"),
+        "stage_c_outcome": _safe_text(summary.get("proposed_setup_outcome") or "unavailable"),
+        "stage_d_decision": _safe_text(summary.get("risk_authorization_decision") or "unavailable"),
+        "narrative_available": False,
+        "narrative_unavailable_message": "Decision Review engine narrative is unavailable in this workspace snapshot.",
     }
 
 
