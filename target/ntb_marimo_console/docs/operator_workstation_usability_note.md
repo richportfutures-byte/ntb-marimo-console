@@ -46,8 +46,9 @@ Cross-profile non-live launchability is regression-tested by `tests/test_worksta
 
 ## What Is Still Not Yet Trader-Usable
 
-- Real Schwab live market data is not wired into default launch. It remains explicitly opt-in via the operator-run R18 manual rehearsal and the single-quote Schwab manual live harness. Default launch stays non-live.
-- Real five-contract live readiness is not proven by the new summary. The summary is fixture-backed/non-live and intentionally reports live market data as unavailable unless explicit fixture inputs provide otherwise. Real Schwab readiness still requires explicit opt-in and sanitized live proof.
+- Real Schwab live market data is not wired into default launch. Default launch stays non-live.
+- The operator lifecycle can now consume an injected runtime/cache snapshot producer and label five-contract readiness as runtime-cache-derived. The environment-only app path blocks as `LIVE_RUNTIME_UNAVAILABLE` until an explicit operator-owned real stream manager producer is supplied.
+- Real five-contract live readiness is not proven by the new summary unless an explicit runtime/cache snapshot is supplied. Real Schwab readiness still requires explicit opt-in and sanitized operator validation.
 - Real five-contract Schwab live proof remains operator-run and pending. R19 marks the workstation as `CONDITIONALLY READY` until a sanitized real five-contract Schwab live session artifact is reviewed and committed.
 - Broker order routing, order placement, fills, account state, and P&L behavior are deliberately absent. Trade execution is manual-only on the operator's own platform.
 - Replay, performance review, and proof capture are read-only audit/evidence surfaces and do not authorize trades.
@@ -57,9 +58,9 @@ Cross-profile non-live launchability is regression-tested by `tests/test_worksta
 The current workstation is **partially trader-usable** for personal cockpit use:
 
 - Non-live launch and operator cockpit surfaces work for all five final target preserved profiles.
-- The cockpit now includes a fixture-backed five-contract readiness summary, so an operator can see all final target profile ids, startup readiness, market-data availability, query-gate state, blocked reasons, evidence/replay status, and manual-only/preserved-engine boundaries in one place.
+- The cockpit now includes a five-contract readiness summary that is fixture/preserved-shell by default and runtime-cache-derived when an explicit producer supplies a snapshot.
 - Quote freshness and pipeline gating are wired through fixture-safe paths and fail closed when data is missing, stale, or mismatched.
-- Real Schwab live data and real five-contract live readiness remain pending operator-run validation and sanitized proof.
+- Real Schwab stream-manager startup from the everyday app remains pending an explicit operator-owned producer entry point, and real five-contract live proof remains pending operator-run validation.
 
 ## R22 Summary Surface Status
 

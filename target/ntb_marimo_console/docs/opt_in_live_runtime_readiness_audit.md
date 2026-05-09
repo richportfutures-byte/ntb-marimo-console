@@ -2,11 +2,11 @@
 
 ## Verdict
 
-Still premature to connect the five-contract readiness summary directly to the explicit opt-in live runtime cache.
+R24 verdict at the time of the audit: still premature to connect the five-contract readiness summary directly to the explicit opt-in live runtime cache.
 
 The cache path exists and is fixture-tested through `SchwabStreamManager`, `StreamCacheSnapshot`, and `build_live_observable_snapshot_v2`. The blocker is the launch/readiness binding: the operator launch and lifecycle path do not create or retain a stream manager, and they do not pass a `StreamManagerSnapshot` or `StreamCacheSnapshot` into `build_five_contract_readiness_summary_surface`.
 
-The summary now reports this explicitly as `NOT_WIRED` instead of implying live runtime readiness.
+R26 update: the launch/lifecycle consumer boundary is now wired through an app-owned runtime snapshot producer interface. The summary no longer uses a `NOT_WIRED` state for this boundary; when operator live runtime is requested without a producer snapshot, the operator lifecycle reports `LIVE_RUNTIME_UNAVAILABLE` and passes a blocking runtime-cache snapshot so readiness does not fall back to fixtures.
 
 ## Source-Backed Findings
 
@@ -23,10 +23,11 @@ The summary now reports this explicitly as `NOT_WIRED` instead of implying live 
    Default tests and default launch use fixture/preserved artifacts and mocked clients. The current readiness summary is `non_live_fixture_safe`.
 
 5. Current Marimo/operator launch binding:
-   `operator_console_app.py` loads `load_session_lifecycle_from_env(default_mode="fixture_demo")`. `launch_config.py` attaches the readiness summary without a stream cache snapshot.
+   R24: `operator_console_app.py` loaded `load_session_lifecycle_from_env(default_mode="fixture_demo")`, and `launch_config.py` attached the readiness summary without a stream cache snapshot.
+   R26: `operator_console_app.py` creates a producer holder once with `mo.state`; `launch_config.py` and `session_lifecycle.py` can pass a supplied `StreamManagerSnapshot` or `StreamCacheSnapshot` into the readiness summary.
 
 6. Current readiness source:
-   The summary reads fixture/preserved app shells and disabled/default market data status. It does not read the live runtime stream cache.
+   Safe default mode reads fixture/preserved app shells and disabled/default market data status. Explicit operator-live mode reads the supplied runtime/cache snapshot and labels readiness as `runtime_cache_derived`.
 
 7. Live failure behavior:
    The stream manager blocks on missing opt-in, login failure, subscription failure, stale heartbeat, malformed data, unsupported contracts, and excluded contracts. It does not fall back to fixture data after live failure.
@@ -42,9 +43,9 @@ The summary now reports this explicitly as `NOT_WIRED` instead of implying live 
 
 ## Exact Blocker
 
-The explicit opt-in runtime cache is not bound into the operator launch/lifecycle state. Because no stream cache snapshot is supplied to the five-contract summary, ES, NQ, CL, 6E, and MGC live runtime readiness cannot yet be truthfully derived from that path.
+The R24 blocker is cleared for the app-owned consumer boundary: the explicit opt-in runtime/cache snapshot can now be supplied to the operator launch/lifecycle state and five-contract summary for ES, NQ, CL, 6E, and MGC.
 
-Connecting it safely requires a future launch-owned, explicit-opt-in stream manager lifecycle that can provide sanitized cache snapshots without opening repeated logins per Marimo refresh, without fixture fallback after live failure, and without giving live observations decision authority.
+The remaining R26 blocker is narrower: the environment-only Marimo app path does not yet construct and start the real Schwab stream manager. A real operator-live entry point must own the manager and inject a cache/snapshot producer. Until then, explicit operator-live mode without a supplied producer reports `LIVE_RUNTIME_UNAVAILABLE`.
 
 ## Preserved Boundaries
 

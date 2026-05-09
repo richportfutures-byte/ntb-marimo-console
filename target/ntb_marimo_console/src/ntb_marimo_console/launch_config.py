@@ -6,6 +6,13 @@ from pathlib import Path
 
 from .adapters.contracts import RuntimeMode
 from .market_data import FuturesQuoteServiceConfig, resolve_futures_quote_service_config
+from .operator_live_runtime import (
+    OperatorRuntimeMode,
+    OperatorRuntimeSnapshotResult,
+    RuntimeSnapshotProducer,
+    operator_runtime_mode_from_env,
+    resolve_operator_runtime_snapshot,
+)
 from .readiness_summary import RuntimeReadinessSnapshot, build_five_contract_readiness_summary_surface
 from .runtime_diagnostics import (
     DIAG_INCOMPLETE_PROFILE_DEFINITION,
@@ -54,6 +61,7 @@ class StartupArtifacts:
     report: PreflightReport
     ready: bool
     config: LaunchConfig | None
+    operator_runtime: OperatorRuntimeSnapshotResult
 
 
 def build_launch_artifacts_from_env(
@@ -61,12 +69,16 @@ def build_launch_artifacts_from_env(
     default_mode: RuntimeMode = "fixture_demo",
     default_profile_id: str | None = None,
     runtime_snapshot: RuntimeReadinessSnapshot | None = None,
+    runtime_snapshot_producer: RuntimeSnapshotProducer | None = None,
+    operator_runtime_mode: OperatorRuntimeMode | str | None = None,
 ) -> LaunchArtifacts:
     startup = build_startup_artifacts_from_env(
         default_mode=default_mode,
         default_profile_id=default_profile_id,
         query_action_requested=True,
         runtime_snapshot=runtime_snapshot,
+        runtime_snapshot_producer=runtime_snapshot_producer,
+        operator_runtime_mode=operator_runtime_mode,
     )
     if startup.config is None:
         raise PreflightFailedError(startup.report)
@@ -83,6 +95,8 @@ def build_shell_from_env(
     default_mode: RuntimeMode = "fixture_demo",
     default_profile_id: str | None = None,
     runtime_snapshot: RuntimeReadinessSnapshot | None = None,
+    runtime_snapshot_producer: RuntimeSnapshotProducer | None = None,
+    operator_runtime_mode: OperatorRuntimeMode | str | None = None,
 ) -> LaunchArtifacts:
     """Backward-compatible alias for env-driven app bootstrapping."""
 
@@ -90,6 +104,8 @@ def build_shell_from_env(
         default_mode=default_mode,
         default_profile_id=default_profile_id,
         runtime_snapshot=runtime_snapshot,
+        runtime_snapshot_producer=runtime_snapshot_producer,
+        operator_runtime_mode=operator_runtime_mode,
     )
 
 
@@ -99,7 +115,16 @@ def build_startup_artifacts_from_env(
     default_profile_id: str | None = None,
     query_action_requested: bool = False,
     runtime_snapshot: RuntimeReadinessSnapshot | None = None,
+    runtime_snapshot_producer: RuntimeSnapshotProducer | None = None,
+    operator_runtime_mode: OperatorRuntimeMode | str | None = None,
 ) -> StartupArtifacts:
+    resolved_operator_runtime_mode = operator_runtime_mode
+    if (
+        resolved_operator_runtime_mode is None
+        and runtime_snapshot is None
+        and runtime_snapshot_producer is None
+    ):
+        resolved_operator_runtime_mode = operator_runtime_mode_from_env()
     try:
         request = resolve_launch_request_from_env(
             default_mode=default_mode,
@@ -111,13 +136,20 @@ def build_startup_artifacts_from_env(
             requested_mode=os.getenv("NTB_CONSOLE_MODE") or default_mode,
             error=exc,
         )
-        shell = _build_startup_shell(report)
-        return StartupArtifacts(shell=shell, report=report, ready=False, config=None)
+        operator_runtime = resolve_operator_runtime_snapshot(
+            mode=resolved_operator_runtime_mode,
+            producer=runtime_snapshot_producer,
+            runtime_snapshot=runtime_snapshot,
+        )
+        shell = _build_startup_shell(report, operator_runtime=operator_runtime)
+        return StartupArtifacts(shell=shell, report=report, ready=False, config=None, operator_runtime=operator_runtime)
 
     return build_startup_artifacts(
         request,
         query_action_requested=query_action_requested,
         runtime_snapshot=runtime_snapshot,
+        runtime_snapshot_producer=runtime_snapshot_producer,
+        operator_runtime_mode=resolved_operator_runtime_mode,
     )
 
 
@@ -126,12 +158,16 @@ def build_startup_artifacts(
     *,
     query_action_requested: bool = False,
     runtime_snapshot: RuntimeReadinessSnapshot | None = None,
+    runtime_snapshot_producer: RuntimeSnapshotProducer | None = None,
+    operator_runtime_mode: OperatorRuntimeMode | str | None = None,
 ) -> StartupArtifacts:
     report = build_preflight_report(request)
     return _build_startup_artifacts_from_report(
         report,
         query_action_requested=query_action_requested,
         runtime_snapshot=runtime_snapshot,
+        runtime_snapshot_producer=runtime_snapshot_producer,
+        operator_runtime_mode=operator_runtime_mode,
     )
 
 
@@ -325,9 +361,16 @@ def attach_launch_metadata(
     report: PreflightReport,
     *,
     runtime_snapshot: RuntimeReadinessSnapshot | None = None,
+    operator_runtime: OperatorRuntimeSnapshotResult | None = None,
 ) -> dict[str, object]:
-    _attach_five_contract_readiness_summary(shell, report, runtime_snapshot=runtime_snapshot)
+    resolved_operator_runtime = operator_runtime or resolve_operator_runtime_snapshot(runtime_snapshot=runtime_snapshot)
+    _attach_five_contract_readiness_summary(
+        shell,
+        report,
+        runtime_snapshot=resolved_operator_runtime.snapshot,
+    )
     _attach_runtime_identity(shell, report)
+    _attach_operator_live_runtime_metadata(shell, resolved_operator_runtime)
     _attach_startup_payload(shell, report)
     return shell
 
@@ -347,13 +390,43 @@ def _attach_five_contract_readiness_summary(
     )
 
 
-def _build_startup_shell(report: PreflightReport) -> dict[str, object]:
+def _attach_operator_live_runtime_metadata(
+    shell: dict[str, object],
+    operator_runtime: OperatorRuntimeSnapshotResult,
+) -> None:
+    payload = operator_runtime.to_dict()
+    shell["operator_live_runtime"] = payload
+    runtime = shell.get("runtime")
+    if not isinstance(runtime, dict):
+        runtime = {}
+        shell["runtime"] = runtime
+    runtime.update(
+        {
+            "operator_live_runtime_mode": operator_runtime.mode,
+            "operator_live_runtime_status": operator_runtime.status,
+            "operator_live_runtime_source": operator_runtime.source,
+            "operator_live_runtime_requested": operator_runtime.requested_live_runtime,
+            "operator_live_runtime_cache_derived": operator_runtime.runtime_cache_derived,
+            "operator_live_runtime_refresh_floor_seconds": operator_runtime.refresh_floor_seconds,
+            "operator_live_runtime_blocking_reasons": list(operator_runtime.blocking_reasons),
+            "operator_live_runtime_cache_provider_status": operator_runtime.cache_provider_status,
+            "operator_live_runtime_cache_generated_at": operator_runtime.cache_generated_at,
+            "operator_live_runtime_cache_snapshot_ready": operator_runtime.cache_snapshot_ready,
+        }
+    )
+
+
+def _build_startup_shell(
+    report: PreflightReport,
+    *,
+    operator_runtime: OperatorRuntimeSnapshotResult,
+) -> dict[str, object]:
     shell: dict[str, object] = {
         "title": "NTB Marimo Console",
         "surfaces": {},
         "runtime": {},
     }
-    attach_launch_metadata(shell, report)
+    attach_launch_metadata(shell, report, operator_runtime=operator_runtime)
     return shell
 
 
@@ -362,10 +435,17 @@ def _build_startup_artifacts_from_report(
     *,
     query_action_requested: bool,
     runtime_snapshot: RuntimeReadinessSnapshot | None,
+    runtime_snapshot_producer: RuntimeSnapshotProducer | None,
+    operator_runtime_mode: OperatorRuntimeMode | str | None,
 ) -> StartupArtifacts:
+    operator_runtime = resolve_operator_runtime_snapshot(
+        mode=operator_runtime_mode,
+        producer=runtime_snapshot_producer,
+        runtime_snapshot=runtime_snapshot,
+    )
     if not report.passed or report.request is None:
-        shell = _build_startup_shell(report)
-        return StartupArtifacts(shell=shell, report=report, ready=False, config=None)
+        shell = _build_startup_shell(report, operator_runtime=operator_runtime)
+        return StartupArtifacts(shell=shell, report=report, ready=False, config=None, operator_runtime=operator_runtime)
 
     request = report.request
     config = LaunchConfig(
@@ -396,11 +476,11 @@ def _build_startup_artifacts_from_report(
             ),
             remedy="Inspect the startup diagnostics, fix the blocking runtime issue, then relaunch the console.",
         )
-        shell = _build_startup_shell(failed_report)
-        return StartupArtifacts(shell=shell, report=failed_report, ready=False, config=config)
+        shell = _build_startup_shell(failed_report, operator_runtime=operator_runtime)
+        return StartupArtifacts(shell=shell, report=failed_report, ready=False, config=config, operator_runtime=operator_runtime)
 
-    attach_launch_metadata(shell, report, runtime_snapshot=runtime_snapshot)
-    return StartupArtifacts(shell=shell, report=report, ready=True, config=config)
+    attach_launch_metadata(shell, report, operator_runtime=operator_runtime)
+    return StartupArtifacts(shell=shell, report=report, ready=True, config=config, operator_runtime=operator_runtime)
 
 
 def _runtime_failure_summary(report: PreflightReport) -> str:

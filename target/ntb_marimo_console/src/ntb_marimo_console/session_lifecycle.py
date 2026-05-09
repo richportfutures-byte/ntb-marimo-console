@@ -16,6 +16,12 @@ from .launch_config import (
     build_startup_artifacts_from_env,
     resolve_launch_request_for_profile_id,
 )
+from .operator_live_runtime import (
+    OperatorRuntimeMode,
+    OperatorRuntimeSnapshotResult,
+    RuntimeSnapshotProducer,
+    resolve_operator_runtime_snapshot,
+)
 from .profile_operations import evaluate_profile_switch
 from .runtime_diagnostics import (
     DIAG_RUNTIME_ASSEMBLY_FAILURE,
@@ -74,6 +80,9 @@ class SessionLifecycle:
     evidence_last_persistence_at_utc: str | None
     evidence_history: tuple[SessionEvidenceRecord, ...]
     runtime_snapshot: RuntimeReadinessSnapshot | None = None
+    operator_runtime: OperatorRuntimeSnapshotResult | None = None
+    runtime_snapshot_producer: RuntimeSnapshotProducer | None = None
+    operator_runtime_mode: OperatorRuntimeMode | str | None = None
 
 
 def load_session_lifecycle_from_env(
@@ -82,6 +91,8 @@ def load_session_lifecycle_from_env(
     default_profile_id: str | None = None,
     evidence_store_path: str | Path | None = None,
     runtime_snapshot: RuntimeReadinessSnapshot | None = None,
+    runtime_snapshot_producer: RuntimeSnapshotProducer | None = None,
+    operator_runtime_mode: OperatorRuntimeMode | str | None = None,
 ) -> SessionLifecycle:
     restore_snapshot = restore_session_evidence_history(path=evidence_store_path)
     app_session_id = uuid4().hex
@@ -90,6 +101,8 @@ def load_session_lifecycle_from_env(
         default_profile_id=default_profile_id,
         query_action_requested=False,
         runtime_snapshot=runtime_snapshot,
+        runtime_snapshot_producer=runtime_snapshot_producer,
+        operator_runtime_mode=operator_runtime_mode,
     )
     assembly = _assemble_runtime(startup)
     artifact_snapshot = _artifact_snapshot_for_report(startup.report)
@@ -127,7 +140,10 @@ def load_session_lifecycle_from_env(
         evidence_history=restore_snapshot.history,
         evidence_originating_profile_id=_selected_profile_id_from_shell(current_shell),
         evidence_requested_profile_id=None,
-        runtime_snapshot=runtime_snapshot,
+        runtime_snapshot=startup.operator_runtime.snapshot,
+        operator_runtime=startup.operator_runtime,
+        runtime_snapshot_producer=runtime_snapshot_producer,
+        operator_runtime_mode=startup.operator_runtime.mode,
     )
 
 
@@ -141,11 +157,12 @@ def request_query_action(lifecycle: SessionLifecycle) -> SessionLifecycle:
             ),
         )
 
+    operator_runtime = _resolve_operator_runtime_for_lifecycle(lifecycle)
     current_shell = build_app_shell_from_assembly(
         lifecycle.assembly,
         query_action_requested=True,
     )
-    attach_launch_metadata(current_shell, lifecycle.report, runtime_snapshot=lifecycle.runtime_snapshot)
+    attach_launch_metadata(current_shell, lifecycle.report, operator_runtime=operator_runtime)
     lifecycle_history = _continue_history(
         lifecycle.lifecycle_history,
         runtime_shell=current_shell,
@@ -181,7 +198,54 @@ def request_query_action(lifecycle: SessionLifecycle) -> SessionLifecycle:
         evidence_history=lifecycle.evidence_history,
         evidence_originating_profile_id=_selected_profile_id(lifecycle),
         evidence_requested_profile_id=None,
-        runtime_snapshot=lifecycle.runtime_snapshot,
+        runtime_snapshot=operator_runtime.snapshot,
+        operator_runtime=operator_runtime,
+        runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
+        operator_runtime_mode=operator_runtime.mode,
+    )
+
+
+def refresh_runtime_snapshot(lifecycle: SessionLifecycle) -> SessionLifecycle:
+    operator_runtime = _resolve_operator_runtime_for_lifecycle(lifecycle)
+    current_shell = deepcopy(lifecycle.shell)
+    attach_launch_metadata(current_shell, lifecycle.report, operator_runtime=operator_runtime)
+    lifecycle_history = _continue_history(
+        lifecycle.lifecycle_history,
+        runtime_shell=current_shell,
+    )
+    return _finalize_lifecycle(
+        shell=current_shell,
+        baseline_shell=deepcopy(lifecycle.baseline_shell) if lifecycle.baseline_shell is not None else None,
+        report=lifecycle.report,
+        ready=lifecycle.ready,
+        config=lifecycle.config,
+        assembly=lifecycle.assembly,
+        artifact_snapshot=lifecycle.artifact_snapshot,
+        lifecycle_state=_shell_session_state(current_shell),
+        lifecycle_history=lifecycle_history,
+        last_action=lifecycle.last_action,
+        status_summary=lifecycle.status_summary,
+        next_action=_extract_next_action(current_shell),
+        reload_changed_sources=lifecycle.reload_changed_sources,
+        profile_switch_target_id=lifecycle.profile_switch_target_id,
+        profile_switch_result=lifecycle.profile_switch_result,
+        evidence_app_session_id=lifecycle.evidence_app_session_id,
+        evidence_persistence_path=lifecycle.evidence_persistence_path,
+        evidence_persist_min_event_index=lifecycle.evidence_persist_min_event_index,
+        evidence_restore_status=lifecycle.evidence_restore_status,
+        evidence_restore_message=lifecycle.evidence_restore_message,
+        evidence_persistence_health_status=lifecycle.evidence_persistence_health_status,
+        evidence_last_persistence_status=lifecycle.evidence_last_persistence_status,
+        evidence_last_persistence_message=lifecycle.evidence_last_persistence_message,
+        evidence_last_persistence_at_utc=lifecycle.evidence_last_persistence_at_utc,
+        evidence_history=lifecycle.evidence_history,
+        evidence_originating_profile_id=_selected_profile_id(lifecycle),
+        evidence_requested_profile_id=None,
+        record_evidence=False,
+        runtime_snapshot=operator_runtime.snapshot,
+        operator_runtime=operator_runtime,
+        runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
+        operator_runtime_mode=operator_runtime.mode,
     )
 
 
@@ -195,7 +259,9 @@ def reset_session(lifecycle: SessionLifecycle) -> SessionLifecycle:
             ),
         )
 
+    operator_runtime = _resolve_operator_runtime_for_lifecycle(lifecycle)
     current_shell = deepcopy(lifecycle.baseline_shell)
+    attach_launch_metadata(current_shell, lifecycle.report, operator_runtime=operator_runtime)
     lifecycle_history = _continue_history(
         lifecycle.lifecycle_history,
         action_states=(
@@ -207,7 +273,7 @@ def reset_session(lifecycle: SessionLifecycle) -> SessionLifecycle:
     next_action = _extract_next_action(current_shell)
     return _finalize_lifecycle(
         shell=current_shell,
-        baseline_shell=deepcopy(lifecycle.baseline_shell),
+        baseline_shell=deepcopy(current_shell),
         report=lifecycle.report,
         ready=lifecycle.ready,
         config=lifecycle.config,
@@ -236,7 +302,10 @@ def reset_session(lifecycle: SessionLifecycle) -> SessionLifecycle:
         evidence_history=lifecycle.evidence_history,
         evidence_originating_profile_id=_selected_profile_id(lifecycle),
         evidence_requested_profile_id=None,
-        runtime_snapshot=lifecycle.runtime_snapshot,
+        runtime_snapshot=operator_runtime.snapshot,
+        operator_runtime=operator_runtime,
+        runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
+        operator_runtime_mode=operator_runtime.mode,
     )
 
 
@@ -255,6 +324,8 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
         request,
         query_action_requested=False,
         runtime_snapshot=lifecycle.runtime_snapshot,
+        runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
+        operator_runtime_mode=lifecycle.operator_runtime_mode,
     )
     artifact_snapshot = _artifact_snapshot_for_report(startup.report)
     reload_changed_sources = _compare_artifact_snapshots(
@@ -302,7 +373,10 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
             evidence_history=lifecycle.evidence_history,
             evidence_originating_profile_id=_selected_profile_id(lifecycle),
             evidence_requested_profile_id=None,
-            runtime_snapshot=lifecycle.runtime_snapshot,
+            runtime_snapshot=startup.operator_runtime.snapshot,
+            operator_runtime=startup.operator_runtime,
+            runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
+            operator_runtime_mode=startup.operator_runtime.mode,
         )
 
     current_shell = deepcopy(startup.shell)
@@ -342,7 +416,10 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
         evidence_history=lifecycle.evidence_history,
         evidence_originating_profile_id=_selected_profile_id(lifecycle),
         evidence_requested_profile_id=None,
-        runtime_snapshot=lifecycle.runtime_snapshot,
+        runtime_snapshot=startup.operator_runtime.snapshot,
+        operator_runtime=startup.operator_runtime,
+        runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
+        operator_runtime_mode=startup.operator_runtime.mode,
     )
 
 
@@ -400,6 +477,9 @@ def clear_retained_evidence(lifecycle: SessionLifecycle) -> SessionLifecycle:
         evidence_requested_profile_id=None,
         record_evidence=False,
         runtime_snapshot=lifecycle.runtime_snapshot,
+        operator_runtime=lifecycle.operator_runtime,
+        runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
+        operator_runtime_mode=lifecycle.operator_runtime_mode,
     )
 
 
@@ -448,6 +528,9 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
             evidence_originating_profile_id=active_profile_id,
             evidence_requested_profile_id=profile_id,
             runtime_snapshot=lifecycle.runtime_snapshot,
+            operator_runtime=lifecycle.operator_runtime,
+            runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
+            operator_runtime_mode=lifecycle.operator_runtime_mode,
         )
 
     request = _switch_request_from_lifecycle(
@@ -458,6 +541,8 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
         request,
         query_action_requested=False,
         runtime_snapshot=lifecycle.runtime_snapshot,
+        runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
+        operator_runtime_mode=lifecycle.operator_runtime_mode,
     )
     if not startup.ready:
         failure_categories = [check.category for check in startup.report.checks if not check.passed]
@@ -506,6 +591,9 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
             evidence_originating_profile_id=active_profile_id,
             evidence_requested_profile_id=profile_id,
             runtime_snapshot=lifecycle.runtime_snapshot,
+            operator_runtime=lifecycle.operator_runtime,
+            runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
+            operator_runtime_mode=lifecycle.operator_runtime_mode,
         )
 
     current_shell = deepcopy(startup.shell)
@@ -546,7 +634,10 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
         evidence_history=lifecycle.evidence_history,
         evidence_originating_profile_id=active_profile_id,
         evidence_requested_profile_id=profile_id,
-        runtime_snapshot=lifecycle.runtime_snapshot,
+        runtime_snapshot=startup.operator_runtime.snapshot,
+        operator_runtime=startup.operator_runtime,
+        runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
+        operator_runtime_mode=startup.operator_runtime.mode,
     )
 
 
@@ -558,6 +649,14 @@ def _assemble_runtime(startup: StartupArtifacts) -> RuntimeAssembly | None:
         fixtures_root=startup.config.fixtures_root,
         lockout=startup.config.lockout,
         model_adapter=startup.config.model_adapter,
+    )
+
+
+def _resolve_operator_runtime_for_lifecycle(lifecycle: SessionLifecycle) -> OperatorRuntimeSnapshotResult:
+    return resolve_operator_runtime_snapshot(
+        mode=lifecycle.operator_runtime_mode,
+        producer=lifecycle.runtime_snapshot_producer,
+        runtime_snapshot=lifecycle.runtime_snapshot,
     )
 
 
@@ -810,6 +909,9 @@ def _blocked_action(lifecycle: SessionLifecycle, *, summary: str) -> SessionLife
         evidence_requested_profile_id=None,
         record_evidence=False,
         runtime_snapshot=lifecycle.runtime_snapshot,
+        operator_runtime=lifecycle.operator_runtime,
+        runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
+        operator_runtime_mode=lifecycle.operator_runtime_mode,
     )
 
 
@@ -844,7 +946,14 @@ def _finalize_lifecycle(
     evidence_requested_profile_id: str | None,
     record_evidence: bool = True,
     runtime_snapshot: RuntimeReadinessSnapshot | None = None,
+    operator_runtime: OperatorRuntimeSnapshotResult | None = None,
+    runtime_snapshot_producer: RuntimeSnapshotProducer | None = None,
+    operator_runtime_mode: OperatorRuntimeMode | str | None = None,
 ) -> SessionLifecycle:
+    resolved_operator_runtime = operator_runtime or resolve_operator_runtime_snapshot(
+        mode=operator_runtime_mode,
+        runtime_snapshot=runtime_snapshot,
+    )
     shell["lifecycle"] = _build_lifecycle_panel(
         shell=shell,
         lifecycle_state=lifecycle_state,
@@ -915,7 +1024,10 @@ def _finalize_lifecycle(
         evidence_last_persistence_message=evidence_last_persistence_message,
         evidence_last_persistence_at_utc=evidence_last_persistence_at_utc,
         evidence_history=updated_evidence_history,
-        runtime_snapshot=runtime_snapshot,
+        runtime_snapshot=resolved_operator_runtime.snapshot,
+        operator_runtime=resolved_operator_runtime,
+        runtime_snapshot_producer=runtime_snapshot_producer,
+        operator_runtime_mode=operator_runtime_mode or resolved_operator_runtime.mode,
     )
 
 
@@ -973,6 +1085,14 @@ def _build_lifecycle_panel(
         "running_as": startup_panel.get("running_as", "<unresolved>"),
         "operator_ready": startup_panel.get("operator_ready", False),
         "query_action_status": workflow_panel.get("query_action_status", "<unavailable>"),
+        "operator_live_runtime_mode": runtime_panel.get("operator_live_runtime_mode", "SAFE_NON_LIVE"),
+        "operator_live_runtime_status": runtime_panel.get("operator_live_runtime_status", "SAFE_NON_LIVE"),
+        "operator_live_runtime_source": runtime_panel.get("operator_live_runtime_source", "fixture_preserved_shell"),
+        "operator_live_runtime_cache_derived": runtime_panel.get("operator_live_runtime_cache_derived", False),
+        "operator_live_runtime_refresh_floor_seconds": runtime_panel.get(
+            "operator_live_runtime_refresh_floor_seconds",
+            15.0,
+        ),
         "decision_review_ready": workflow_panel.get("decision_review_ready", False),
         "audit_replay_ready": workflow_panel.get("audit_replay_ready", False),
         "status_summary": status_summary,

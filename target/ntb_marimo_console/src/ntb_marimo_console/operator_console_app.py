@@ -7,8 +7,13 @@ app = marimo.App(width="full")
 def __():
     import marimo as mo
 
+    from ntb_marimo_console.operator_live_runtime import (
+        build_operator_runtime_snapshot_producer_from_env,
+        operator_runtime_mode_from_env,
+    )
     from ntb_marimo_console.session_lifecycle import (
         clear_retained_evidence,
+        refresh_runtime_snapshot,
         load_session_lifecycle_from_env,
         reload_current_profile,
         request_query_action,
@@ -17,10 +22,21 @@ def __():
     )
 
     get_lifecycle, set_lifecycle = mo.state(None)
+    get_runtime_snapshot_producer, set_runtime_snapshot_producer = mo.state(None)
     get_pending_profile_id, set_pending_profile_id = mo.state(None)
+    runtime_snapshot_producer = get_runtime_snapshot_producer()
+    if runtime_snapshot_producer is None:
+        runtime_snapshot_producer = build_operator_runtime_snapshot_producer_from_env()
+        set_runtime_snapshot_producer(runtime_snapshot_producer)
+
+    operator_runtime_mode = operator_runtime_mode_from_env()
     lifecycle = get_lifecycle()
     if lifecycle is None:
-        lifecycle = load_session_lifecycle_from_env(default_mode="fixture_demo")
+        lifecycle = load_session_lifecycle_from_env(
+            default_mode="fixture_demo",
+            runtime_snapshot_producer=runtime_snapshot_producer,
+            operator_runtime_mode=operator_runtime_mode,
+        )
         set_lifecycle(lifecycle)
         startup = lifecycle.shell.get("startup", {})
         if isinstance(startup, dict):
@@ -32,9 +48,11 @@ def __():
         mo,
         lifecycle,
         set_lifecycle,
+        runtime_snapshot_producer,
         get_pending_profile_id,
         set_pending_profile_id,
         clear_retained_evidence,
+        refresh_runtime_snapshot,
         reload_current_profile,
         request_query_action,
         reset_session,
@@ -132,6 +150,11 @@ def __(
         ),
         full_width=True,
     )
+    runtime_refresh = mo.ui.refresh(
+        options=["15s"],
+        default_interval="15s",
+        label="Runtime Cache Refresh",
+    )
     switch_button = mo.ui.run_button(
         label="Switch To Selected Profile",
         kind="neutral",
@@ -184,7 +207,12 @@ def __(
         ]
     )
 
-    lifecycle_controls = mo.hstack([reload_button, reset_button], widths="equal")
+    lifecycle_controls = mo.vstack(
+        [
+            runtime_refresh,
+            mo.hstack([reload_button, reset_button], widths="equal"),
+        ]
+    )
 
     return (
         controls_shell,
@@ -198,6 +226,7 @@ def __(
         query_button,
         reset_button,
         reload_button,
+        runtime_refresh,
         switch_button,
         clear_retained_button,
         lifecycle_controls,
@@ -225,6 +254,8 @@ def __(
     reset_available,
     reset_button,
     reset_session,
+    runtime_refresh,
+    refresh_runtime_snapshot,
     request_query_action,
     selected_profile_id,
     set_lifecycle,
@@ -253,6 +284,8 @@ def __(
         set_lifecycle(reset_session(lifecycle))
     elif query_button.value and query_available:
         set_lifecycle(request_query_action(lifecycle))
+    elif runtime_refresh.value:
+        set_lifecycle(refresh_runtime_snapshot(lifecycle))
 
     shell = controls_shell
     mode = str(controls_startup_panel.get("runtime_mode", "<unresolved>"))

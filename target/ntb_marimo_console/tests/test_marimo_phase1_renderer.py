@@ -71,6 +71,8 @@ class MarimoPhase1RendererTests(unittest.TestCase):
         self.assertIn("Runtime Cache Source", source)
         self.assertIn("Runtime Provider Status", source)
         self.assertIn("Runtime Snapshot Ready", source)
+        self.assertIn("Runtime Readiness Blockers", source)
+        self.assertIn("Operator Live Runtime Status", source)
         self.assertIn("live_runtime_readiness_state", source)
 
     def test_primary_surfaces_do_not_use_code_editor_json(self) -> None:
@@ -284,8 +286,10 @@ class MarimoPhase1RendererTests(unittest.TestCase):
         self.assertIn("Last Known Outcome By Supported Profile", evidence_markdown)
         self.assertIn("Current Session", evidence_markdown)
         self.assertIn("Runtime Identity", runtime_markdown)
+        self.assertIn("Operator Live Runtime Status", runtime_markdown)
         self.assertIn("Startup Readiness", runtime_markdown)
         self.assertIn("Session Lifecycle", lifecycle_markdown)
+        self.assertIn("Operator Live Runtime Status", lifecycle_markdown)
         self.assertIn("Profile Switch Result", lifecycle_markdown)
         self.assertIn("Reload Result", lifecycle_markdown)
         self.assertIn("Session Workflow", workflow_markdown)
@@ -298,6 +302,11 @@ class EntrypointSharedRendererTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("load_session_lifecycle_from_env", source)
+        self.assertIn("build_operator_runtime_snapshot_producer_from_env", source)
+        self.assertIn("get_runtime_snapshot_producer", source)
+        self.assertIn("refresh_runtime_snapshot", source)
+        self.assertIn("mo.ui.refresh", source)
+        self.assertIn('default_interval="15s"', source)
         self.assertIn("mo.ui.run_button", source)
         self.assertIn("mo.ui.dropdown", source)
         self.assertIn("Reset Session", source)
