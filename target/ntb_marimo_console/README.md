@@ -95,28 +95,9 @@ Reference-only product-shell ideas remain in `../../reference/ntb_v3_idea`.
    PYTHONPATH=src .venv/bin/python -m marimo run src/ntb_marimo_console/operator_console_app.py
    ```
 
-   Supported preserved profiles:
-
-   Windows PowerShell:
-
-   ```powershell
-   $env:NTB_CONSOLE_PROFILE='preserved_cl_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
-   ```
-
-   ```powershell
-   $env:NTB_CONSOLE_PROFILE='preserved_es_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
-   ```
-
-   ```powershell
-   $env:NTB_CONSOLE_PROFILE='preserved_zn_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
-   ```
+   Supported preserved profiles for the five final target contracts (`ES`, `NQ`, `CL`, `6E`, `MGC`):
 
    POSIX shells:
-
-   ```bash
-   NTB_CONSOLE_PROFILE=preserved_cl_phase1 \
-   PYTHONPATH=src .venv/bin/python -m marimo run src/ntb_marimo_console/operator_console_app.py
-   ```
 
    ```bash
    NTB_CONSOLE_PROFILE=preserved_es_phase1 \
@@ -124,9 +105,48 @@ Reference-only product-shell ideas remain in `../../reference/ntb_v3_idea`.
    ```
 
    ```bash
-   NTB_CONSOLE_PROFILE=preserved_zn_phase1 \
+   NTB_CONSOLE_PROFILE=preserved_nq_phase1 \
    PYTHONPATH=src .venv/bin/python -m marimo run src/ntb_marimo_console/operator_console_app.py
    ```
+
+   ```bash
+   NTB_CONSOLE_PROFILE=preserved_cl_phase1 \
+   PYTHONPATH=src .venv/bin/python -m marimo run src/ntb_marimo_console/operator_console_app.py
+   ```
+
+   ```bash
+   NTB_CONSOLE_PROFILE=preserved_6e_phase1 \
+   PYTHONPATH=src .venv/bin/python -m marimo run src/ntb_marimo_console/operator_console_app.py
+   ```
+
+   ```bash
+   NTB_CONSOLE_PROFILE=preserved_mgc_phase1 \
+   PYTHONPATH=src .venv/bin/python -m marimo run src/ntb_marimo_console/operator_console_app.py
+   ```
+
+   Windows PowerShell:
+
+   ```powershell
+   $env:NTB_CONSOLE_PROFILE='preserved_es_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
+   ```
+
+   ```powershell
+   $env:NTB_CONSOLE_PROFILE='preserved_nq_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
+   ```
+
+   ```powershell
+   $env:NTB_CONSOLE_PROFILE='preserved_cl_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
+   ```
+
+   ```powershell
+   $env:NTB_CONSOLE_PROFILE='preserved_6e_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
+   ```
+
+   ```powershell
+   $env:NTB_CONSOLE_PROFILE='preserved_mgc_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
+   ```
+
+   `preserved_zn_phase1` remains as a legacy/historical profile only and is not part of the final target universe.
 
 6. Read the app’s `Startup Status` section before using the operator surfaces:
 
@@ -245,10 +265,23 @@ PYTHONPATH=src .venv/bin/python scripts/list_runtime_profiles.py
 
 Current supported profiles:
 
-- `preserved_cl_phase1`: preserved-engine-backed CL profile using the target-owned preserved fixture adapter by default
-- `fixture_es_demo`: fixture-backed ES regression/demo profile
+Final target preserved profiles (`ES`, `NQ`, `CL`, `6E`, `MGC`):
+
 - `preserved_es_phase1`: preserved-engine-backed ES profile using the target-owned preserved fixture adapter by default
-- `preserved_zn_phase1`: preserved-engine-backed ZN profile using the target-owned preserved fixture adapter by default
+- `preserved_nq_phase1`: preserved-engine-backed NQ profile using the target-owned preserved fixture adapter by default
+- `preserved_cl_phase1`: preserved-engine-backed CL profile using the target-owned preserved fixture adapter by default
+- `preserved_6e_phase1`: preserved-engine-backed 6E profile using the target-owned preserved fixture adapter by default
+- `preserved_mgc_phase1`: preserved-engine-backed MGC (Micro Gold) profile using the target-owned preserved fixture adapter by default
+
+Legacy/historical preserved profile (excluded from the final target universe):
+
+- `preserved_zn_phase1`: preserved-engine-backed ZN profile retained as legacy/historical only
+
+Fixture/demo profile:
+
+- `fixture_es_demo`: fixture-backed ES regression/demo profile
+
+`MGC` is the Micro Gold contract for this application. `MGC` is not `GC`; `GC` is excluded and must not be used as a synonym, alias, or substitute for `MGC`.
 
 ## Audit Preserved Contract Eligibility
 
@@ -358,26 +391,9 @@ PYTHONPATH=src .venv/bin/python -m marimo run src/ntb_marimo_console/operator_co
 
 ## Launch The Supported Preserved Profiles
 
-Windows PowerShell:
-
-```powershell
-$env:NTB_CONSOLE_PROFILE='preserved_cl_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
-```
-
-```powershell
-$env:NTB_CONSOLE_PROFILE='preserved_es_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
-```
-
-```powershell
-$env:NTB_CONSOLE_PROFILE='preserved_zn_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
-```
+Final target preserved profiles for `ES`, `NQ`, `CL`, `6E`, and `MGC`.
 
 POSIX shells:
-
-```bash
-NTB_CONSOLE_PROFILE=preserved_cl_phase1 \
-PYTHONPATH=src .venv/bin/python -m marimo run src/ntb_marimo_console/operator_console_app.py
-```
 
 ```bash
 NTB_CONSOLE_PROFILE=preserved_es_phase1 \
@@ -385,15 +401,56 @@ PYTHONPATH=src .venv/bin/python -m marimo run src/ntb_marimo_console/operator_co
 ```
 
 ```bash
-NTB_CONSOLE_PROFILE=preserved_zn_phase1 \
+NTB_CONSOLE_PROFILE=preserved_nq_phase1 \
 PYTHONPATH=src .venv/bin/python -m marimo run src/ntb_marimo_console/operator_console_app.py
+```
+
+```bash
+NTB_CONSOLE_PROFILE=preserved_cl_phase1 \
+PYTHONPATH=src .venv/bin/python -m marimo run src/ntb_marimo_console/operator_console_app.py
+```
+
+```bash
+NTB_CONSOLE_PROFILE=preserved_6e_phase1 \
+PYTHONPATH=src .venv/bin/python -m marimo run src/ntb_marimo_console/operator_console_app.py
+```
+
+```bash
+NTB_CONSOLE_PROFILE=preserved_mgc_phase1 \
+PYTHONPATH=src .venv/bin/python -m marimo run src/ntb_marimo_console/operator_console_app.py
+```
+
+Windows PowerShell:
+
+```powershell
+$env:NTB_CONSOLE_PROFILE='preserved_es_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
+```
+
+```powershell
+$env:NTB_CONSOLE_PROFILE='preserved_nq_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
+```
+
+```powershell
+$env:NTB_CONSOLE_PROFILE='preserved_cl_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
+```
+
+```powershell
+$env:NTB_CONSOLE_PROFILE='preserved_6e_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
+```
+
+```powershell
+$env:NTB_CONSOLE_PROFILE='preserved_mgc_phase1'; $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m marimo run src\ntb_marimo_console\operator_console_app.py
 ```
 
 These use profile-bound default adapter references:
 
+- `ntb_marimo_console.preserved_fixture_adapter:adapter` (ES)
+- `ntb_marimo_console.preserved_fixture_adapter:adapter_nq`
 - `ntb_marimo_console.preserved_fixture_adapter:adapter_cl`
-- `ntb_marimo_console.preserved_fixture_adapter:adapter`
-- `ntb_marimo_console.preserved_fixture_adapter:adapter_zn`
+- `ntb_marimo_console.preserved_fixture_adapter:adapter_6e`
+- `ntb_marimo_console.preserved_fixture_adapter:adapter_mgc`
+
+The legacy/historical `preserved_zn_phase1` profile remains supported as a current-state profile but is not part of the final target universe and is intentionally omitted from the launch set above.
 
 ## Override The Preserved Adapter
 
