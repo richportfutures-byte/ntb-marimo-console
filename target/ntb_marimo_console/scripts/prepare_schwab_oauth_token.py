@@ -12,6 +12,7 @@ import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
+import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -89,6 +90,10 @@ def _require_under_state(token_path: Path, *, target_root: Path) -> None:
         raise OAuthPrepError("SCHWAB_TOKEN_PATH must resolve under target/ntb_marimo_console/.state/.") from exc
 
 
+def _authorization_url_path(*, target_root: Path) -> Path:
+    return (target_root / ".state" / "schwab" / "oauth_authorization_url.txt").resolve(strict=False)
+
+
 def load_config(env: dict[str, str] | None = None) -> OAuthConfig:
     values = os.environ if env is None else env
     target_root = _target_root()
@@ -102,7 +107,7 @@ def load_config(env: dict[str, str] | None = None) -> OAuthConfig:
     }
     missing = tuple(name for name, value in required.items() if not value.strip())
     if missing:
-        raise OAuthPrepError(f"Missing required environment variables: {', '.join(missing)}.")
+        raise OAuthPrepError("Missing required Schwab OAuth environment configuration.")
 
     token_path = _resolve_token_path(required["SCHWAB_TOKEN_PATH"], target_root=target_root)
     _require_under_state(token_path, target_root=target_root)
@@ -163,10 +168,16 @@ def describe_authorization_code(code: str) -> str:
 
 def _sanitize_diagnostic_text(value: object) -> str:
     text = str(value)
-    text = re.sub(r"(?i)(access_token|refresh_token|code)=([^&\s]+)", r"\1=[REDACTED]", text)
+    text = re.sub(
+        r"(?i)(access_token|refresh_token|code|client_id|client_secret)=([^&\s]+)",
+        r"\1=[REDACTED]",
+        text,
+    )
     text = re.sub(r"(?i)bearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [REDACTED]", text)
     text = re.sub(r"\bCO\.[A-Za-z0-9._~+/=-]+", "CO.[REDACTED]", text)
+    text = re.sub(r"\bC0\.[A-Za-z0-9._~+/=-]+", "C0.[REDACTED]", text)
     text = re.sub(r"https?://\S*code=[^\s]+", "[REDACTED_CALLBACK_URL]", text)
+    text = re.sub(r"https?://\S*/oauth/authorize\?\S+", "[REDACTED_AUTHORIZATION_URL]", text)
     return text
 
 
@@ -250,7 +261,7 @@ def exchange_authorization_code(config: OAuthConfig, code: str) -> dict[str, Any
     if not isinstance(token_response, dict):
         raise OAuthPrepError("Token endpoint response JSON was not an object.")
     if not token_response.get("access_token") or not token_response.get("refresh_token"):
-        raise OAuthPrepError("Token response must contain access_token and refresh_token.")
+        raise OAuthPrepError("Token response missing required token fields.")
     return token_response
 
 
@@ -279,16 +290,56 @@ def write_token_file(token_path: Path, token_response: dict[str, Any]) -> None:
         raise
 
 
-def print_safe_summary(config: OAuthConfig, authorization_url: str) -> None:
+def write_authorization_url_file(config: OAuthConfig, authorization_url: str) -> Path:
+    url_path = _authorization_url_path(target_root=config.target_root)
+    _require_under_state(url_path, target_root=config.target_root)
+    url_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=".oauth_authorization_url.", suffix=".tmp", dir=url_path.parent)
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(authorization_url)
+            handle.write("\n")
+        try:
+            os.chmod(temp_path, stat.S_IRUSR | stat.S_IWUSR)
+        except OSError:
+            pass
+        temp_path.replace(url_path)
+        try:
+            os.chmod(url_path, stat.S_IRUSR | stat.S_IWUSR)
+        except OSError:
+            pass
+    except Exception:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    return url_path
+
+
+def print_safe_summary(
+    config: OAuthConfig,
+    *,
+    authorization_url_written: bool,
+    authorization_url_path: Path | None,
+    browser_opened: bool,
+) -> None:
     print("SCHWAB_OAUTH_TOKEN_PREP")
     print(f"repo_root={config.repo_root}")
     print(f"target_root={_repo_relative(config.target_root, repo_root=config.repo_root)}")
     print(f"oauth_live={config.oauth_live}")
-    print("credentials=SCHWAB_APP_KEY present: yes; SCHWAB_APP_SECRET present: yes")
+    print("oauth_credentials_present=yes")
     print("callback_url=present")
     print(f"token_path={config.token_path_display}")
     print("token_path_safety=UNDER_TARGET_STATE")
-    print(f"authorization_url={authorization_url}")
+    print("authorization_url_present=yes")
+    print("authorization_url_printed=no")
+    print(f"authorization_url_written={'yes' if authorization_url_written else 'no'}")
+    if authorization_url_path is not None:
+        print(f"authorization_url_path={_repo_relative(authorization_url_path, repo_root=config.repo_root)}")
+    print(f"browser_opened={'yes' if browser_opened else 'no'}")
+    print("values_printed=no")
 
 
 def run(
@@ -301,12 +352,35 @@ def run(
     write_func=write_token_file,
 ) -> int:
     parser = argparse.ArgumentParser(description="Prepare a Schwab OAuth token file by manual authorization-code flow.")
-    parser.parse_args(argv)
+    parser.add_argument(
+        "--write-authorization-url",
+        action="store_true",
+        help="Write the raw authorization URL to a 0600 file under target/ntb_marimo_console/.state/.",
+    )
+    parser.add_argument(
+        "--open-browser",
+        action="store_true",
+        help="Open the raw authorization URL in the default browser without printing it.",
+    )
+    args = parser.parse_args(argv)
 
     try:
         config = load_config(env)
         authorization_url = build_authorization_url(config)
-        print_safe_summary(config, authorization_url)
+        authorization_url_path = None
+        if args.write_authorization_url:
+            authorization_url_path = write_authorization_url_file(config, authorization_url)
+        browser_opened = False
+        if args.open_browser:
+            if not config.oauth_live:
+                raise OAuthPrepError("--open-browser requires SCHWAB_OAUTH_LIVE=true.")
+            browser_opened = webbrowser.open(authorization_url)
+        print_safe_summary(
+            config,
+            authorization_url_written=authorization_url_path is not None,
+            authorization_url_path=authorization_url_path,
+            browser_opened=browser_opened,
+        )
 
         if not config.oauth_live:
             print("network_activity=SKIPPED_OAUTH_DRY_RUN")
@@ -319,7 +393,7 @@ def run(
         print(describe_authorization_code(code))
         token_response = exchange_func(config, code)
         if not token_response.get("access_token") or not token_response.get("refresh_token"):
-            raise OAuthPrepError("Token response must contain access_token and refresh_token.")
+            raise OAuthPrepError("Token response missing required token fields.")
         write_func(config.token_path, token_response)
         print("TOKEN_WRITE_PASS")
         return 0
@@ -340,7 +414,7 @@ def run(
             if safe_reason:
                 print(f"reason={safe_reason}")
         else:
-            print(f"error={exc}")
+            print(f"error={_sanitize_diagnostic_text(exc)}")
         return 1
 
 

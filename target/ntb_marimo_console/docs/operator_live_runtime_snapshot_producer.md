@@ -84,6 +84,23 @@ Manual rehearsal entry point::
 
 R29 is ready for explicit manual live rehearsal **provided** the operator supplies a fresh `StreamerCredentials` (e.g., via `scripts/probe_schwab_user_preference.py`) and a fresh access token. Auto-fetch of user preferences, OAuth refresh inside src/, and a managed receive thread remain documented downstream-step candidates.
 
+### Safe OAuth recovery
+
+If the user-preference probe reports that the local token file has an access token but no refresh token, perform a fresh OAuth authorization-code flow locally before retrying the live probes. The OAuth prep script prints status fields only. It must not print the raw authorization URL, callback URL, authorization code, app credentials, token JSON, access token, or refresh token.
+
+Run from `target/ntb_marimo_console/`:
+
+```
+set -a && . .state/secrets/schwab_live.env && set +a
+SCHWAB_OAUTH_LIVE=true \
+PYTHONPATH=src:../../source/ntb_engine/src \
+python3 scripts/prepare_schwab_oauth_token.py --write-authorization-url
+```
+
+The command writes the raw authorization URL to `target/ntb_marimo_console/.state/schwab/oauth_authorization_url.txt` with owner-only permissions and prints only the relative path plus sanitized status fields. Open that local file outside chat, complete the browser authorization, then paste the redirected callback URL or raw authorization code only into the local terminal prompt. Do not paste the authorization URL, callback URL, authorization code, token JSON, or token values into chat, docs, logs, commits, or proof artifacts.
+
+After the token file is written, rerun `scripts/probe_schwab_user_preference.py` under the existing explicit live gate. Rerun `scripts/run_operator_live_runtime_rehearsal.py --live` only after streamer credentials are obtained. A user-preference failure remains blocking; the operator runtime must not fall back to fixtures after a live failure.
+
 ### Manual rehearsal command
 
 R30 ships an explicit live-gated rehearsal at `scripts/run_operator_live_runtime_rehearsal.py`. The command wires R29's `OperatorSchwabStreamerSession` through R28's stream client factory and R27's launcher, drives a bounded `dispatch_one` receive loop into the manager's `ingest_message` cache path, and prints **boolean/status keys only** — no Schwab-sensitive values appear in stdout, stderr, or the JSON payload. The script does not open `.state/secrets/schwab_live.env`; the operator sources that file in their shell first.

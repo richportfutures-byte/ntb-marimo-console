@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import stat
 import sys
 import urllib.error
 import urllib.parse
@@ -38,13 +39,59 @@ def isolated_target_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Pat
 
 
 def test_dry_run_succeeds_with_dummy_values(capsys: pytest.CaptureFixture[str]) -> None:
-    exit_code = oauth.run([], env=valid_env())
+    env = valid_env()
+    raw_authorization_url = oauth.build_authorization_url(oauth.load_config(env))
+
+    exit_code = oauth.run([], env=env)
 
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "OAUTH_DRY_RUN_PASS" in output
     assert "network_activity=SKIPPED_OAUTH_DRY_RUN" in output
+    assert "authorization_url_present=yes" in output
+    assert "authorization_url_printed=no" in output
+    assert "authorization_url_written=no" in output
+    assert "values_printed=no" in output
+    assert raw_authorization_url not in output
+    assert "authorization_url=https://" not in output
+    assert "client_id=" not in output
+    assert "redirect_uri=" not in output
+    assert "dummy-app-key" not in output
     assert "dummy-app-secret" not in output
+    assert "SCHWAB_APP_KEY" not in output
+    assert "SCHWAB_APP_SECRET" not in output
+
+
+def test_write_authorization_url_writes_state_file_without_printing_raw_values(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    env = valid_env()
+    config = oauth.load_config(env)
+    raw_authorization_url = oauth.build_authorization_url(config)
+
+    exit_code = oauth.run(["--write-authorization-url"], env=env)
+
+    output = capsys.readouterr().out
+    expected_path = config.target_root / ".state" / "schwab" / "oauth_authorization_url.txt"
+    assert exit_code == 0
+    assert expected_path.is_file()
+    assert expected_path.read_text(encoding="utf-8").strip() == raw_authorization_url
+    assert stat.S_IMODE(expected_path.stat().st_mode) == stat.S_IRUSR | stat.S_IWUSR
+    assert str(expected_path.relative_to(config.repo_root)) in output
+    assert "authorization_url_written=yes" in output
+    assert "authorization_url_printed=no" in output
+    assert raw_authorization_url not in output
+    assert "dummy-app-key" not in output
+    assert "client_id=" not in output
+    assert "dummy-app-secret" not in output
+
+
+def test_authorization_url_file_path_is_under_target_state() -> None:
+    config = oauth.load_config(valid_env())
+    url_path = oauth.write_authorization_url_file(config, oauth.build_authorization_url(config))
+    state_root = config.target_root / ".state"
+
+    assert url_path.relative_to(state_root)
 
 
 def test_authorization_url_contains_expected_query_parameters() -> None:
@@ -74,7 +121,7 @@ def test_missing_env_vars_fail() -> None:
     env = valid_env()
     del env["SCHWAB_APP_SECRET"]
 
-    with pytest.raises(oauth.OAuthPrepError, match="Missing required environment variables"):
+    with pytest.raises(oauth.OAuthPrepError, match="Missing required Schwab OAuth environment configuration"):
         oauth.load_config(env)
 
 
@@ -103,6 +150,16 @@ def test_live_mode_without_exact_true_does_not_call_network(capsys: pytest.Captu
     assert exit_code == 0
     assert called is False
     assert "OAUTH_DRY_RUN_PASS" in output
+
+
+def test_open_browser_requires_live_mode(capsys: pytest.CaptureFixture[str]) -> None:
+    exit_code = oauth.run(["--open-browser"], env=valid_env())
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "--open-browser requires" in output
+    assert "client_id=" not in output
+    assert "dummy-app-key" not in output
 
 
 @pytest.mark.parametrize(
@@ -182,6 +239,64 @@ def test_callback_url_with_code_is_not_emitted_to_stdout_or_stderr(
     assert "CO.callback-secret-code" not in output
     assert "access-token-value" not in output
     assert "refresh-token-value" not in output
+
+
+def test_run_rejects_token_response_without_refresh_token(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    env = valid_env()
+    env["SCHWAB_OAUTH_LIVE"] = "true"
+    wrote_token = False
+
+    def secret_input_func(prompt: str) -> str:
+        return "CO.safe-code"
+
+    def exchange_func(config: object, code: str) -> dict[str, str]:
+        return {"access_token": "access-token-value"}
+
+    def write_func(path: Path, token_response: dict[str, str]) -> None:
+        nonlocal wrote_token
+        wrote_token = True
+
+    exit_code = oauth.run(
+        [],
+        env=env,
+        secret_input_func=secret_input_func,
+        exchange_func=exchange_func,
+        write_func=write_func,
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert wrote_token is False
+    assert "OAUTH_PREP_FAIL" in output
+    assert "Token response missing required token fields." in output
+    assert "access-token-value" not in output
+    assert "CO.safe-code" not in output
+
+
+def test_exchange_rejects_token_response_without_required_token_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = oauth.load_config(valid_env())
+
+    class FakeResponse:
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"access_token":"access-token-value"}'
+
+    def fake_urlopen(request: object, timeout: int) -> FakeResponse:
+        return FakeResponse()
+
+    monkeypatch.setattr(oauth.urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(oauth.OAuthPrepError, match="missing required token fields"):
+        oauth.exchange_authorization_code(config, "C0.decoded@code")
 
 
 def test_existing_token_overwrite_requires_confirmation_logic(tmp_path: Path) -> None:
