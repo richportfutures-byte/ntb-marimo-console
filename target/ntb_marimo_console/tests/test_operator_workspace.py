@@ -159,6 +159,9 @@ def test_live_thesis_section_exposes_trigger_state_fields_and_reasons() -> None:
     assert monitor["invalid_reasons"] == ["invalidator_active"]
     assert monitor["blocking_reasons"] == ["missing_required_live_fields"]
     assert monitor["state_flags"]["blocked"] is True
+    assert monitor["transition_narrative"]["state_label"] == "BLOCKED"
+    assert "missing_required_live_fields" in monitor["transition_narrative"]["blocking_explanation"]
+    assert "market.cumulative_delta" in monitor["transition_narrative"]["missing_data_explanation"]
 
 
 def test_pipeline_gate_section_mirrors_r13_disabled_gate_and_cannot_bypass_it() -> None:
@@ -201,6 +204,24 @@ def test_query_ready_is_displayed_as_query_readiness_only_not_trade_authorizatio
     assert monitor["trigger_state"] == "QUERY_READY"
     assert "query readiness only" in monitor["query_readiness_statement"]
     assert "not trade authorization" in monitor["query_readiness_statement"]
+    assert "The preserved pipeline must still decide" in monitor["transition_narrative"]["readiness_explanation"]
+    assert "execution remains manual" in monitor["transition_narrative"]["readiness_explanation"]
+
+
+def test_live_thesis_transition_narrative_surfaces_stale_reason_text() -> None:
+    monitor = ready_workspace(
+        "ES",
+        trigger_state=trigger_result(
+            "ES",
+            TriggerState.STALE,
+            blocking_reasons=("quote_stale", "stale_or_missing_timestamp:ES"),
+        ),
+    ).to_dict()["live_thesis_monitor"]
+
+    narrative = monitor["transition_narrative"]
+    assert narrative["state_label"] == "STALE"
+    assert "quote_stale" in narrative["blocking_explanation"]
+    assert "Fresh deterministic inputs are required" in narrative["readiness_explanation"]
 
 
 def test_absent_pipeline_result_is_not_queried() -> None:

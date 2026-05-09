@@ -10,6 +10,7 @@ from ntb_marimo_console.live_observables.schema_v2 import LiveObservableSnapshot
 from ntb_marimo_console.market_data.stream_events import redact_sensitive_text
 from ntb_marimo_console.pipeline_query_gate import PipelineQueryGateResult
 from ntb_marimo_console.trigger_state import TriggerStateResult
+from ntb_marimo_console.trigger_transition_narrative import narrate_trigger_transition
 from ntb_marimo_console.watchman_gate import WatchmanValidatorResult
 
 
@@ -144,6 +145,7 @@ def _build_live_thesis_monitor(trigger: Mapping[str, Any]) -> dict[str, object]:
     trigger_state = _safe_text(_string_or_none(trigger.get("state")) or "UNAVAILABLE").upper()
     blocking_reasons = _sequence_text(trigger.get("blocking_reasons"))
     invalid_reasons = _sequence_text(trigger.get("invalid_reasons"))
+    transition_narrative = narrate_trigger_transition(trigger).to_dict()
     return {
         "setup_id": _safe_text(_string_or_none(trigger.get("setup_id")) or "unavailable"),
         "trigger_id": _safe_text(_string_or_none(trigger.get("trigger_id")) or "unavailable"),
@@ -161,6 +163,7 @@ def _build_live_thesis_monitor(trigger: Mapping[str, Any]) -> dict[str, object]:
             "blocked": trigger_state == "BLOCKED" or bool(blocking_reasons),
             "unavailable": trigger_state == "UNAVAILABLE",
         },
+        "transition_narrative": transition_narrative,
         "query_readiness_statement": QUERY_READY_READINESS_STATEMENT,
     }
 
