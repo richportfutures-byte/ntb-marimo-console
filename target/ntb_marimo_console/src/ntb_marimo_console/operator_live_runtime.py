@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal, Protocol
@@ -120,19 +121,78 @@ def operator_runtime_mode_from_env(values: dict[str, str] | None = None) -> Oper
     return SAFE_NON_LIVE
 
 
+_REGISTERED_OPERATOR_LIVE_PRODUCER: RuntimeSnapshotProducer | None = None
+
+
+def register_operator_live_runtime_manager(manager: object) -> None:
+    """Register an operator-owned, already-started stream manager.
+
+    Replaces any prior registration. The caller owns the manager lifecycle
+    (``start``/``shutdown``); the registered producer only invokes
+    ``manager.snapshot()``.
+    """
+
+    global _REGISTERED_OPERATOR_LIVE_PRODUCER
+    _REGISTERED_OPERATOR_LIVE_PRODUCER = StreamManagerRuntimeSnapshotProducer(manager)
+
+
+def register_operator_live_runtime_producer(producer: RuntimeSnapshotProducer) -> None:
+    """Register a custom producer directly.
+
+    Mutually exclusive with ``register_operator_live_runtime_manager`` —
+    last write wins.
+    """
+
+    global _REGISTERED_OPERATOR_LIVE_PRODUCER
+    _REGISTERED_OPERATOR_LIVE_PRODUCER = producer
+
+
+def clear_operator_live_runtime_registration() -> None:
+    """Drop any registered manager/producer. Safe to call when empty."""
+
+    global _REGISTERED_OPERATOR_LIVE_PRODUCER
+    _REGISTERED_OPERATOR_LIVE_PRODUCER = None
+
+
+def get_registered_operator_live_runtime_producer() -> RuntimeSnapshotProducer | None:
+    """Return the currently registered producer, if any."""
+
+    return _REGISTERED_OPERATOR_LIVE_PRODUCER
+
+
 def build_operator_runtime_snapshot_producer_from_env(
     values: dict[str, str] | None = None,
+    *,
+    manager: object | None = None,
+    manager_factory: Callable[[], object] | None = None,
+    producer: RuntimeSnapshotProducer | None = None,
 ) -> RuntimeSnapshotProducer | None:
     """Build the app-owned producer without touching Schwab or secrets.
 
-    The real live manager is intentionally not constructed from environment
-    values here. Tests and explicit operator code can inject a producer that
-    already owns a stream manager/cache; absent that, live mode blocks as
-    unavailable instead of falling back to fixtures.
+    Resolution order when mode is ``OPERATOR_LIVE_RUNTIME``:
+
+    1. explicit ``producer=`` kwarg → returned as-is.
+    2. explicit ``manager=`` kwarg → wrapped via ``StreamManagerRuntimeSnapshotProducer``.
+    3. explicit ``manager_factory=`` → invoked exactly once, wrapped.
+    4. registered producer from the module-level registry → returned.
+    5. ``UnavailableRuntimeSnapshotProducer`` (preserves the safe default).
+
+    ``SAFE_NON_LIVE`` returns ``None`` regardless of kwargs; the kwargs do not
+    silently flip the mode. The real live manager is never constructed from
+    environment values here — operator code or tests must supply it.
     """
 
     if operator_runtime_mode_from_env(values) != OPERATOR_LIVE_RUNTIME:
         return None
+    if producer is not None:
+        return producer
+    if manager is not None:
+        return StreamManagerRuntimeSnapshotProducer(manager)
+    if manager_factory is not None:
+        return StreamManagerRuntimeSnapshotProducer(manager_factory())
+    registered = _REGISTERED_OPERATOR_LIVE_PRODUCER
+    if registered is not None:
+        return registered
     return UnavailableRuntimeSnapshotProducer()
 
 

@@ -21,6 +21,12 @@ from ntb_marimo_console.operator_live_runtime import (
     OPERATOR_LIVE_RUNTIME,
     SAFE_NON_LIVE,
     StreamManagerRuntimeSnapshotProducer,
+    UnavailableRuntimeSnapshotProducer,
+    build_operator_runtime_snapshot_producer_from_env,
+    clear_operator_live_runtime_registration,
+    get_registered_operator_live_runtime_producer,
+    register_operator_live_runtime_manager,
+    register_operator_live_runtime_producer,
     resolve_operator_runtime_snapshot,
 )
 from ntb_marimo_console.readiness_summary import (
@@ -356,6 +362,173 @@ class OperatorLiveRuntimeTests(unittest.TestCase):
         mgc = next(row for row in rows if row["contract"] == "MGC")
         self.assertEqual(mgc["contract_label"], "Micro Gold")
         self.assertNotEqual(mgc["contract_label"], "GC")
+
+
+class CountingFactory:
+    def __init__(self, manager: object) -> None:
+        self._manager = manager
+        self.call_count = 0
+
+    def __call__(self) -> object:
+        self.call_count += 1
+        return self._manager
+
+
+def _active_manager_snapshot() -> StreamManagerSnapshot:
+    return StreamManagerSnapshot(
+        state="active",
+        config=SchwabStreamManagerConfig(
+            provider="schwab",
+            explicit_live_opt_in=True,
+            contracts_requested=final_target_contracts(),
+        ),
+        cache=runtime_cache_snapshot(),
+        events=(),
+        blocking_reasons=(),
+        login_count=1,
+        subscription_count=1,
+    )
+
+
+class BuilderInjectionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        clear_operator_live_runtime_registration()
+        self.addCleanup(clear_operator_live_runtime_registration)
+
+    def test_builder_kwarg_manager_returns_stream_manager_producer_in_live_mode(self) -> None:
+        manager = FakeStartedManager(_active_manager_snapshot())
+        env = {"NTB_OPERATOR_RUNTIME_MODE": OPERATOR_LIVE_RUNTIME}
+
+        producer = build_operator_runtime_snapshot_producer_from_env(env, manager=manager)
+
+        self.assertIsInstance(producer, StreamManagerRuntimeSnapshotProducer)
+        self.assertIs(producer.manager, manager)
+        self.assertEqual(manager.start_count, 0)
+        self.assertEqual(manager.snapshot_count, 0)
+
+    def test_builder_kwarg_manager_factory_called_exactly_once(self) -> None:
+        manager = FakeStartedManager(_active_manager_snapshot())
+        factory = CountingFactory(manager)
+        env = {"NTB_OPERATOR_RUNTIME_MODE": OPERATOR_LIVE_RUNTIME}
+
+        producer = build_operator_runtime_snapshot_producer_from_env(env, manager_factory=factory)
+
+        self.assertEqual(factory.call_count, 1)
+        self.assertIsInstance(producer, StreamManagerRuntimeSnapshotProducer)
+        self.assertIs(producer.manager, manager)
+        self.assertEqual(manager.start_count, 0)
+
+    def test_builder_kwarg_producer_takes_precedence_over_manager_and_factory(self) -> None:
+        manager = FakeStartedManager(_active_manager_snapshot())
+        factory = CountingFactory(FakeStartedManager(_active_manager_snapshot()))
+        explicit = CountingProducer([runtime_cache_snapshot()])
+        env = {"NTB_OPERATOR_RUNTIME_MODE": OPERATOR_LIVE_RUNTIME}
+
+        producer = build_operator_runtime_snapshot_producer_from_env(
+            env,
+            producer=explicit,
+            manager=manager,
+            manager_factory=factory,
+        )
+
+        self.assertIs(producer, explicit)
+        self.assertEqual(factory.call_count, 0)
+        self.assertEqual(manager.snapshot_count, 0)
+
+    def test_builder_kwargs_ignored_in_safe_non_live_mode(self) -> None:
+        manager = FakeStartedManager(_active_manager_snapshot())
+        factory = CountingFactory(FakeStartedManager(_active_manager_snapshot()))
+
+        producer = build_operator_runtime_snapshot_producer_from_env(
+            {},
+            manager=manager,
+            manager_factory=factory,
+        )
+
+        self.assertIsNone(producer)
+        self.assertEqual(factory.call_count, 0)
+        self.assertEqual(manager.snapshot_count, 0)
+        self.assertEqual(manager.start_count, 0)
+
+    def test_registered_manager_is_consulted_when_no_kwargs(self) -> None:
+        manager = FakeStartedManager(_active_manager_snapshot())
+        register_operator_live_runtime_manager(manager)
+        env = {"NTB_OPERATOR_RUNTIME_MODE": OPERATOR_LIVE_RUNTIME}
+
+        producer = build_operator_runtime_snapshot_producer_from_env(env)
+
+        self.assertIsInstance(producer, StreamManagerRuntimeSnapshotProducer)
+        self.assertIs(producer.manager, manager)
+        self.assertEqual(manager.start_count, 0)
+
+    def test_registered_producer_overrides_default_unavailable(self) -> None:
+        explicit = CountingProducer([runtime_cache_snapshot()])
+        register_operator_live_runtime_producer(explicit)
+        env = {"NTB_OPERATOR_RUNTIME_MODE": OPERATOR_LIVE_RUNTIME}
+
+        producer = build_operator_runtime_snapshot_producer_from_env(env)
+
+        self.assertIs(producer, explicit)
+        self.assertIs(get_registered_operator_live_runtime_producer(), explicit)
+
+    def test_kwarg_overrides_registry(self) -> None:
+        registered_manager = FakeStartedManager(_active_manager_snapshot())
+        register_operator_live_runtime_manager(registered_manager)
+        kwarg_manager = FakeStartedManager(_active_manager_snapshot())
+        env = {"NTB_OPERATOR_RUNTIME_MODE": OPERATOR_LIVE_RUNTIME}
+
+        producer = build_operator_runtime_snapshot_producer_from_env(env, manager=kwarg_manager)
+
+        self.assertIsInstance(producer, StreamManagerRuntimeSnapshotProducer)
+        self.assertIs(producer.manager, kwarg_manager)
+        self.assertIsNot(producer.manager, registered_manager)
+        self.assertEqual(registered_manager.snapshot_count, 0)
+
+    def test_clear_operator_live_runtime_registration_restores_unavailable_default(self) -> None:
+        register_operator_live_runtime_manager(FakeStartedManager(_active_manager_snapshot()))
+        clear_operator_live_runtime_registration()
+        env = {"NTB_OPERATOR_RUNTIME_MODE": OPERATOR_LIVE_RUNTIME}
+
+        producer = build_operator_runtime_snapshot_producer_from_env(env)
+
+        self.assertIsInstance(producer, UnavailableRuntimeSnapshotProducer)
+        self.assertIsNone(get_registered_operator_live_runtime_producer())
+
+        producer_default = build_operator_runtime_snapshot_producer_from_env({})
+        self.assertIsNone(producer_default)
+
+    def test_refresh_path_with_registered_manager_does_not_call_start_login_subscribe(self) -> None:
+        manager = FakeStartedManager(_active_manager_snapshot())
+        register_operator_live_runtime_manager(manager)
+
+        with patch.dict(
+            os.environ,
+            {
+                "NTB_CONSOLE_PROFILE": "preserved_es_phase1",
+                "NTB_OPERATOR_RUNTIME_MODE": OPERATOR_LIVE_RUNTIME,
+            },
+            clear=True,
+        ):
+            producer = build_operator_runtime_snapshot_producer_from_env()
+            lifecycle = load_session_lifecycle_from_env(
+                runtime_snapshot_producer=producer,
+                operator_runtime_mode=OPERATOR_LIVE_RUNTIME,
+            )
+            initial_snapshot_count = manager.snapshot_count
+            for _ in range(3):
+                lifecycle = refresh_runtime_snapshot(lifecycle)
+
+        self.assertEqual(manager.start_count, 0)
+        self.assertEqual(manager.snapshot_count - initial_snapshot_count, 3)
+        self.assertEqual(
+            lifecycle.shell["runtime"]["operator_live_runtime_status"],
+            OPERATOR_LIVE_RUNTIME,
+        )
+
+    def test_final_target_contracts_literal_unchanged(self) -> None:
+        self.assertEqual(final_target_contracts(), ("ES", "NQ", "CL", "6E", "MGC"))
+        self.assertNotIn("ZN", final_target_contracts())
+        self.assertNotIn("GC", final_target_contracts())
 
 
 if __name__ == "__main__":
