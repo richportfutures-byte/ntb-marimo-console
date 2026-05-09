@@ -26,10 +26,12 @@ R19 distinguishes four evidence tiers. Fixture and harness evidence must never b
 
 - The R18 explicit live mode (`scripts/run_manual_live_rehearsal.py --live`) prints the manual operator checklist for a Schwab market-data rehearsal. It exits as manual-required and is not part of default tests or the canonical non-live harness.
 - The single-quote Schwab manual live harness documented in `docs/schwab_manual_live_harness_runbook.md` remains the concrete opt-in market-data smoke path. It is operator-run, requires explicit `--live`, and does not run during default verification.
+- The R20 five-contract proof-capture foundation (`scripts/capture_five_contract_live_proof.py`) creates a sanitized JSON artifact template for operator review. Fixture mode is the default and cannot satisfy the real-live proof gate. Live artifact creation requires explicit `--live` and explicit operator attestations; it does not run during default verification.
 
 ### Real live Schwab evidence (pending, manual-only)
 
 - No sanitized real five-contract Schwab live session artifact is currently committed to the repository. Real five-contract live proof for `ES`, `NQ`, `CL`, `6E`, and `MGC` is therefore classified as pending operator-run validation. R19 does not claim that real live proof has passed.
+- The current five-contract proof-capture path is documented in `docs/five_contract_live_proof_capture.md`. Until a reviewed live artifact exists, that path is a manual capture foundation rather than proof completion.
 
 ### Deferred or absent evidence (out of scope for this release candidate)
 
@@ -72,6 +74,7 @@ The following live-data foundations are present and exercised by the non-live ha
 - No repeated login per Marimo refresh: verified by the R18 fixture rehearsal `repeated_refresh_does_not_relogin` check.
 - No fixture fallback after live failure: verified by the R18 fixture rehearsal `simulated_live_failure_no_fixture_fallback` check; after a simulated live denial there is no fallback to fixture data.
 - Live behavior is explicitly opt-in: the manual live rehearsal requires `--live` and exits as manual-required; the Schwab market-data harness requires explicit `--live`; default launch is non-live.
+- Five-contract proof capture is explicitly opt-in for real-live artifacts: fixture mode is default, and `scripts/capture_five_contract_live_proof.py --live` requires operator attestations before a live artifact can be written.
 - 15-second minimum refresh floor: enforced as `MIN_STREAM_REFRESH_FLOOR_SECONDS = 15.0` in `market_data/stream_manager.py`. The minimum refresh floor seconds is 15.
 
 ## Decision-Authority Audit
