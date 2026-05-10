@@ -102,6 +102,9 @@ class StartupFlowTests(unittest.TestCase):
         self.assertEqual(replay["replay_reference_source"], "fixture_backed")
         self.assertIsNotNone(replay["replay_reference_run_id"])
         self.assertTrue(replay["replay_reference_consistent"])
+        self.assertTrue(replay["engine_narrative_available"])
+        self.assertEqual(replay["narrative_quality"]["status"], "PASS")
+        self.assertIn("decision_review_narrative", replay["source_fields"])
 
     def test_preserved_profile_query_action_completion_reaches_decision_and_audit_ready(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):

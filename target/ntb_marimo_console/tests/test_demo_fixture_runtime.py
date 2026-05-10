@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import shutil
+import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +13,7 @@ from ntb_marimo_console.adapters.schwab_futures_market_data import (
     SchwabFuturesQuoteSnapshot,
 )
 from ntb_marimo_console.demo_fixture_runtime import (
+    FixturePipelineBackend,
     build_phase1_dependencies,
     default_fixtures_root,
 )
@@ -79,6 +83,78 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
     def test_fixture_demo_path_does_not_require_model_adapter(self) -> None:
         shell = build_es_app_shell_for_mode(mode="fixture_demo", model_adapter=None)
         self.assertEqual(shell["surfaces"]["run_history"]["source"], "fixture_backed")
+
+    def test_fixture_sidecar_narrative_surfaces_through_replay_quality_path(self) -> None:
+        shell = build_es_app_shell_for_mode(mode="fixture_demo")
+        decision = shell["surfaces"]["decision_review"]
+        replay = decision["narrative_audit_replay"]
+
+        self.assertTrue(decision["narrative_available"])
+        self.assertTrue(decision["engine_reasoning"]["available"])
+        self.assertEqual(decision["engine_reasoning"]["market_regime"], "choppy")
+        self.assertEqual(decision["engine_reasoning"]["outcome"], "NO_TRADE")
+        self.assertIn("Synthetic fixture/demo ES narrative", decision["engine_reasoning"]["structural_notes"])
+        self.assertFalse(decision["trade_thesis"]["available"])
+        self.assertEqual(replay["source"], "fixture")
+        self.assertEqual(replay["replay_reference_status"], "available")
+        self.assertEqual(replay["replay_reference_source"], "fixture_backed")
+        self.assertTrue(replay["engine_narrative_available"])
+        self.assertEqual(replay["narrative_quality"]["status"], "PASS")
+        self.assertTrue(replay["narrative_quality"]["source_reference_present"])
+        self.assertTrue(replay["narrative_quality"]["replay_reference_present"])
+
+    def test_missing_fixture_sidecar_remains_explicit_without_crashing(self) -> None:
+        source_root = default_fixtures_root()
+        profile = get_runtime_profile("fixture_es_demo")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture_root = Path(temp_dir) / "phase1"
+            shutil.copytree(source_root, fixture_root)
+            sidecar = fixture_root / "pipeline" / "ES" / "pipeline_result.no_trade.narrative.json"
+            sidecar.unlink()
+
+            shell = build_es_app_shell_for_mode(mode="fixture_demo", fixtures_root=fixture_root)
+            backend = FixturePipelineBackend(fixture_root, profile=profile)
+
+            decision = shell["surfaces"]["decision_review"]
+            replay = decision["narrative_audit_replay"]
+
+            self.assertFalse(decision["narrative_available"])
+            self.assertFalse(decision["engine_reasoning"]["available"])
+            self.assertIn("did not surface narrative", decision["narrative_unavailable_message"].lower())
+            self.assertFalse(replay["engine_narrative_available"])
+            self.assertEqual(replay["narrative_quality"]["status"], "WARN")
+            self.assertTrue(replay["narrative_quality"]["missing_narrative_detected"])
+            self.assertIsNone(backend.narrate_pipeline_result({})["contract_analysis"])
+
+    def test_fixture_sidecar_content_is_synthetic_safe_and_contract_scoped(self) -> None:
+        fixture_root = default_fixtures_root()
+        sidecars = sorted((fixture_root / "pipeline").glob("*/*.narrative.json"))
+        sidecar_paths = {path.relative_to(fixture_root).as_posix() for path in sidecars}
+
+        self.assertEqual(sidecar_paths, {"pipeline/ES/pipeline_result.no_trade.narrative.json"})
+
+        payload = json.loads(sidecars[0].read_text(encoding="utf-8"))
+        rendered = json.dumps(payload, sort_keys=True).lower()
+
+        self.assertEqual(payload["contract_analysis"]["contract"], "ES")
+        self.assertIn("synthetic fixture/demo", rendered)
+        for forbidden in (
+            "account",
+            "order",
+            "fill",
+            "p&l",
+            "credential",
+            "token",
+            "http://",
+            "https://",
+            "wss://",
+            "customer",
+            "correl",
+            "authorization",
+            "zn",
+            '"gc"',
+        ):
+            self.assertNotIn(forbidden, rendered)
 
     def test_fixture_dependency_construction_includes_noop_market_data_service(self) -> None:
         dependencies = build_phase1_dependencies(default_fixtures_root())

@@ -1,0 +1,27 @@
+{
+  "contract_analysis": {
+    "contract": "ES",
+    "market_regime": "choppy",
+    "directional_bias": "neutral",
+    "evidence_score": 3,
+    "confidence_band": "LOW",
+    "structural_notes": "Synthetic fixture/demo ES narrative: price is rotating near VWAP with mixed breadth and no clean continuation anchor. This sidecar is read-only review evidence for the fixture path; execution remains manual.",
+    "outcome": "NO_TRADE",
+    "conflicting_signals": [
+      "Synthetic fixture breadth is mixed while price remains near VWAP."
+    ],
+    "assumptions": [
+      "Synthetic fixture context is non-live and demo-scoped."
+    ],
+    "key_levels": {
+      "pivot_level": 5602.0,
+      "support_levels": [
+        5598.0
+      ],
+      "resistance_levels": [
+        5606.0
+      ]
+    }
+  },
+  "proposed_setup": null
+}

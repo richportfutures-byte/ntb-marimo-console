@@ -46,21 +46,16 @@ class MarimoPhase1RendererTests(unittest.TestCase):
         self.assertNotIn("stage_e", decision_panel)
         self.assertNotIn("audit_log", decision_panel)
 
-    def test_decision_review_marks_narrative_unavailable_under_fixture_envelope(self) -> None:
-        """Fixture pipeline_result.*.json files are envelope-only.
-
-        The Decision Review surface must explicitly mark each narrative
-        section as unavailable in this run, never as empty success. A future
-        sidecar pipeline_result.<variant>.narrative.json would surface
-        narrative; absent that, the renderer is honest about what is missing.
-        """
+    def test_decision_review_surfaces_fixture_sidecar_narrative_when_present(self) -> None:
         shell = build_es_app_shell_for_mode(mode="fixture_demo")
         decision_panel = shell["surfaces"]["decision_review"]
 
         self.assertTrue(decision_panel["has_result"])
-        self.assertFalse(decision_panel["narrative_available"])
-        self.assertIsNotNone(decision_panel["narrative_unavailable_message"])
-        self.assertFalse(decision_panel["engine_reasoning"]["available"])
+        self.assertTrue(decision_panel["narrative_available"])
+        self.assertIsNone(decision_panel["narrative_unavailable_message"])
+        self.assertTrue(decision_panel["engine_reasoning"]["available"])
+        self.assertIn("Synthetic fixture/demo ES narrative", decision_panel["engine_reasoning"]["structural_notes"])
+        self.assertEqual(decision_panel["narrative_audit_replay"]["narrative_quality"]["status"], "PASS")
         self.assertFalse(decision_panel["trade_thesis"]["available"])
         self.assertFalse(decision_panel["risk_authorization_detail"]["available"])
         self.assertFalse(decision_panel["invalidation"]["available"])
