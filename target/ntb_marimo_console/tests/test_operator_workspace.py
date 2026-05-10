@@ -340,6 +340,40 @@ def test_evidence_and_replay_placeholder_has_explicit_unavailable_reasons() -> N
     assert evidence["replay_statement"] == "No synthetic replay is labeled as real evidence."
 
 
+def test_workspace_evidence_links_supplied_audit_replay_record_without_synthetic_replay() -> None:
+    evidence = ready_workspace(
+        "ES",
+        last_pipeline_result={
+            "status": "completed",
+            "contract": "ES",
+            "termination_stage": "contract_market_read",
+            "final_decision": "NO_TRADE",
+            "sufficiency_gate_status": "READY",
+            "contract_analysis_outcome": "NO_TRADE",
+            "proposed_setup_outcome": None,
+        },
+        audit_replay_record={
+            "source": "stage_e_jsonl",
+            "stage_e_live_backend": True,
+            "replay_available": True,
+            "last_run_id": "run-es-1",
+            "last_final_decision": "NO_TRADE",
+        },
+    ).to_dict()["evidence_and_replay"]
+    replay = evidence["decision_review_replay"]
+
+    assert evidence["audit_replay_status"] == "available"
+    assert replay["replay_reference_available"] is True
+    assert replay["replay_reference_status"] == "available"
+    assert replay["replay_reference_source"] == "stage_e_jsonl"
+    assert replay["replay_reference_run_id"] == "run-es-1"
+    assert replay["replay_reference_final_decision"] == "NO_TRADE"
+    assert replay["replay_reference_stage_e_live_backend"] is True
+    assert replay["replay_reference_consistent"] is True
+    assert "audit_replay_record" in replay["source_fields"]
+    assert evidence["replay_statement"] == "No synthetic replay is labeled as real evidence."
+
+
 def test_no_fixture_fallback_after_live_failure_behavior_is_weakened() -> None:
     gate = query_gate(
         "ES",
@@ -364,6 +398,7 @@ def ready_workspace(
     last_pipeline_result: dict[str, object] | None = None,
     provider_status: str | None = None,
     stream_status: str | None = None,
+    audit_replay_record: dict[str, object] | None = None,
 ) -> object:
     selected_trigger = trigger_state or trigger_result(contract, TriggerState.QUERY_READY)
     selected_gate = gate or query_gate(contract, trigger_state=selected_trigger)
@@ -384,6 +419,7 @@ def ready_workspace(
             event_lockout_status="inactive",
             evaluated_at="2026-05-06T14:00:00+00:00",
             last_pipeline_result=last_pipeline_result,
+            audit_replay_record=audit_replay_record,
         )
     )
 

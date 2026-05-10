@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
+from ntb_marimo_console.adapters.contracts import AuditReplayRecord
 from ntb_marimo_console.contract_universe import contract_policy_label, is_final_target_contract, normalize_contract_symbol
 from ntb_marimo_console.decision_review_audit import build_decision_review_audit_event
 from ntb_marimo_console.decision_review_replay import build_decision_review_replay_vm
@@ -48,6 +49,7 @@ class OperatorWorkspaceRequest:
     last_pipeline_result: Mapping[str, Any] | None = None
     run_history_status: str | None = None
     audit_replay_status: str | None = None
+    audit_replay_record: AuditReplayRecord | Mapping[str, Any] | None = None
     operator_notes_status: str | None = None
     trigger_transition_log_status: str | None = None
     evidence_unavailable_reasons: tuple[str, ...] = ()
@@ -247,10 +249,13 @@ def _build_evidence_and_replay(
         profile_id=request.profile_id,
         created_at=request.evaluated_at,
     ).to_dict()
-    decision_review_replay = build_decision_review_replay_vm(decision_review_audit_event).to_dict()
+    decision_review_replay = build_decision_review_replay_vm(
+        decision_review_audit_event,
+        audit_replay_record=request.audit_replay_record,
+    ).to_dict()
     return {
         "run_history_status": _safe_status(request.run_history_status or "unavailable"),
-        "audit_replay_status": _safe_status(request.audit_replay_status or "unavailable"),
+        "audit_replay_status": _safe_status(_audit_replay_status(request)),
         "operator_notes_status": _safe_status(request.operator_notes_status or "unavailable"),
         "trigger_transition_log_status": _safe_status(request.trigger_transition_log_status or "unavailable"),
         "unavailable_reasons": list(reasons),
@@ -288,6 +293,15 @@ def _decision_review_payload_from_last_pipeline_result(
         "narrative_available": False,
         "narrative_unavailable_message": "Decision Review engine narrative is unavailable in this workspace snapshot.",
     }
+
+
+def _audit_replay_status(request: OperatorWorkspaceRequest) -> str:
+    if request.audit_replay_status:
+        return request.audit_replay_status
+    record = request.audit_replay_record
+    if isinstance(record, Mapping):
+        return "available" if record.get("replay_available") is True else "unavailable"
+    return "unavailable"
 
 
 def _brief_sections(
