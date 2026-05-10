@@ -1,0 +1,28 @@
+{
+  "contract_analysis": {
+    "contract": "NQ",
+    "market_regime": "trend_with_pullbacks",
+    "directional_bias": "neutral",
+    "evidence_score": 4,
+    "confidence_band": "LOW",
+    "structural_notes": "Synthetic fixture/demo NQ market read: NQ leans on the ES context, where ES posture in this fixture is constructive but rotating near VWAP without a clean continuation anchor; NQ price is above its session VWAP with above-average pace in the recorded packet. The preserved fixture result remains NO_TRADE because this sidecar is read-only replay evidence; it does not infer DOM, sweep, footprint, or aggressive flow state. Source attribution is fixture-scoped, execution remains manual, and the preserved engine remains the decision authority. NO_TRADE is final and no alternate trade is suggested.",
+    "outcome": "NO_TRADE",
+    "conflicting_signals": [
+      "Synthetic fixture NQ leans on ES-relative context that is constructive, but the preserved result remains NO_TRADE for replay review."
+    ],
+    "assumptions": [
+      "Synthetic fixture context is non-live and demo-scoped.",
+      "NQ takes ES-relative context only; unavailable DOM, sweep, footprint, and aggressive flow evidence is not inferred."
+    ],
+    "key_levels": {
+      "pivot_level": 18094.5,
+      "support_levels": [
+        18055.5
+      ],
+      "resistance_levels": [
+        18142.0
+      ]
+    }
+  },
+  "proposed_setup": null
+}

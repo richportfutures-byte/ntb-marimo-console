@@ -1,0 +1,30 @@
+{
+  "contract_analysis": {
+    "contract": "6E",
+    "market_regime": "range_bound",
+    "directional_bias": "neutral",
+    "evidence_score": 3,
+    "confidence_band": "LOW",
+    "structural_notes": "Synthetic fixture/demo 6E market read: a directional 6E read requires numeric DXY evidence and a session-sequence reference in the recorded packet, neither of which is supplied as numeric input by this fixture. Textual dollar commentary is not numeric DXY evidence and is not substitutable for it. The preserved fixture result remains NO_TRADE because this sidecar is read-only replay evidence; it does not infer DOM, sweep, footprint, or aggressive flow state. Source attribution is fixture-scoped, execution remains manual, and the preserved engine remains the decision authority. NO_TRADE is final and no alternate trade is suggested.",
+    "outcome": "NO_TRADE",
+    "conflicting_signals": [
+      "Synthetic fixture 6E lacks numeric DXY input and a session-sequence reference, so directional bias is unresolved and the preserved result remains NO_TRADE."
+    ],
+    "assumptions": [
+      "Synthetic fixture context is non-live and demo-scoped.",
+      "Textual dollar commentary is not numeric DXY evidence and is not substituted for it.",
+      "Session-sequence input is required for a directional 6E read and is not supplied by this fixture.",
+      "Unavailable DOM, sweep, footprint, and aggressive flow evidence is not inferred."
+    ],
+    "key_levels": {
+      "pivot_level": 1.0895,
+      "support_levels": [
+        1.0864
+      ],
+      "resistance_levels": [
+        1.0921
+      ]
+    }
+  },
+  "proposed_setup": null
+}

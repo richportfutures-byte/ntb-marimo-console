@@ -174,21 +174,34 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
         self.assertEqual(
             sidecar_paths,
             {
+                "pipeline/6E/pipeline_result.no_trade.narrative.json",
                 "pipeline/CL/pipeline_result.no_trade.narrative.json",
                 "pipeline/ES/pipeline_result.no_trade.narrative.json",
+                "pipeline/MGC/pipeline_result.no_trade.narrative.json",
+                "pipeline/NQ/pipeline_result.no_trade.narrative.json",
             },
         )
 
         payloads = [json.loads(sidecar.read_text(encoding="utf-8")) for sidecar in sidecars]
         contracts = {payload["contract_analysis"]["contract"] for payload in payloads}
-        self.assertEqual(contracts, {"CL", "ES"})
+        self.assertEqual(contracts, {"6E", "CL", "ES", "MGC", "NQ"})
 
         for payload in payloads:
             rendered = json.dumps(payload, sort_keys=True).lower()
+            contract = payload["contract_analysis"]["contract"]
+            self.assertEqual(payload["contract_analysis"]["outcome"], "NO_TRADE")
+            self.assertIsNone(payload["proposed_setup"])
             self.assertIn("synthetic fixture/demo", rendered)
             self.assertIn("execution remains manual", rendered)
-            if payload["contract_analysis"]["contract"] == "CL":
+            if contract != "ES":
                 self.assertIn("preserved engine remains the decision authority", rendered)
+            if contract == "6E":
+                self.assertIn("numeric dxy", rendered)
+                self.assertIn("session-sequence", rendered)
+            if contract == "MGC":
+                self.assertIn("numeric dxy", rendered)
+                self.assertIn("yield-context", rendered)
+                self.assertIn("fear-catalyst", rendered)
             for forbidden in (
                 "account",
                 "order",

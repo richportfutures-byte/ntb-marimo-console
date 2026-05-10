@@ -1,0 +1,9 @@
+{
+  "contract": "6E",
+  "termination_stage": "contract_market_read",
+  "final_decision": "NO_TRADE",
+  "sufficiency_gate_status": "READY",
+  "contract_analysis_outcome": "NO_TRADE",
+  "proposed_setup_outcome": null,
+  "risk_authorization_decision": null
+}

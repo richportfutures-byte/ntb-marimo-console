@@ -1,0 +1,29 @@
+{
+  "contract_analysis": {
+    "contract": "MGC",
+    "market_regime": "range_bound",
+    "directional_bias": "neutral",
+    "evidence_score": 3,
+    "confidence_band": "LOW",
+    "structural_notes": "Synthetic fixture/demo MGC market read: a directional MGC read requires numeric DXY evidence, a yield-context reference, and a fear-catalyst reference in the recorded packet, none of which is supplied as numeric input by this fixture. The preserved fixture result remains NO_TRADE because this sidecar is read-only replay evidence; it does not infer DOM, sweep, footprint, or aggressive flow state. Source attribution is fixture-scoped, execution remains manual, and the preserved engine remains the decision authority. NO_TRADE is final and no alternate trade is suggested. The contract identified by this sidecar is MGC.",
+    "outcome": "NO_TRADE",
+    "conflicting_signals": [
+      "Synthetic fixture MGC lacks numeric DXY input, yield-context reference, and fear-catalyst reference, so directional bias is unresolved and the preserved result remains NO_TRADE."
+    ],
+    "assumptions": [
+      "Synthetic fixture context is non-live and demo-scoped.",
+      "Numeric DXY evidence, yield-context reference, and fear-catalyst reference are required inputs for a directional MGC read and are not supplied by this fixture.",
+      "Unavailable DOM, sweep, footprint, and aggressive flow evidence is not inferred."
+    ],
+    "key_levels": {
+      "pivot_level": 2048.7,
+      "support_levels": [
+        2039.5
+      ],
+      "resistance_levels": [
+        2058.1
+      ]
+    }
+  },
+  "proposed_setup": null
+}
