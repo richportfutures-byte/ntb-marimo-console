@@ -55,6 +55,9 @@ def test_replay_vm_builds_from_complete_audit_event_and_is_json_serializable() -
     assert decoded["replay_reference_consistent"] is True
     assert decoded["engine_reasoning_summary"]["market_regime"] == "choppy"
     assert "deterministic trigger state recorded" in decoded["transition_summary"]
+    assert decoded["narrative_quality"]["status"] == "PASS"
+    assert decoded["narrative_quality"]["manual_only_language_present"] is True
+    assert decoded["narrative_quality"]["preserved_engine_authority_language_present"] is True
 
 
 def test_replay_vm_builds_from_partial_event_with_explicit_unavailable_fields() -> None:
@@ -73,6 +76,8 @@ def test_replay_vm_builds_from_partial_event_with_explicit_unavailable_fields() 
     assert "unavailable" in str(replay["missing_data_explanation"]).lower()
     assert replay["manual_only_execution"] is True
     assert replay["preserved_engine_authority"] is True
+    assert replay["narrative_quality"]["status"] == "WARN"
+    assert replay["narrative_quality"]["missing_narrative_detected"] is True
 
 
 def test_replay_vm_absent_event_renders_unavailable_without_inference() -> None:
@@ -88,6 +93,8 @@ def test_replay_vm_absent_event_renders_unavailable_without_inference() -> None:
     assert replay["replay_reference_status"] == "unavailable"
     assert replay["replay_reference_source"] == "unknown"
     assert "No trigger readiness is inferred" in str(replay["readiness_explanation"])
+    assert replay["narrative_quality"]["status"] == "FAIL"
+    assert replay["narrative_quality"]["missing_narrative_detected"] is True
 
 
 def test_replay_vm_marks_missing_replay_source_reference_unavailable() -> None:
@@ -98,6 +105,8 @@ def test_replay_vm_marks_missing_replay_source_reference_unavailable() -> None:
     assert replay["replay_reference_source"] == "unknown"
     assert replay["replay_reference_run_id"] is None
     assert "unavailable" in str(replay["replay_reference_message"]).lower()
+    assert replay["narrative_quality"]["status"] == "WARN"
+    assert replay["narrative_quality"]["replay_reference_present"] is False
 
 
 def test_replay_vm_blocks_replay_source_reference_without_run_id() -> None:

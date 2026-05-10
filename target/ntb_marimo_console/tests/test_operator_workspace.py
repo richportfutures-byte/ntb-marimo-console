@@ -335,6 +335,8 @@ def test_evidence_and_replay_placeholder_has_explicit_unavailable_reasons() -> N
     assert evidence["decision_review_replay"]["trigger_transition_narrative_available"] is True
     assert evidence["decision_review_replay"]["replay_reference_status"] == "unavailable"
     assert "unavailable" in evidence["decision_review_replay"]["replay_reference_message"].lower()
+    assert evidence["decision_review_replay"]["narrative_quality"]["status"] == "WARN"
+    assert evidence["decision_review_replay"]["narrative_quality"]["replay_reference_present"] is False
     assert evidence["replay_statement"] == "No synthetic replay is labeled as real evidence."
 
 

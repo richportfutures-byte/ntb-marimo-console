@@ -964,6 +964,29 @@ def _render_decision_review_replay(replay: object) -> list[str]:
             f"- Replay Reference Consistent: `{_as_str(replay.get('replay_reference_consistent'))}`",
             f"- Replay Reference Stage E Live Backend: `{_as_str(replay.get('replay_reference_stage_e_live_backend'), default=False)}`",
             f"- Replay Reference Message: {_as_str(replay.get('replay_reference_message'), default='<unavailable>')}",
+        ]
+    )
+
+    quality = replay.get("narrative_quality")
+    if isinstance(quality, Mapping):
+        lines.append(f"- Narrative Quality Status: `{_as_str(quality.get('status'), default='WARN')}`")
+        blockers = quality.get("blocking_reasons")
+        if isinstance(blockers, list) and blockers:
+            lines.append("- Narrative Quality Blocking Reasons:")
+            for blocker in blockers:
+                lines.append(f"    - `{_as_str(blocker)}`")
+        warnings = quality.get("warnings")
+        if isinstance(warnings, list) and warnings:
+            lines.append("- Narrative Quality Warnings:")
+            for warning in warnings:
+                lines.append(f"    - `{_as_str(warning)}`")
+    else:
+        lines.append("- Narrative Quality Status: `WARN`")
+        lines.append("- Narrative Quality Warnings:")
+        lines.append("    - `quality_validation_unavailable`")
+
+    lines.extend(
+        [
             f"- Transition Summary: {_as_str(replay.get('transition_summary'), default='<unavailable>')}",
             f"- Readiness Explanation: {_as_str(replay.get('readiness_explanation'), default='<unavailable>')}",
             f"- Blocking Explanation: {_as_str(replay.get('blocking_explanation'), default='<none>')}",

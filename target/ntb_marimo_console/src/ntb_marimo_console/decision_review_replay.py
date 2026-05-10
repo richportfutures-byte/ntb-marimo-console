@@ -7,6 +7,7 @@ from typing import Any, Final
 
 from ntb_marimo_console.adapters.contracts import AuditReplayRecord
 from ntb_marimo_console.decision_review_audit import DecisionReviewAuditEvent
+from ntb_marimo_console.decision_review_quality import validate_decision_review_narrative_quality
 from ntb_marimo_console.market_data.stream_events import redact_sensitive_text
 
 
@@ -85,7 +86,7 @@ class DecisionReviewReplayVM:
     schema_version: int = DECISION_REVIEW_REPLAY_VM_SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "schema": self.schema,
             "schema_version": self.schema_version,
             "available": self.available,
@@ -128,6 +129,8 @@ class DecisionReviewReplayVM:
             "replay_reference_message": self.replay_reference_message,
             "source_fields": list(self.source_fields),
         }
+        payload["narrative_quality"] = validate_decision_review_narrative_quality(payload).to_dict()
+        return payload
 
 
 def build_decision_review_replay_vm(
