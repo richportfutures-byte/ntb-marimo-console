@@ -11,6 +11,7 @@ from ntb_marimo_console.evidence_replay import (
     ALLOWED_EVIDENCE_EVENT_TYPES,
     ALLOWED_EVIDENCE_SOURCES,
     EVIDENCE_EVENT_SCHEMA,
+    EVIDENCE_REPLAY_SCHEMA,
     REQUIRED_EVIDENCE_EVENT_FIELDS,
     build_replay_summary,
     create_evidence_event,
@@ -19,6 +20,8 @@ from ntb_marimo_console.evidence_replay import (
     serialize_evidence_event,
     serialize_evidence_events_jsonl,
 )
+from ntb_marimo_console.trigger_state import TriggerState, TriggerStateResult
+from ntb_marimo_console.trigger_transition_evidence import build_trigger_transition_evidence_events
 
 
 SENSITIVE_VALUES = (
@@ -191,6 +194,186 @@ def test_trigger_transition_replay_is_deterministic() -> None:
         "ARMED",
         "QUERY_READY",
     ]
+
+
+@pytest.mark.parametrize(
+    ("previous_state", "current_state", "event_type"),
+    (
+        (TriggerState.DORMANT, TriggerState.APPROACHING, "trigger_approaching"),
+        (TriggerState.APPROACHING, TriggerState.TOUCHED, "trigger_touched"),
+        (TriggerState.TOUCHED, TriggerState.ARMED, "trigger_armed"),
+        (TriggerState.ARMED, TriggerState.QUERY_READY, "trigger_query_ready"),
+        (TriggerState.BLOCKED, TriggerState.INVALIDATED, "trigger_invalidated"),
+    ),
+)
+def test_trigger_transition_evidence_builder_emits_material_trigger_events(
+    previous_state: TriggerState,
+    current_state: TriggerState,
+    event_type: str,
+) -> None:
+    events = build_trigger_transition_evidence_events(
+        trigger_result("ES", previous_state),
+        trigger_result("ES", current_state),
+        timestamp="2026-05-06T14:00:05+00:00",
+        profile_id="preserved_es_phase1",
+        source="fixture",
+    )
+
+    assert len(events) == 1
+    event = events[0]
+    assert event.valid is True
+    assert event.event_type == event_type
+    assert event.contract == "ES"
+    assert event.profile_id == "preserved_es_phase1"
+    assert event.setup_id == "es_setup_1"
+    assert event.trigger_id == "es_trigger_1"
+    assert event.timestamp == "2026-05-06T14:00:05+00:00"
+    assert event.source == "fixture"
+    assert event.data_quality["trigger_state"] == current_state.value
+
+
+def test_trigger_transition_evidence_builder_is_deterministic_for_identical_inputs() -> None:
+    kwargs = {
+        "timestamp": "2026-05-06T14:00:05+00:00",
+        "profile_id": "preserved_es_phase1",
+        "source": "fixture",
+    }
+    first = build_trigger_transition_evidence_events(
+        trigger_result("ES", TriggerState.APPROACHING),
+        trigger_result("ES", TriggerState.TOUCHED),
+        **kwargs,
+    )
+    second = build_trigger_transition_evidence_events(
+        trigger_result("ES", TriggerState.APPROACHING),
+        trigger_result("ES", TriggerState.TOUCHED),
+        **kwargs,
+    )
+
+    assert [event.to_dict() for event in first] == [event.to_dict() for event in second]
+
+
+def test_trigger_transition_evidence_builder_emits_no_event_for_identical_state() -> None:
+    events = build_trigger_transition_evidence_events(
+        trigger_result("ES", TriggerState.TOUCHED),
+        trigger_result("ES", TriggerState.TOUCHED),
+        timestamp="2026-05-06T14:00:05+00:00",
+        profile_id="preserved_es_phase1",
+        source="fixture",
+    )
+
+    assert events == ()
+
+
+def test_trigger_transition_evidence_builder_emits_no_event_without_prior_observation() -> None:
+    events = build_trigger_transition_evidence_events(
+        None,
+        trigger_result("ES", TriggerState.QUERY_READY),
+        timestamp="2026-05-06T14:00:05+00:00",
+        profile_id="preserved_es_phase1",
+        source="fixture",
+    )
+
+    assert events == ()
+
+
+@pytest.mark.parametrize(
+    "current_state",
+    (
+        TriggerState.BLOCKED,
+        TriggerState.LOCKOUT,
+        TriggerState.STALE,
+        TriggerState.ERROR,
+        TriggerState.UNAVAILABLE,
+        TriggerState.DORMANT,
+    ),
+)
+def test_trigger_transition_evidence_builder_emits_no_event_for_unsupported_current_states(
+    current_state: TriggerState,
+) -> None:
+    events = build_trigger_transition_evidence_events(
+        trigger_result("ES", TriggerState.APPROACHING),
+        trigger_result("ES", current_state),
+        timestamp="2026-05-06T14:00:05+00:00",
+        profile_id="preserved_es_phase1",
+        source="fixture",
+    )
+
+    assert events == ()
+
+
+def test_trigger_transition_evidence_builder_emits_no_event_for_cross_contract_mismatch() -> None:
+    events = build_trigger_transition_evidence_events(
+        trigger_result("ES", TriggerState.APPROACHING),
+        trigger_result("NQ", TriggerState.TOUCHED),
+        timestamp="2026-05-06T14:00:05+00:00",
+        profile_id="preserved_nq_phase1",
+        source="fixture",
+    )
+
+    assert events == ()
+
+
+def test_trigger_transition_evidence_builder_preserves_optional_supported_metadata() -> None:
+    events = build_trigger_transition_evidence_events(
+        trigger_result("MGC", TriggerState.ARMED),
+        trigger_result(
+            "MGC",
+            TriggerState.QUERY_READY,
+            blocking_reasons=("manual_query_ready",),
+            missing_fields=("cross_asset.dxy",),
+        ),
+        timestamp="2026-05-06T14:00:05+00:00",
+        profile_id="preserved_mgc_phase1",
+        source="manual",
+        live_snapshot_ref="observables/MGC/trigger_true.json",
+        premarket_brief_ref="premarket/MGC/2026-05-06/brief.json",
+    )
+
+    assert len(events) == 1
+    event = events[0]
+    assert event.contract == "MGC"
+    assert event.profile_id == "preserved_mgc_phase1"
+    assert event.setup_id == "mgc_setup_1"
+    assert event.trigger_id == "mgc_trigger_1"
+    assert event.timestamp == "2026-05-06T14:00:05+00:00"
+    assert event.source == "manual"
+    assert event.live_snapshot_ref == "observables/MGC/trigger_true.json"
+    assert event.premarket_brief_ref == "premarket/MGC/2026-05-06/brief.json"
+    assert event.data_quality["blocking_reasons"] == ["manual_query_ready"]
+    assert event.data_quality["missing_conditions"] == ["cross_asset.dxy"]
+
+
+def test_trigger_transition_evidence_builder_events_feed_replay_summary() -> None:
+    trigger_events = build_trigger_transition_evidence_events(
+        trigger_result("ES", TriggerState.ARMED),
+        trigger_result("ES", TriggerState.QUERY_READY),
+        timestamp="2026-05-06T14:00:05+00:00",
+        profile_id="preserved_es_phase1",
+        source="fixture",
+        premarket_brief_ref="premarket/ES/2026-05-06/brief.json",
+    )
+    replay = build_replay_summary(
+        (
+            evidence_event(event_id="evt-stream", timestamp="2026-05-06T14:00:00+00:00"),
+            *trigger_events,
+        ),
+        contract="ES",
+        profile_id="preserved_es_phase1",
+    ).to_dict()
+
+    assert replay["schema"] == EVIDENCE_REPLAY_SCHEMA
+    assert replay["trigger_transitions"] == [
+        {
+            "event_id": trigger_events[0].event_id,
+            "timestamp": "2026-05-06T14:00:05+00:00",
+            "event_type": "trigger_query_ready",
+            "setup_id": "es_setup_1",
+            "trigger_id": "es_trigger_1",
+            "trigger_state": "QUERY_READY",
+            "source": "fixture",
+        }
+    ]
+    assert replay["status"] == "complete"
 
 
 def test_replay_reconstructs_sufficient_session_summary() -> None:
@@ -389,6 +572,27 @@ def evidence_event(
         operator_note=operator_note,
         data_quality=data_quality or {"state": "ready"},
         synthetic=synthetic,
+    )
+
+
+def trigger_result(
+    contract: str,
+    state: TriggerState,
+    *,
+    missing_fields: tuple[str, ...] = (),
+    blocking_reasons: tuple[str, ...] = (),
+) -> TriggerStateResult:
+    return TriggerStateResult(
+        contract=contract,
+        setup_id=f"{contract.lower()}_setup_1",
+        trigger_id=f"{contract.lower()}_trigger_1",
+        state=state,
+        distance_to_trigger_ticks=0.0 if state == TriggerState.QUERY_READY else None,
+        required_fields=("market.current_price",),
+        missing_fields=missing_fields,
+        invalid_reasons=(),
+        blocking_reasons=blocking_reasons,
+        last_updated="2026-05-06T14:00:00+00:00",
     )
 
 

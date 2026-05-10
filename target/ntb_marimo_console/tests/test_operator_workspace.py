@@ -5,6 +5,7 @@ import json
 import pytest
 
 from ntb_marimo_console.contract_universe import final_target_contracts
+from ntb_marimo_console.evidence_replay import EVIDENCE_REPLAY_SCHEMA, build_replay_summary, create_evidence_event
 from ntb_marimo_console.operator_workspace import (
     OPERATOR_WORKSPACE_SCHEMA,
     OperatorWorkspaceRequest,
@@ -12,6 +13,7 @@ from ntb_marimo_console.operator_workspace import (
 )
 from ntb_marimo_console.pipeline_query_gate import PipelineQueryGateRequest, evaluate_pipeline_query_gate
 from ntb_marimo_console.trigger_state import TriggerState, TriggerStateResult
+from ntb_marimo_console.trigger_transition_evidence import build_trigger_transition_evidence_events
 
 
 SENSITIVE_VALUES = (
@@ -418,6 +420,45 @@ def test_workspace_evidence_surfaces_supplied_trigger_transition_log_with_count_
         "source_schema": "evidence_replay_v1",
     }
     assert "Trigger transition log source not wired in this foundation." not in evidence["unavailable_reasons"]
+
+
+def test_workspace_evidence_accepts_replay_summary_from_trigger_transition_builder() -> None:
+    trigger_events = build_trigger_transition_evidence_events(
+        trigger_result("ES", TriggerState.ARMED),
+        trigger_result("ES", TriggerState.QUERY_READY),
+        timestamp="2026-05-06T14:00:05+00:00",
+        profile_id="preserved_es_phase1",
+        source="fixture",
+        premarket_brief_ref="premarket/ES/2026-05-06/brief.json",
+    )
+    replay = build_replay_summary(
+        (
+            create_evidence_event(
+                contract="ES",
+                profile_id="preserved_es_phase1",
+                event_id="evt-stream",
+                timestamp="2026-05-06T14:00:00+00:00",
+                event_type="stream_connected",
+                source="fixture",
+                premarket_brief_ref="premarket/ES/2026-05-06/brief.json",
+            ),
+            *trigger_events,
+        ),
+        contract="ES",
+        profile_id="preserved_es_phase1",
+    ).to_dict()
+
+    evidence = ready_workspace("ES", trigger_transition_log=replay).to_dict()["evidence_and_replay"]
+
+    assert replay["schema"] == EVIDENCE_REPLAY_SCHEMA
+    assert evidence["trigger_transition_log_status"] == "available"
+    assert evidence["trigger_transition_log"] == {
+        "status": "available",
+        "count": 1,
+        "contract": "ES",
+        "blocking_reasons": [],
+        "source_schema": EVIDENCE_REPLAY_SCHEMA,
+    }
 
 
 def test_workspace_evidence_blocks_cross_contract_trigger_transition_log() -> None:
