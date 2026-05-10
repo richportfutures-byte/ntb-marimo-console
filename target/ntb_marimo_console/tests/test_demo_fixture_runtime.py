@@ -113,9 +113,12 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
         self.assertEqual(replay["replay_reference_status"], "available")
         self.assertEqual(replay["replay_reference_source"], "fixture_backed")
         self.assertTrue(replay["engine_narrative_available"])
-        self.assertEqual(replay["narrative_quality"]["status"], "PASS")
+        self.assertFalse(replay["trigger_transition_narrative_available"])
+        self.assertEqual(replay["narrative_quality"]["status"], "WARN")
         self.assertTrue(replay["narrative_quality"]["source_reference_present"])
         self.assertTrue(replay["narrative_quality"]["replay_reference_present"])
+        self.assertFalse(replay["narrative_quality"]["trigger_transition_narrative_present"])
+        self.assertIn("trigger_transition_narrative_present", replay["narrative_quality"]["warnings"])
 
     def test_cl_fixture_sidecar_surfaces_contract_market_read_through_replay_path(self) -> None:
         shell = build_app_shell_for_profile(
@@ -139,9 +142,12 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
         self.assertEqual(replay["replay_reference_status"], "available")
         self.assertEqual(replay["replay_reference_source"], "fixture_backed")
         self.assertTrue(replay["engine_narrative_available"])
-        self.assertEqual(replay["narrative_quality"]["status"], "PASS")
+        self.assertFalse(replay["trigger_transition_narrative_available"])
+        self.assertEqual(replay["narrative_quality"]["status"], "WARN")
         self.assertFalse(replay["narrative_quality"]["unsupported_market_read_claim_detected"])
         self.assertFalse(replay["narrative_quality"]["unsupported_contract_language_detected"])
+        self.assertFalse(replay["narrative_quality"]["trigger_transition_narrative_present"])
+        self.assertIn("trigger_transition_narrative_present", replay["narrative_quality"]["warnings"])
 
     def test_missing_fixture_sidecar_remains_explicit_without_crashing(self) -> None:
         source_root = default_fixtures_root()

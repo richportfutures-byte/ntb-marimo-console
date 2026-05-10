@@ -35,7 +35,27 @@ def test_quality_passes_for_read_only_replay_with_source_and_run_reference() -> 
     assert decoded["unsupported_market_read_claim_detected"] is False
     assert decoded["unsupported_contract_language_detected"] is False
     assert decoded["missing_narrative_detected"] is False
+    assert decoded["trigger_transition_narrative_present"] is True
     assert decoded == replay["narrative_quality"]
+
+
+def test_quality_warns_when_engine_narrative_present_but_trigger_transition_narrative_absent() -> None:
+    replay = build_decision_review_replay_vm(
+        complete_audit_event(),
+        audit_replay_record=audit_replay_record(),
+    ).to_dict()
+    replay["trigger_transition_narrative_available"] = False
+
+    quality = validate_decision_review_narrative_quality(replay).to_dict()
+
+    assert quality["status"] == "WARN"
+    assert quality["trigger_transition_narrative_present"] is False
+    assert quality["missing_narrative_detected"] is False
+    assert "trigger_transition_narrative_present" in quality["warnings"]
+    assert "trigger_transition_narrative_present" not in quality["blocking_reasons"]
+    assert _check_message(quality, "trigger_transition_narrative_present") == (
+        "Trigger-transition narrative is unavailable; replay surface remains explicit and is not fabricated."
+    )
 
 
 def test_quality_missing_replay_or_narrative_returns_explicit_status_without_crashing() -> None:

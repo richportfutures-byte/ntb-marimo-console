@@ -87,6 +87,7 @@ class NarrativeQualityReport:
     unsupported_market_read_claim_detected: bool
     unsupported_contract_language_detected: bool
     missing_narrative_detected: bool
+    trigger_transition_narrative_present: bool
     schema: str = DECISION_REVIEW_NARRATIVE_QUALITY_SCHEMA
     schema_version: int = DECISION_REVIEW_NARRATIVE_QUALITY_SCHEMA_VERSION
 
@@ -107,6 +108,7 @@ class NarrativeQualityReport:
             "unsupported_market_read_claim_detected": self.unsupported_market_read_claim_detected,
             "unsupported_contract_language_detected": self.unsupported_contract_language_detected,
             "missing_narrative_detected": self.missing_narrative_detected,
+            "trigger_transition_narrative_present": self.trigger_transition_narrative_present,
         }
 
 
@@ -129,6 +131,9 @@ def validate_decision_review_narrative_quality(
     unsupported_market_read_claim_detected = _unsupported_market_read_claim_detected(text)
     unsupported_contract_language_detected = _unsupported_contract_language_detected(replay_payload, text)
     missing_narrative_detected = _missing_narrative_detected(replay_payload)
+    trigger_transition_narrative_present = (
+        replay_payload.get("trigger_transition_narrative_available") is True
+    )
 
     checks: list[NarrativeQualityCheckResult] = []
     checks.append(
@@ -219,6 +224,15 @@ def validate_decision_review_narrative_quality(
             else "Narrative content is unavailable or incomplete.",
         )
     )
+    checks.append(
+        _check(
+            "trigger_transition_narrative_present",
+            "PASS" if trigger_transition_narrative_present else "WARN",
+            "Trigger-transition narrative is present."
+            if trigger_transition_narrative_present
+            else "Trigger-transition narrative is unavailable; replay surface remains explicit and is not fabricated.",
+        )
+    )
 
     status = _overall_status(checks)
     return NarrativeQualityReport(
@@ -235,6 +249,7 @@ def validate_decision_review_narrative_quality(
         unsupported_market_read_claim_detected=unsupported_market_read_claim_detected,
         unsupported_contract_language_detected=unsupported_contract_language_detected,
         missing_narrative_detected=missing_narrative_detected,
+        trigger_transition_narrative_present=trigger_transition_narrative_present,
     )
 
 

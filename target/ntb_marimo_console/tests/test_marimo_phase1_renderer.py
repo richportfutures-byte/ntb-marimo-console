@@ -55,7 +55,10 @@ class MarimoPhase1RendererTests(unittest.TestCase):
         self.assertIsNone(decision_panel["narrative_unavailable_message"])
         self.assertTrue(decision_panel["engine_reasoning"]["available"])
         self.assertIn("Synthetic fixture/demo ES narrative", decision_panel["engine_reasoning"]["structural_notes"])
-        self.assertEqual(decision_panel["narrative_audit_replay"]["narrative_quality"]["status"], "PASS")
+        replay_quality = decision_panel["narrative_audit_replay"]["narrative_quality"]
+        self.assertEqual(replay_quality["status"], "WARN")
+        self.assertFalse(replay_quality["trigger_transition_narrative_present"])
+        self.assertIn("trigger_transition_narrative_present", replay_quality["warnings"])
         self.assertFalse(decision_panel["trade_thesis"]["available"])
         self.assertFalse(decision_panel["risk_authorization_detail"]["available"])
         self.assertFalse(decision_panel["invalidation"]["available"])

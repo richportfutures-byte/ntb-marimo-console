@@ -103,7 +103,10 @@ class StartupFlowTests(unittest.TestCase):
         self.assertIsNotNone(replay["replay_reference_run_id"])
         self.assertTrue(replay["replay_reference_consistent"])
         self.assertTrue(replay["engine_narrative_available"])
-        self.assertEqual(replay["narrative_quality"]["status"], "PASS")
+        self.assertFalse(replay["trigger_transition_narrative_available"])
+        self.assertEqual(replay["narrative_quality"]["status"], "WARN")
+        self.assertFalse(replay["narrative_quality"]["trigger_transition_narrative_present"])
+        self.assertIn("trigger_transition_narrative_present", replay["narrative_quality"]["warnings"])
         self.assertIn("decision_review_narrative", replay["source_fields"])
 
     def test_preserved_profile_query_action_completion_reaches_decision_and_audit_ready(self) -> None:
