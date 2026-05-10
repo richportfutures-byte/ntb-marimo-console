@@ -9,6 +9,7 @@ from ntb_marimo_console.ui.marimo_phase1_renderer import (
     _flatten_mapping_lines,
     _render_decision_review_engine_reasoning,
     _render_decision_review_invalidation,
+    _render_decision_review_replay,
     _render_decision_review_risk_authorization,
     _render_decision_review_trade_thesis,
     build_phase1_render_plan,
@@ -130,6 +131,61 @@ class MarimoPhase1RendererTests(unittest.TestCase):
         # No alternate-trade prose.
         self.assertNotIn("take trade", text.lower())
         self.assertNotIn("alternate", text.lower())
+
+    def test_decision_review_replay_renderer_emits_read_only_text_not_raw_json(self) -> None:
+        lines = _render_decision_review_replay(
+            {
+                "available": True,
+                "audit_schema": "decision_review_narrative_audit_event_v1",
+                "audit_schema_version": 1,
+                "created_at": "2026-05-09T12:00:00Z",
+                "source": "fixture",
+                "contract": "ES",
+                "profile_id": "preserved_es_phase1",
+                "setup_id": "es_setup_1",
+                "trigger_id": "es_trigger_1",
+                "trigger_state": "QUERY_READY",
+                "pipeline_result_status": "READY",
+                "final_decision": "NO_TRADE",
+                "termination_stage": "contract_market_read",
+                "engine_narrative_available": True,
+                "trigger_transition_narrative_available": True,
+                "manual_only_execution": True,
+                "preserved_engine_authority": True,
+                "authority_statement": "The preserved engine remains the decision authority, and execution remains manual.",
+                "transition_summary": "setup es_setup_1 / trigger es_trigger_1: deterministic trigger state recorded.",
+                "readiness_explanation": "The preserved pipeline must still decide; execution remains manual.",
+                "blocking_explanation": "Blocking reasons: quote_stale.",
+                "invalidation_explanation": None,
+                "missing_data_explanation": "Missing required trigger data: market.current_price.",
+                "stale": True,
+                "lockout": False,
+                "engine_reasoning_summary": {
+                    "available": True,
+                    "market_regime": "choppy",
+                    "directional_bias": "unclear",
+                    "confidence_band": "LOW",
+                    "outcome": "NO_TRADE",
+                },
+                "blocking_reasons": ["quote_stale"],
+                "invalid_reasons": [],
+                "missing_fields": ["market.current_price"],
+                "source_fields": ["decision_review", "transition_narrative"],
+            }
+        )
+        text = "\n".join(lines)
+
+        self.assertIn("### Narrative Audit Replay", text)
+        self.assertIn("Manual-Only Execution: `True`", text)
+        self.assertIn("Preserved Engine Authority: `True`", text)
+        self.assertIn("The preserved engine remains the decision authority", text)
+        self.assertIn("Transition Summary:", text)
+        self.assertIn("quote_stale", text)
+        self.assertIn("market.current_price", text)
+        self.assertNotIn("```json", text)
+        self.assertNotIn("{", text)
+        for phrase in ("take the trade", "enter", "buy", "sell", "short now", "long now"):
+            self.assertNotIn(phrase, text.lower())
 
     def test_raw_json_debug_is_secondary(self) -> None:
         shell = build_es_app_shell_for_mode(mode="fixture_demo")

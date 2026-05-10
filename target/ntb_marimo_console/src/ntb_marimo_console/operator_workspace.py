@@ -7,6 +7,7 @@ from typing import Any, Final
 
 from ntb_marimo_console.contract_universe import contract_policy_label, is_final_target_contract, normalize_contract_symbol
 from ntb_marimo_console.decision_review_audit import build_decision_review_audit_event
+from ntb_marimo_console.decision_review_replay import build_decision_review_replay_vm
 from ntb_marimo_console.live_observables.schema_v2 import LiveObservableSnapshotV2
 from ntb_marimo_console.market_data.stream_events import redact_sensitive_text
 from ntb_marimo_console.pipeline_query_gate import PipelineQueryGateResult
@@ -246,6 +247,7 @@ def _build_evidence_and_replay(
         profile_id=request.profile_id,
         created_at=request.evaluated_at,
     ).to_dict()
+    decision_review_replay = build_decision_review_replay_vm(decision_review_audit_event).to_dict()
     return {
         "run_history_status": _safe_status(request.run_history_status or "unavailable"),
         "audit_replay_status": _safe_status(request.audit_replay_status or "unavailable"),
@@ -253,6 +255,7 @@ def _build_evidence_and_replay(
         "trigger_transition_log_status": _safe_status(request.trigger_transition_log_status or "unavailable"),
         "unavailable_reasons": list(reasons),
         "decision_review_audit_event": decision_review_audit_event,
+        "decision_review_replay": decision_review_replay,
         "replay_statement": _NO_SYNTHETIC_REPLAY_STATEMENT,
     }
 

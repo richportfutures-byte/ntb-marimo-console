@@ -15,6 +15,7 @@ from .adapters.contracts import (
 )
 from .adapters.trigger_evaluator import TriggerEvaluator
 from .decision_review_audit import build_decision_review_audit_event
+from .decision_review_replay import build_decision_review_replay_vm
 from .market_data import FuturesQuoteService
 from .adapters.trigger_specs import trigger_specs_from_brief
 from .state.session_state import OperatorSessionMachine, SessionState
@@ -283,6 +284,7 @@ def build_phase1_app(
                 }
             )
 
+        narrative_audit_replay: dict[str, object] | None = None
         decision_panel = surfaces.get("decision_review")
         if isinstance(decision_panel, dict):
             decision_panel.update(
@@ -297,6 +299,10 @@ def build_phase1_app(
                 profile_id=inputs.selection.profile_id,
                 source=artifacts.run_history_source,
             ).to_dict()
+            narrative_audit_replay = build_decision_review_replay_vm(
+                decision_panel["narrative_audit_event"]
+            ).to_dict()
+            decision_panel["narrative_audit_replay"] = narrative_audit_replay
 
         audit_panel = surfaces.get("audit_replay")
         if isinstance(audit_panel, dict):
@@ -328,6 +334,8 @@ def build_phase1_app(
                         "stage_e_live_backend": False,
                     }
                 )
+            if narrative_audit_replay is not None:
+                audit_panel["narrative_audit_replay"] = narrative_audit_replay
 
         run_history_panel = surfaces.get("run_history")
         if isinstance(run_history_panel, dict):

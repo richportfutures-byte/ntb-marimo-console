@@ -667,6 +667,7 @@ def _render_surface_section(
             lines.extend(_render_decision_review_trade_thesis(panel.get("trade_thesis")))
             lines.extend(_render_decision_review_risk_authorization(panel.get("risk_authorization_detail")))
             lines.extend(_render_decision_review_invalidation(panel.get("invalidation")))
+            lines.extend(_render_decision_review_replay(panel.get("narrative_audit_replay")))
             unavailable_message = panel.get("narrative_unavailable_message")
             if isinstance(unavailable_message, str) and panel.get("narrative_available") is not True:
                 lines.append("")
@@ -681,6 +682,7 @@ def _render_surface_section(
                         f"- Status: `{_as_str(panel.get('status'), default='NOT_READY')}`",
                         f"- Message: {_as_str(panel.get('message'), default='Decision Review is not ready yet.')}",
                     ]
+                    + _render_decision_review_replay(panel.get("narrative_audit_replay"))
                 )
             )
         )
@@ -744,6 +746,7 @@ def _render_surface_section(
             )
         else:
             lines.append("- Trace Summary: `<unavailable>`")
+        lines.extend(_render_decision_review_replay(panel.get("narrative_audit_replay")))
         return _render_surface_card(mo.md("\n".join(lines)))
 
     return _render_surface_card(mo.md(f"## {key}\n- unavailable"))
@@ -924,6 +927,75 @@ def _ready_outcome_suffix(state: object, outcome: object) -> str:
     if outcome is None:
         return state_text
     return f"{state_text} ({_as_str(outcome)})"
+
+
+def _render_decision_review_replay(replay: object) -> list[str]:
+    lines = ["", "### Narrative Audit Replay"]
+    if not isinstance(replay, Mapping) or replay.get("available") is not True:
+        message = replay.get("unavailable_message") if isinstance(replay, Mapping) else None
+        lines.append(
+            f"- _{_as_str(message, default='Decision Review narrative audit replay is unavailable.')}_"
+        )
+        return lines
+
+    lines.extend(
+        [
+            f"- Audit Schema: `{_as_str(replay.get('audit_schema'))}`",
+            f"- Audit Schema Version: `{_as_str(replay.get('audit_schema_version'))}`",
+            f"- Created At: `{_as_str(replay.get('created_at'))}`",
+            f"- Source: `{_as_str(replay.get('source'))}`",
+            f"- Contract: `{_as_str(replay.get('contract'))}`",
+            f"- Profile ID: `{_as_str(replay.get('profile_id'))}`",
+            f"- Setup ID: `{_as_str(replay.get('setup_id'))}`",
+            f"- Trigger ID: `{_as_str(replay.get('trigger_id'))}`",
+            f"- Trigger State: `{_as_str(replay.get('trigger_state'))}`",
+            f"- Pipeline Result Status: `{_as_str(replay.get('pipeline_result_status'))}`",
+            f"- Final Decision: `{_as_str(replay.get('final_decision'))}`",
+            f"- Termination Stage: `{_as_str(replay.get('termination_stage'))}`",
+            f"- Engine Narrative Available: `{_as_str(replay.get('engine_narrative_available'), default=False)}`",
+            f"- Trigger Transition Narrative Available: `{_as_str(replay.get('trigger_transition_narrative_available'), default=False)}`",
+            f"- Manual-Only Execution: `{_as_str(replay.get('manual_only_execution'), default=False)}`",
+            f"- Preserved Engine Authority: `{_as_str(replay.get('preserved_engine_authority'), default=False)}`",
+            f"- Authority Statement: {_as_str(replay.get('authority_statement'), default='<unavailable>')}",
+            f"- Transition Summary: {_as_str(replay.get('transition_summary'), default='<unavailable>')}",
+            f"- Readiness Explanation: {_as_str(replay.get('readiness_explanation'), default='<unavailable>')}",
+            f"- Blocking Explanation: {_as_str(replay.get('blocking_explanation'), default='<none>')}",
+            f"- Invalidation Explanation: {_as_str(replay.get('invalidation_explanation'), default='<none>')}",
+            f"- Missing Data Explanation: {_as_str(replay.get('missing_data_explanation'), default='<none>')}",
+            f"- Stale Indicator: `{_as_str(replay.get('stale'), default=False)}`",
+            f"- Lockout Indicator: `{_as_str(replay.get('lockout'), default=False)}`",
+        ]
+    )
+
+    engine_summary = replay.get("engine_reasoning_summary")
+    if isinstance(engine_summary, Mapping) and engine_summary.get("available") is True:
+        lines.append(
+            "- Engine Reasoning Summary: "
+            + f"regime=`{_as_str(engine_summary.get('market_regime'))}`, "
+            + f"bias=`{_as_str(engine_summary.get('directional_bias'))}`, "
+            + f"confidence=`{_as_str(engine_summary.get('confidence_band'))}`, "
+            + f"outcome=`{_as_str(engine_summary.get('outcome'))}`"
+        )
+    else:
+        message = engine_summary.get("unavailable_message") if isinstance(engine_summary, Mapping) else None
+        lines.append(
+            f"- Engine Reasoning Summary: {_as_str(message, default='unavailable')}"
+        )
+
+    for label, key in (
+        ("Blocking Reasons", "blocking_reasons"),
+        ("Invalid Reasons", "invalid_reasons"),
+        ("Missing Fields", "missing_fields"),
+        ("Source Fields", "source_fields"),
+    ):
+        values = replay.get(key)
+        if isinstance(values, list) and values:
+            lines.append(f"- {label}:")
+            for value in values:
+                lines.append(f"    - `{_as_str(value)}`")
+        else:
+            lines.append(f"- {label}: _none recorded_")
+    return lines
 
 
 def _render_decision_review_engine_reasoning(section: object) -> list[str]:

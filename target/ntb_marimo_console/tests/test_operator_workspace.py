@@ -329,6 +329,10 @@ def test_evidence_and_replay_placeholder_has_explicit_unavailable_reasons() -> N
     assert evidence["decision_review_audit_event"]["manual_only_execution"] is True
     assert evidence["decision_review_audit_event"]["preserved_engine_authority"] is True
     assert evidence["decision_review_audit_event"]["trigger_review"]["transition_narrative"]["narrative_available"] is True
+    assert evidence["decision_review_replay"]["available"] is True
+    assert evidence["decision_review_replay"]["manual_only_execution"] is True
+    assert evidence["decision_review_replay"]["preserved_engine_authority"] is True
+    assert evidence["decision_review_replay"]["trigger_transition_narrative_available"] is True
     assert evidence["replay_statement"] == "No synthetic replay is labeled as real evidence."
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ...decision_review_audit import build_decision_review_audit_event
+from ...decision_review_replay import build_decision_review_replay_vm
 from ...viewmodels.models import (
     EngineReasoningVM,
     KeyLevelsVM,
@@ -42,6 +43,9 @@ def render_decision_review_panel(trace: PipelineTraceVM | None) -> dict[str, obj
         panel["narrative_audit_event"] = build_decision_review_audit_event(
             decision_review=panel,
         ).to_dict()
+        panel["narrative_audit_replay"] = build_decision_review_replay_vm(
+            panel["narrative_audit_event"]
+        ).to_dict()
         return panel
 
     panel: dict[str, object] = {
@@ -66,6 +70,9 @@ def render_decision_review_panel(trace: PipelineTraceVM | None) -> dict[str, obj
     )
     panel["narrative_audit_event"] = build_decision_review_audit_event(
         decision_review=panel,
+    ).to_dict()
+    panel["narrative_audit_replay"] = build_decision_review_replay_vm(
+        panel["narrative_audit_event"]
     ).to_dict()
 
     return panel
