@@ -9,6 +9,7 @@ from ntb_marimo_console.adapters.contracts import AuditReplayRecord
 from ntb_marimo_console.contract_universe import contract_policy_label, is_final_target_contract, normalize_contract_symbol
 from ntb_marimo_console.decision_review_audit import build_decision_review_audit_event
 from ntb_marimo_console.decision_review_replay import build_decision_review_replay_vm
+from ntb_marimo_console.evidence_replay import EVIDENCE_REPLAY_SCHEMA
 from ntb_marimo_console.live_observables.schema_v2 import LiveObservableSnapshotV2
 from ntb_marimo_console.market_data.stream_events import redact_sensitive_text
 from ntb_marimo_console.pipeline_query_gate import PipelineQueryGateResult
@@ -287,6 +288,17 @@ def _trigger_transition_log_summary(
         }
     log_contract = _safe_text(log.get("contract") or "").upper()
     source_schema = _string_or_none(log.get("schema"))
+    safe_source_schema = _safe_text(source_schema) if source_schema else None
+    if source_schema != EVIDENCE_REPLAY_SCHEMA:
+        return {
+            "status": "blocked",
+            "count": 0,
+            "contract": contract,
+            "blocking_reasons": [
+                f"unsupported_transition_log_schema:{safe_source_schema or '<missing>'}",
+            ],
+            "source_schema": safe_source_schema,
+        }
     transitions = log.get("trigger_transitions")
     transition_tuple = tuple(transitions) if isinstance(transitions, (list, tuple)) else ()
     if log_contract and log_contract != contract:
@@ -295,7 +307,7 @@ def _trigger_transition_log_summary(
             "count": 0,
             "contract": contract,
             "blocking_reasons": [f"cross_contract_replay_summary:{log_contract}"],
-            "source_schema": _safe_text(source_schema) if source_schema else None,
+            "source_schema": safe_source_schema,
         }
     if not transition_tuple:
         return {
@@ -303,14 +315,14 @@ def _trigger_transition_log_summary(
             "count": 0,
             "contract": contract,
             "blocking_reasons": ["log_empty_no_transitions_recorded"],
-            "source_schema": _safe_text(source_schema) if source_schema else None,
+            "source_schema": safe_source_schema,
         }
     return {
         "status": "available",
         "count": len(transition_tuple),
         "contract": contract,
         "blocking_reasons": [],
-        "source_schema": _safe_text(source_schema) if source_schema else None,
+        "source_schema": safe_source_schema,
     }
 
 

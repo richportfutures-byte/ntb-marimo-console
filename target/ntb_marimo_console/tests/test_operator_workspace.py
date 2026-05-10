@@ -457,6 +457,64 @@ def test_workspace_evidence_marks_supplied_but_empty_trigger_transition_log_unav
     assert evidence["trigger_transition_log"]["blocking_reasons"] == ["log_empty_no_transitions_recorded"]
 
 
+def test_workspace_evidence_blocks_transition_log_without_evidence_replay_schema() -> None:
+    log = {
+        "contract": "ES",
+        "trigger_transitions": (
+            {
+                "event_id": "evt-derived",
+                "timestamp": "2026-05-06T13:55:00+00:00",
+                "event_type": "trigger_query_ready",
+                "setup_id": "es_setup_1",
+                "trigger_id": "es_trigger_1",
+                "trigger_state": "QUERY_READY",
+                "source": "fixture_backed",
+            },
+        ),
+    }
+
+    evidence = ready_workspace("ES", trigger_transition_log=log).to_dict()["evidence_and_replay"]
+
+    assert evidence["trigger_transition_log_status"] == "blocked"
+    assert evidence["trigger_transition_log"] == {
+        "status": "blocked",
+        "count": 0,
+        "contract": "ES",
+        "blocking_reasons": ["unsupported_transition_log_schema:<missing>"],
+        "source_schema": None,
+    }
+
+
+def test_workspace_evidence_blocks_transition_log_derived_from_decision_replay_shape() -> None:
+    log = {
+        "schema": "decision_review_replay_shape",
+        "contract": "ES",
+        "final_decision": "NO_TRADE",
+        "trigger_state": "QUERY_READY",
+        "transition_summary": "Final trigger state text is not a transition log.",
+        "trigger_transitions": (
+            {
+                "event_id": "evt-after-the-fact",
+                "timestamp": "2026-05-06T13:55:00+00:00",
+                "event_type": "trigger_query_ready",
+                "setup_id": "es_setup_1",
+                "trigger_id": "es_trigger_1",
+                "trigger_state": "QUERY_READY",
+                "source": "fixture_backed",
+            },
+        ),
+    }
+
+    evidence = ready_workspace("ES", trigger_transition_log=log).to_dict()["evidence_and_replay"]
+
+    assert evidence["trigger_transition_log_status"] == "blocked"
+    assert evidence["trigger_transition_log"]["count"] == 0
+    assert evidence["trigger_transition_log"]["source_schema"] == "decision_review_replay_shape"
+    assert evidence["trigger_transition_log"]["blocking_reasons"] == [
+        "unsupported_transition_log_schema:decision_review_replay_shape",
+    ]
+
+
 @pytest.mark.parametrize("contract", ("ES", "NQ", "CL", "6E", "MGC"))
 def test_workspace_evidence_attributes_trigger_transition_log_per_contract_without_bleed(contract: str) -> None:
     log = {
