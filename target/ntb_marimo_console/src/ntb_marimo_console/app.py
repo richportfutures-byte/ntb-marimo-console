@@ -300,7 +300,8 @@ def build_phase1_app(
                 source=artifacts.run_history_source,
             ).to_dict()
             narrative_audit_replay = build_decision_review_replay_vm(
-                decision_panel["narrative_audit_event"]
+                decision_panel["narrative_audit_event"],
+                audit_replay_record=artifacts.audit_replay,
             ).to_dict()
             decision_panel["narrative_audit_replay"] = narrative_audit_replay
 

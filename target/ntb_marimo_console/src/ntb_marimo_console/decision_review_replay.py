@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
+from ntb_marimo_console.adapters.contracts import AuditReplayRecord
 from ntb_marimo_console.decision_review_audit import DecisionReviewAuditEvent
 from ntb_marimo_console.market_data.stream_events import redact_sensitive_text
 
@@ -19,6 +20,9 @@ _AUTHORITY_UNAVAILABLE_MESSAGE: Final[str] = (
 )
 _TRIGGER_NARRATIVE_UNAVAILABLE_MESSAGE: Final[str] = (
     "Trigger transition narrative replay fields are unavailable in the recorded review event."
+)
+_REPLAY_REFERENCE_UNAVAILABLE_MESSAGE: Final[str] = (
+    "Audit replay source reference is unavailable; no existing replay record was supplied."
 )
 _SAFE_IDENTIFIER_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9_.:-]+")
 _SENSITIVE_IDENTIFIER_PARTS: Final[tuple[str, ...]] = (
@@ -68,6 +72,14 @@ class DecisionReviewReplayVM:
     manual_only_execution: bool
     preserved_engine_authority: bool
     authority_statement: str
+    replay_reference_available: bool
+    replay_reference_status: str
+    replay_reference_source: str
+    replay_reference_run_id: str | None
+    replay_reference_final_decision: str | None
+    replay_reference_stage_e_live_backend: bool
+    replay_reference_consistent: bool | None
+    replay_reference_message: str
     source_fields: tuple[str, ...]
     schema: str = DECISION_REVIEW_REPLAY_VM_SCHEMA
     schema_version: int = DECISION_REVIEW_REPLAY_VM_SCHEMA_VERSION
@@ -106,14 +118,25 @@ class DecisionReviewReplayVM:
             "manual_only_execution": self.manual_only_execution,
             "preserved_engine_authority": self.preserved_engine_authority,
             "authority_statement": self.authority_statement,
+            "replay_reference_available": self.replay_reference_available,
+            "replay_reference_status": self.replay_reference_status,
+            "replay_reference_source": self.replay_reference_source,
+            "replay_reference_run_id": self.replay_reference_run_id,
+            "replay_reference_final_decision": self.replay_reference_final_decision,
+            "replay_reference_stage_e_live_backend": self.replay_reference_stage_e_live_backend,
+            "replay_reference_consistent": self.replay_reference_consistent,
+            "replay_reference_message": self.replay_reference_message,
             "source_fields": list(self.source_fields),
         }
 
 
 def build_decision_review_replay_vm(
     audit_event: DecisionReviewAuditEvent | Mapping[str, Any] | None,
+    *,
+    audit_replay_record: AuditReplayRecord | Mapping[str, Any] | None = None,
 ) -> DecisionReviewReplayVM:
     event = _event_mapping(audit_event)
+    replay_reference = _replay_reference(audit_replay_record, final_decision=None)
     if not event:
         return DecisionReviewReplayVM(
             available=False,
@@ -149,6 +172,14 @@ def build_decision_review_replay_vm(
             manual_only_execution=False,
             preserved_engine_authority=False,
             authority_statement=_AUTHORITY_UNAVAILABLE_MESSAGE,
+            replay_reference_available=bool(replay_reference["available"]),
+            replay_reference_status=str(replay_reference["status"]),
+            replay_reference_source=str(replay_reference["source"]),
+            replay_reference_run_id=_optional_text(replay_reference.get("run_id")),
+            replay_reference_final_decision=_optional_text(replay_reference.get("final_decision")),
+            replay_reference_stage_e_live_backend=replay_reference.get("stage_e_live_backend") is True,
+            replay_reference_consistent=_optional_bool(replay_reference.get("consistent")),
+            replay_reference_message=str(replay_reference["message"]),
             source_fields=(),
         )
 
@@ -157,6 +188,8 @@ def build_decision_review_replay_vm(
     trigger_review = _mapping(event.get("trigger_review"))
     transition = _mapping(trigger_review.get("transition_narrative"))
     state_flags = _mapping(trigger_review.get("state_flags"))
+    final_decision = _optional_text(pipeline_result.get("final_decision"))
+    replay_reference = _replay_reference(audit_replay_record, final_decision=final_decision)
 
     return DecisionReviewReplayVM(
         available=True,
@@ -171,7 +204,7 @@ def build_decision_review_replay_vm(
         trigger_state=_optional_text(event.get("trigger_state")),
         source=_optional_identifier(event.get("source")) or "unknown",
         pipeline_result_status=_optional_text(pipeline_result.get("status")),
-        final_decision=_optional_text(pipeline_result.get("final_decision")),
+        final_decision=final_decision,
         termination_stage=_optional_text(pipeline_result.get("termination_stage")),
         engine_narrative_available=narrative.get("engine_reasoning_available") is True,
         trigger_transition_narrative_available=transition.get("narrative_available") is True,
@@ -192,7 +225,15 @@ def build_decision_review_replay_vm(
         preserved_engine_authority=event.get("preserved_engine_authority") is True,
         authority_statement=_optional_text(event.get("authority_statement"))
         or "The preserved engine remains the decision authority, and execution remains manual.",
-        source_fields=_source_fields(event, transition),
+        replay_reference_available=bool(replay_reference["available"]),
+        replay_reference_status=str(replay_reference["status"]),
+        replay_reference_source=str(replay_reference["source"]),
+        replay_reference_run_id=_optional_text(replay_reference.get("run_id")),
+        replay_reference_final_decision=_optional_text(replay_reference.get("final_decision")),
+        replay_reference_stage_e_live_backend=replay_reference.get("stage_e_live_backend") is True,
+        replay_reference_consistent=_optional_bool(replay_reference.get("consistent")),
+        replay_reference_message=str(replay_reference["message"]),
+        source_fields=_source_fields(event, transition, replay_reference=replay_reference),
     )
 
 
@@ -236,12 +277,93 @@ def _engine_reasoning_summary(value: object) -> dict[str, object]:
     return summary
 
 
-def _source_fields(event: Mapping[str, Any], transition: Mapping[str, Any]) -> tuple[str, ...]:
+def _replay_reference(
+    audit_replay_record: AuditReplayRecord | Mapping[str, Any] | None,
+    *,
+    final_decision: str | None,
+) -> dict[str, object]:
+    record = dict(audit_replay_record) if isinstance(audit_replay_record, Mapping) else {}
+    if not record:
+        return {
+            "available": False,
+            "status": "unavailable",
+            "source": "unknown",
+            "run_id": None,
+            "final_decision": None,
+            "stage_e_live_backend": False,
+            "consistent": None,
+            "message": _REPLAY_REFERENCE_UNAVAILABLE_MESSAGE,
+        }
+
+    source = _optional_identifier(record.get("source")) or "unknown"
+    replay_available = record.get("replay_available") is True
+    run_id = _optional_identifier(record.get("last_run_id"))
+    reference_final_decision = _optional_text(record.get("last_final_decision"))
+    if not replay_available:
+        return {
+            "available": False,
+            "status": "unavailable",
+            "source": source,
+            "run_id": run_id,
+            "final_decision": reference_final_decision,
+            "stage_e_live_backend": record.get("stage_e_live_backend") is True,
+            "consistent": None,
+            "message": "Audit replay source reference is unavailable; the existing replay record is not ready.",
+        }
+
+    if run_id is None:
+        return {
+            "available": False,
+            "status": "blocked",
+            "source": source,
+            "run_id": None,
+            "final_decision": reference_final_decision,
+            "stage_e_live_backend": record.get("stage_e_live_backend") is True,
+            "consistent": None,
+            "message": "Audit replay source reference is blocked because the replay run identifier is unavailable.",
+        }
+
+    consistent = (
+        None
+        if final_decision is None or reference_final_decision is None
+        else final_decision == reference_final_decision
+    )
+    if consistent is False:
+        message = (
+            "Audit replay source reference is available but its final decision does not match the "
+            "Decision Review audit event."
+        )
+        status = "mismatch"
+    else:
+        message = "Audit replay source reference is available from existing app-owned replay state."
+        status = "available"
+    return {
+        "available": True,
+        "status": status,
+        "source": source,
+        "run_id": run_id,
+        "final_decision": reference_final_decision,
+        "stage_e_live_backend": record.get("stage_e_live_backend") is True,
+        "consistent": consistent,
+        "message": message,
+    }
+
+
+def _source_fields(
+    event: Mapping[str, Any],
+    transition: Mapping[str, Any],
+    *,
+    replay_reference: Mapping[str, object],
+) -> tuple[str, ...]:
     fields = list(_identifier_tuple(event.get("source_fields")))
     fields.extend(
         f"trigger_review.transition_narrative.{field}"
         for field in _identifier_tuple(transition.get("source_fields"))
     )
+    if replay_reference.get("available") is True:
+        fields.append("audit_replay_record")
+        if replay_reference.get("run_id") is not None:
+            fields.append("audit_replay_record.last_run_id")
     return tuple(dict.fromkeys(fields))
 
 
@@ -291,9 +413,9 @@ def _optional_identifier(value: object) -> str | None:
         return None
     text = str(value).strip()
     lowered = text.lower()
-    if text and _SAFE_IDENTIFIER_RE.fullmatch(text) and not any(
-        part in lowered for part in _SENSITIVE_IDENTIFIER_PARTS
-    ):
+    if text and _SAFE_IDENTIFIER_RE.fullmatch(text):
+        if any(part in lowered for part in _SENSITIVE_IDENTIFIER_PARTS):
+            return "[REDACTED_REF]"
         return text
     return _optional_text(value)
 
@@ -302,6 +424,12 @@ def _optional_int(value: object) -> int | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
+        return value
+    return None
+
+
+def _optional_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
         return value
     return None
 

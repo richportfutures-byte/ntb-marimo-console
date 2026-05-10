@@ -153,6 +153,13 @@ class MarimoPhase1RendererTests(unittest.TestCase):
                 "manual_only_execution": True,
                 "preserved_engine_authority": True,
                 "authority_statement": "The preserved engine remains the decision authority, and execution remains manual.",
+                "replay_reference_status": "available",
+                "replay_reference_source": "fixture_backed",
+                "replay_reference_run_id": "run-1",
+                "replay_reference_final_decision": "NO_TRADE",
+                "replay_reference_consistent": True,
+                "replay_reference_stage_e_live_backend": False,
+                "replay_reference_message": "Audit replay source reference is available from existing app-owned replay state.",
                 "transition_summary": "setup es_setup_1 / trigger es_trigger_1: deterministic trigger state recorded.",
                 "readiness_explanation": "The preserved pipeline must still decide; execution remains manual.",
                 "blocking_explanation": "Blocking reasons: quote_stale.",
@@ -179,6 +186,8 @@ class MarimoPhase1RendererTests(unittest.TestCase):
         self.assertIn("Manual-Only Execution: `True`", text)
         self.assertIn("Preserved Engine Authority: `True`", text)
         self.assertIn("The preserved engine remains the decision authority", text)
+        self.assertIn("Replay Reference Status: `available`", text)
+        self.assertIn("Replay Reference Run ID: `run-1`", text)
         self.assertIn("Transition Summary:", text)
         self.assertIn("quote_stale", text)
         self.assertIn("market.current_price", text)

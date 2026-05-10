@@ -26,7 +26,10 @@ SENSITIVE_VALUES = (
 
 
 def test_replay_vm_builds_from_complete_audit_event_and_is_json_serializable() -> None:
-    replay = build_decision_review_replay_vm(complete_audit_event()).to_dict()
+    replay = build_decision_review_replay_vm(
+        complete_audit_event(),
+        audit_replay_record=audit_replay_record(),
+    ).to_dict()
 
     encoded = json.dumps(replay, sort_keys=True)
     decoded = json.loads(encoded)
@@ -44,6 +47,12 @@ def test_replay_vm_builds_from_complete_audit_event_and_is_json_serializable() -
     assert decoded["trigger_transition_narrative_available"] is True
     assert decoded["manual_only_execution"] is True
     assert decoded["preserved_engine_authority"] is True
+    assert decoded["replay_reference_available"] is True
+    assert decoded["replay_reference_status"] == "available"
+    assert decoded["replay_reference_source"] == "fixture_backed"
+    assert decoded["replay_reference_run_id"] == "run-1"
+    assert decoded["replay_reference_final_decision"] == "NO_TRADE"
+    assert decoded["replay_reference_consistent"] is True
     assert decoded["engine_reasoning_summary"]["market_regime"] == "choppy"
     assert "deterministic trigger state recorded" in decoded["transition_summary"]
 
@@ -76,7 +85,44 @@ def test_replay_vm_absent_event_renders_unavailable_without_inference() -> None:
     assert replay["final_decision"] is None
     assert replay["manual_only_execution"] is False
     assert replay["preserved_engine_authority"] is False
+    assert replay["replay_reference_status"] == "unavailable"
+    assert replay["replay_reference_source"] == "unknown"
     assert "No trigger readiness is inferred" in str(replay["readiness_explanation"])
+
+
+def test_replay_vm_marks_missing_replay_source_reference_unavailable() -> None:
+    replay = build_decision_review_replay_vm(complete_audit_event()).to_dict()
+
+    assert replay["replay_reference_available"] is False
+    assert replay["replay_reference_status"] == "unavailable"
+    assert replay["replay_reference_source"] == "unknown"
+    assert replay["replay_reference_run_id"] is None
+    assert "unavailable" in str(replay["replay_reference_message"]).lower()
+
+
+def test_replay_vm_blocks_replay_source_reference_without_run_id() -> None:
+    replay = build_decision_review_replay_vm(
+        complete_audit_event(),
+        audit_replay_record=audit_replay_record(last_run_id=None),
+    ).to_dict()
+
+    assert replay["replay_reference_available"] is False
+    assert replay["replay_reference_status"] == "blocked"
+    assert replay["replay_reference_run_id"] is None
+    assert "run identifier is unavailable" in str(replay["replay_reference_message"])
+
+
+def test_replay_vm_marks_source_reference_mismatch_without_changing_final_decision() -> None:
+    replay = build_decision_review_replay_vm(
+        complete_audit_event(final_decision="NO_TRADE"),
+        audit_replay_record=audit_replay_record(last_final_decision="TRADE_APPROVED"),
+    ).to_dict()
+
+    assert replay["final_decision"] == "NO_TRADE"
+    assert replay["replay_reference_status"] == "mismatch"
+    assert replay["replay_reference_available"] is True
+    assert replay["replay_reference_consistent"] is False
+    assert "does not match" in str(replay["replay_reference_message"])
 
 
 def test_replay_vm_includes_blocking_missing_stale_and_lockout_reasons_when_recorded() -> None:
@@ -123,7 +169,16 @@ def test_replay_vm_excludes_sensitive_values_and_authorization_payloads() -> Non
             "wss://stream-redaction.invalid/ws?token=ACCESS_VALUE_PRIVATE",
         ),
     )
-    rendered = json.dumps(build_decision_review_replay_vm(event).to_dict(), sort_keys=True)
+    rendered = json.dumps(
+        build_decision_review_replay_vm(
+            event,
+            audit_replay_record=audit_replay_record(
+                source="Authorization: Bearer BEARER_VALUE_PRIVATE_12345678901234567890",
+                last_run_id="ACCESS_VALUE_PRIVATE",
+            ),
+        ).to_dict(),
+        sort_keys=True,
+    )
 
     for value in SENSITIVE_VALUES:
         assert value not in rendered
@@ -229,6 +284,23 @@ def complete_audit_event(
         created_at=CREATED_AT,
         source="fixture",
     ).to_dict()
+
+
+def audit_replay_record(
+    *,
+    source: str = "fixture_backed",
+    replay_available: bool = True,
+    last_run_id: str | None = "run-1",
+    last_final_decision: str | None = "NO_TRADE",
+    stage_e_live_backend: bool = False,
+) -> dict[str, object]:
+    return {
+        "source": source,
+        "stage_e_live_backend": stage_e_live_backend,
+        "replay_available": replay_available,
+        "last_run_id": last_run_id,
+        "last_final_decision": last_final_decision,
+    }
 
 
 def decision_review_panel(

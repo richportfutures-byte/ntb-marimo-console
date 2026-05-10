@@ -97,6 +97,11 @@ class StartupFlowTests(unittest.TestCase):
         self.assertTrue(startup.shell["workflow"]["decision_review_ready"])
         self.assertTrue(startup.shell["workflow"]["audit_replay_ready"])
         self.assertEqual(startup.shell["runtime"]["session_state"], "AUDIT_REPLAY_READY")
+        replay = startup.shell["surfaces"]["decision_review"]["narrative_audit_replay"]
+        self.assertEqual(replay["replay_reference_status"], "available")
+        self.assertEqual(replay["replay_reference_source"], "fixture_backed")
+        self.assertIsNotNone(replay["replay_reference_run_id"])
+        self.assertTrue(replay["replay_reference_consistent"])
 
     def test_preserved_profile_query_action_completion_reaches_decision_and_audit_ready(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
@@ -107,6 +112,11 @@ class StartupFlowTests(unittest.TestCase):
         self.assertTrue(startup.shell["workflow"]["decision_review_ready"])
         self.assertTrue(startup.shell["workflow"]["audit_replay_ready"])
         self.assertEqual(startup.shell["runtime"]["session_state"], "AUDIT_REPLAY_READY")
+        replay = startup.shell["surfaces"]["audit_replay"]["narrative_audit_replay"]
+        self.assertEqual(replay["replay_reference_status"], "available")
+        self.assertEqual(replay["replay_reference_source"], "stage_e_jsonl")
+        self.assertIsNotNone(replay["replay_reference_run_id"])
+        self.assertTrue(replay["replay_reference_stage_e_live_backend"])
 
     def test_zn_query_action_request_fails_closed_at_startup(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_zn_phase1"}, clear=True):
