@@ -52,6 +52,7 @@ class OperatorWorkspaceRequest:
     audit_replay_record: AuditReplayRecord | Mapping[str, Any] | None = None
     operator_notes_status: str | None = None
     trigger_transition_log_status: str | None = None
+    trigger_transition_log: Mapping[str, Any] | None = None
     evidence_unavailable_reasons: tuple[str, ...] = ()
 
 
@@ -232,14 +233,20 @@ def _build_evidence_and_replay(
     live_thesis_monitor: Mapping[str, Any],
     last_pipeline_result: Mapping[str, Any],
 ) -> dict[str, object]:
+    transition_log = _trigger_transition_log_summary(request.trigger_transition_log, contract)
+    transition_log_status = _safe_status(
+        request.trigger_transition_log_status or transition_log["status"]
+    )
     reasons = tuple(_safe_text(reason) for reason in request.evidence_unavailable_reasons if str(reason).strip())
     if not reasons:
-        reasons = (
+        default_reasons = [
             "Run history source not supplied to the workspace view model.",
             "Audit replay source not supplied to the workspace view model.",
             "Operator notes source not wired in this foundation.",
-            "Trigger transition log source not wired in this foundation.",
-        )
+        ]
+        if request.trigger_transition_log is None:
+            default_reasons.append("Trigger transition log source not wired in this foundation.")
+        reasons = tuple(default_reasons)
     decision_review_audit_event = build_decision_review_audit_event(
         decision_review=_decision_review_payload_from_last_pipeline_result(
             last_pipeline_result,
@@ -257,11 +264,53 @@ def _build_evidence_and_replay(
         "run_history_status": _safe_status(request.run_history_status or "unavailable"),
         "audit_replay_status": _safe_status(_audit_replay_status(request)),
         "operator_notes_status": _safe_status(request.operator_notes_status or "unavailable"),
-        "trigger_transition_log_status": _safe_status(request.trigger_transition_log_status or "unavailable"),
+        "trigger_transition_log_status": transition_log_status,
+        "trigger_transition_log": transition_log,
         "unavailable_reasons": list(reasons),
         "decision_review_audit_event": decision_review_audit_event,
         "decision_review_replay": decision_review_replay,
         "replay_statement": _NO_SYNTHETIC_REPLAY_STATEMENT,
+    }
+
+
+def _trigger_transition_log_summary(
+    log: Mapping[str, Any] | None,
+    contract: str,
+) -> dict[str, object]:
+    if log is None:
+        return {
+            "status": "unavailable",
+            "count": 0,
+            "contract": contract,
+            "blocking_reasons": ["log_source_not_wired"],
+            "source_schema": None,
+        }
+    log_contract = _safe_text(log.get("contract") or "").upper()
+    source_schema = _string_or_none(log.get("schema"))
+    transitions = log.get("trigger_transitions")
+    transition_tuple = tuple(transitions) if isinstance(transitions, (list, tuple)) else ()
+    if log_contract and log_contract != contract:
+        return {
+            "status": "blocked",
+            "count": 0,
+            "contract": contract,
+            "blocking_reasons": [f"cross_contract_replay_summary:{log_contract}"],
+            "source_schema": _safe_text(source_schema) if source_schema else None,
+        }
+    if not transition_tuple:
+        return {
+            "status": "unavailable",
+            "count": 0,
+            "contract": contract,
+            "blocking_reasons": ["log_empty_no_transitions_recorded"],
+            "source_schema": _safe_text(source_schema) if source_schema else None,
+        }
+    return {
+        "status": "available",
+        "count": len(transition_tuple),
+        "contract": contract,
+        "blocking_reasons": [],
+        "source_schema": _safe_text(source_schema) if source_schema else None,
     }
 
 

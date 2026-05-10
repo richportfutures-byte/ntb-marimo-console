@@ -325,6 +325,13 @@ def test_evidence_and_replay_placeholder_has_explicit_unavailable_reasons() -> N
     assert evidence["audit_replay_status"] == "unavailable"
     assert evidence["operator_notes_status"] == "unavailable"
     assert evidence["trigger_transition_log_status"] == "unavailable"
+    assert evidence["trigger_transition_log"] == {
+        "status": "unavailable",
+        "count": 0,
+        "contract": "6E",
+        "blocking_reasons": ["log_source_not_wired"],
+        "source_schema": None,
+    }
     assert len(evidence["unavailable_reasons"]) == 4
     assert evidence["decision_review_audit_event"]["manual_only_execution"] is True
     assert evidence["decision_review_audit_event"]["preserved_engine_authority"] is True
@@ -374,6 +381,141 @@ def test_workspace_evidence_links_supplied_audit_replay_record_without_synthetic
     assert evidence["replay_statement"] == "No synthetic replay is labeled as real evidence."
 
 
+def test_workspace_evidence_surfaces_supplied_trigger_transition_log_with_count_and_contract() -> None:
+    log = {
+        "schema": "evidence_replay_v1",
+        "contract": "ES",
+        "trigger_transitions": (
+            {
+                "event_id": "evt-es-1",
+                "timestamp": "2026-05-06T13:55:00+00:00",
+                "event_type": "trigger_query_ready",
+                "setup_id": "es_setup_1",
+                "trigger_id": "es_trigger_1",
+                "trigger_state": "QUERY_READY",
+                "source": "fixture_backed",
+            },
+            {
+                "event_id": "evt-es-2",
+                "timestamp": "2026-05-06T13:56:00+00:00",
+                "event_type": "trigger_invalidated",
+                "setup_id": "es_setup_1",
+                "trigger_id": "es_trigger_1",
+                "trigger_state": "INVALIDATED",
+                "source": "fixture_backed",
+            },
+        ),
+    }
+
+    evidence = ready_workspace("ES", trigger_transition_log=log).to_dict()["evidence_and_replay"]
+
+    assert evidence["trigger_transition_log_status"] == "available"
+    assert evidence["trigger_transition_log"] == {
+        "status": "available",
+        "count": 2,
+        "contract": "ES",
+        "blocking_reasons": [],
+        "source_schema": "evidence_replay_v1",
+    }
+    assert "Trigger transition log source not wired in this foundation." not in evidence["unavailable_reasons"]
+
+
+def test_workspace_evidence_blocks_cross_contract_trigger_transition_log() -> None:
+    log = {
+        "schema": "evidence_replay_v1",
+        "contract": "NQ",
+        "trigger_transitions": (
+            {
+                "event_id": "evt-nq-1",
+                "timestamp": "2026-05-06T13:55:00+00:00",
+                "event_type": "trigger_query_ready",
+                "setup_id": "nq_setup_1",
+                "trigger_id": "nq_trigger_1",
+                "trigger_state": "QUERY_READY",
+                "source": "fixture_backed",
+            },
+        ),
+    }
+
+    evidence = ready_workspace("ES", trigger_transition_log=log).to_dict()["evidence_and_replay"]
+
+    assert evidence["trigger_transition_log_status"] == "blocked"
+    assert evidence["trigger_transition_log"]["status"] == "blocked"
+    assert evidence["trigger_transition_log"]["count"] == 0
+    assert evidence["trigger_transition_log"]["contract"] == "ES"
+    assert evidence["trigger_transition_log"]["blocking_reasons"] == ["cross_contract_replay_summary:NQ"]
+
+
+def test_workspace_evidence_marks_supplied_but_empty_trigger_transition_log_unavailable() -> None:
+    log = {"schema": "evidence_replay_v1", "contract": "MGC", "trigger_transitions": ()}
+
+    evidence = ready_workspace("MGC", trigger_transition_log=log).to_dict()["evidence_and_replay"]
+
+    assert evidence["trigger_transition_log_status"] == "unavailable"
+    assert evidence["trigger_transition_log"]["status"] == "unavailable"
+    assert evidence["trigger_transition_log"]["count"] == 0
+    assert evidence["trigger_transition_log"]["blocking_reasons"] == ["log_empty_no_transitions_recorded"]
+
+
+@pytest.mark.parametrize("contract", ("ES", "NQ", "CL", "6E", "MGC"))
+def test_workspace_evidence_attributes_trigger_transition_log_per_contract_without_bleed(contract: str) -> None:
+    log = {
+        "schema": "evidence_replay_v1",
+        "contract": contract,
+        "trigger_transitions": (
+            {
+                "event_id": f"evt-{contract.lower()}-1",
+                "timestamp": "2026-05-06T13:55:00+00:00",
+                "event_type": "trigger_query_ready",
+                "setup_id": f"{contract.lower()}_setup_1",
+                "trigger_id": f"{contract.lower()}_trigger_1",
+                "trigger_state": "QUERY_READY",
+                "source": "fixture_backed",
+            },
+        ),
+    }
+
+    evidence = ready_workspace(contract, trigger_transition_log=log).to_dict()["evidence_and_replay"]
+
+    assert evidence["trigger_transition_log"]["status"] == "available"
+    assert evidence["trigger_transition_log"]["count"] == 1
+    assert evidence["trigger_transition_log"]["contract"] == contract
+    assert evidence["trigger_transition_log"]["blocking_reasons"] == []
+    rendered = json.dumps(evidence, sort_keys=True)
+    for other in ("ES", "NQ", "CL", "6E", "MGC"):
+        if other == contract:
+            continue
+        assert f"{other.lower()}_setup_1" not in rendered.lower()
+
+
+def test_workspace_evidence_explicit_status_override_takes_precedence_over_log() -> None:
+    log = {
+        "schema": "evidence_replay_v1",
+        "contract": "ES",
+        "trigger_transitions": (
+            {
+                "event_id": "evt-es-override",
+                "timestamp": "2026-05-06T13:55:00+00:00",
+                "event_type": "trigger_query_ready",
+                "setup_id": "es_setup_1",
+                "trigger_id": "es_trigger_1",
+                "trigger_state": "QUERY_READY",
+                "source": "fixture_backed",
+            },
+        ),
+    }
+
+    evidence = ready_workspace(
+        "ES",
+        trigger_transition_log=log,
+        trigger_transition_log_status="unavailable",
+    ).to_dict()["evidence_and_replay"]
+
+    assert evidence["trigger_transition_log_status"] == "unavailable"
+    assert evidence["trigger_transition_log"]["status"] == "available"
+    assert evidence["trigger_transition_log"]["count"] == 1
+
+
 def test_no_fixture_fallback_after_live_failure_behavior_is_weakened() -> None:
     gate = query_gate(
         "ES",
@@ -399,6 +541,8 @@ def ready_workspace(
     provider_status: str | None = None,
     stream_status: str | None = None,
     audit_replay_record: dict[str, object] | None = None,
+    trigger_transition_log: dict[str, object] | None = None,
+    trigger_transition_log_status: str | None = None,
 ) -> object:
     selected_trigger = trigger_state or trigger_result(contract, TriggerState.QUERY_READY)
     selected_gate = gate or query_gate(contract, trigger_state=selected_trigger)
@@ -420,6 +564,8 @@ def ready_workspace(
             evaluated_at="2026-05-06T14:00:00+00:00",
             last_pipeline_result=last_pipeline_result,
             audit_replay_record=audit_replay_record,
+            trigger_transition_log=trigger_transition_log,
+            trigger_transition_log_status=trigger_transition_log_status,
         )
     )
 
