@@ -25,13 +25,27 @@ from ntb_marimo_console.market_data.futures_quote_service import (
 from ntb_marimo_console.runtime_modes import (
     assemble_runtime_for_profile,
     build_app_shell_from_assembly,
+    build_app_shell_for_profile,
     build_es_app_shell_for_mode,
 )
-from ntb_marimo_console.runtime_profiles import get_runtime_profile
+from ntb_marimo_console.runtime_profiles import RuntimeProfile, get_runtime_profile
 
 
 TEST_MARKET_DATA_MAX_AGE_SECONDS = "3600"
 DETERMINISTIC_FIXTURE_NOW = datetime(2026, 4, 30, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def cl_fixture_profile() -> RuntimeProfile:
+    return RuntimeProfile(
+        profile_id="fixture_cl_contract_sidecar",
+        runtime_mode="fixture_demo",
+        contract="CL",
+        session_date="2026-01-14",
+        evaluation_timestamp_iso="2026-01-14T09:05:00-05:00",
+        artifact_root_relative=Path("."),
+        artifact_contract_dir="CL",
+        readiness_trigger={"trigger_family": "price_level_touch", "price_level": 73.35},
+    )
 
 
 class FakeSchwabAdapter:
@@ -103,6 +117,32 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
         self.assertTrue(replay["narrative_quality"]["source_reference_present"])
         self.assertTrue(replay["narrative_quality"]["replay_reference_present"])
 
+    def test_cl_fixture_sidecar_surfaces_contract_market_read_through_replay_path(self) -> None:
+        shell = build_app_shell_for_profile(
+            profile=cl_fixture_profile(),
+            query_action_requested=True,
+        )
+        decision = shell["surfaces"]["decision_review"]
+        replay = decision["narrative_audit_replay"]
+
+        self.assertEqual(shell["runtime"]["contract"], "CL")
+        self.assertEqual(shell["runtime"]["runtime_mode"], "fixture_demo")
+        self.assertEqual(shell["runtime"]["session_state"], "AUDIT_REPLAY_READY")
+        self.assertTrue(decision["narrative_available"])
+        self.assertTrue(decision["engine_reasoning"]["available"])
+        self.assertEqual(decision["engine_reasoning"]["outcome"], "NO_TRADE")
+        self.assertIn("Synthetic fixture/demo CL market read", decision["engine_reasoning"]["structural_notes"])
+        self.assertIn("does not infer DOM", decision["engine_reasoning"]["structural_notes"])
+        self.assertFalse(decision["trade_thesis"]["available"])
+        self.assertEqual(replay["contract"], "CL")
+        self.assertEqual(replay["final_decision"], "NO_TRADE")
+        self.assertEqual(replay["replay_reference_status"], "available")
+        self.assertEqual(replay["replay_reference_source"], "fixture_backed")
+        self.assertTrue(replay["engine_narrative_available"])
+        self.assertEqual(replay["narrative_quality"]["status"], "PASS")
+        self.assertFalse(replay["narrative_quality"]["unsupported_market_read_claim_detected"])
+        self.assertFalse(replay["narrative_quality"]["unsupported_contract_language_detected"])
+
     def test_missing_fixture_sidecar_remains_explicit_without_crashing(self) -> None:
         source_root = default_fixtures_root()
         profile = get_runtime_profile("fixture_es_demo")
@@ -131,30 +171,41 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
         sidecars = sorted((fixture_root / "pipeline").glob("*/*.narrative.json"))
         sidecar_paths = {path.relative_to(fixture_root).as_posix() for path in sidecars}
 
-        self.assertEqual(sidecar_paths, {"pipeline/ES/pipeline_result.no_trade.narrative.json"})
+        self.assertEqual(
+            sidecar_paths,
+            {
+                "pipeline/CL/pipeline_result.no_trade.narrative.json",
+                "pipeline/ES/pipeline_result.no_trade.narrative.json",
+            },
+        )
 
-        payload = json.loads(sidecars[0].read_text(encoding="utf-8"))
-        rendered = json.dumps(payload, sort_keys=True).lower()
+        payloads = [json.loads(sidecar.read_text(encoding="utf-8")) for sidecar in sidecars]
+        contracts = {payload["contract_analysis"]["contract"] for payload in payloads}
+        self.assertEqual(contracts, {"CL", "ES"})
 
-        self.assertEqual(payload["contract_analysis"]["contract"], "ES")
-        self.assertIn("synthetic fixture/demo", rendered)
-        for forbidden in (
-            "account",
-            "order",
-            "fill",
-            "p&l",
-            "credential",
-            "token",
-            "http://",
-            "https://",
-            "wss://",
-            "customer",
-            "correl",
-            "authorization",
-            "zn",
-            '"gc"',
-        ):
-            self.assertNotIn(forbidden, rendered)
+        for payload in payloads:
+            rendered = json.dumps(payload, sort_keys=True).lower()
+            self.assertIn("synthetic fixture/demo", rendered)
+            self.assertIn("execution remains manual", rendered)
+            if payload["contract_analysis"]["contract"] == "CL":
+                self.assertIn("preserved engine remains the decision authority", rendered)
+            for forbidden in (
+                "account",
+                "order",
+                "fill",
+                "p&l",
+                "credential",
+                "token",
+                "http://",
+                "https://",
+                "wss://",
+                "customer",
+                "correl",
+                "authorization",
+                "zn",
+                '"gc"',
+            ):
+                self.assertNotIn(forbidden, rendered)
 
     def test_fixture_dependency_construction_includes_noop_market_data_service(self) -> None:
         dependencies = build_phase1_dependencies(default_fixtures_root())

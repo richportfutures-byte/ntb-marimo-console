@@ -1,0 +1,28 @@
+{
+  "contract_analysis": {
+    "contract": "CL",
+    "market_regime": "range_bound",
+    "directional_bias": "neutral",
+    "evidence_score": 4,
+    "confidence_band": "LOW",
+    "structural_notes": "Synthetic fixture/demo CL market read: price is above the declared 73.35 query trigger with positive cumulative delta and above-average volume pace, while EIA is not locked out. The preserved fixture result remains NO_TRADE because this sidecar is read-only replay evidence; it does not infer DOM, sweep, footprint, or aggressive flow state. Source attribution is fixture-scoped, execution remains manual, and the preserved engine remains the decision authority.",
+    "outcome": "NO_TRADE",
+    "conflicting_signals": [
+      "Synthetic fixture CL is query-ready by declared inputs, but the preserved result remains NO_TRADE for replay review."
+    ],
+    "assumptions": [
+      "Synthetic fixture context is non-live and demo-scoped.",
+      "Unavailable DOM, sweep, footprint, and aggressive flow evidence is not inferred."
+    ],
+    "key_levels": {
+      "pivot_level": 73.35,
+      "support_levels": [
+        72.9
+      ],
+      "resistance_levels": [
+        73.8
+      ]
+    }
+  },
+  "proposed_setup": null
+}

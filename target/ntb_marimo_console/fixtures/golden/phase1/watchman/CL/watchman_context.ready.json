@@ -1,0 +1,13 @@
+{
+  "contract": "CL",
+  "event_risk_state": "clear",
+  "vwap_posture_state": "price_above_vwap",
+  "value_location_state": "above_value",
+  "level_proximity_state": "near_trigger",
+  "hard_lockout_flags": [],
+  "awareness_flags": [
+    "fixture_context",
+    "eia_not_locked_out"
+  ],
+  "missing_inputs": []
+}
