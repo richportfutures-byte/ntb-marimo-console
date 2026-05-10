@@ -32,6 +32,7 @@ def test_quality_passes_for_read_only_replay_with_source_and_run_reference() -> 
     assert decoded["preserved_engine_authority_language_present"] is True
     assert decoded["raw_json_primary_surface_detected"] is False
     assert decoded["unsafe_execution_language_detected"] is False
+    assert decoded["unsupported_market_read_claim_detected"] is False
     assert decoded["unsupported_contract_language_detected"] is False
     assert decoded["missing_narrative_detected"] is False
     assert decoded == replay["narrative_quality"]
@@ -146,6 +147,151 @@ def test_quality_preserves_contract_universe_without_promoting_zn_or_gc() -> Non
     assert unsupported["unsupported_contract_language_detected"] is True
 
 
+def test_professional_no_trade_market_read_contract_passes_with_evidence_and_attribution() -> None:
+    replay = build_decision_review_replay_vm(
+        complete_audit_event(),
+        audit_replay_record=audit_replay_record(),
+    ).to_dict()
+
+    quality = validate_decision_review_narrative_quality(
+        replay,
+        primary_surface_text=professional_no_trade_market_read(),
+    ).to_dict()
+
+    assert quality["status"] == "PASS"
+    assert quality["source_reference_present"] is True
+    assert quality["replay_reference_present"] is True
+    assert quality["manual_only_language_present"] is True
+    assert quality["preserved_engine_authority_language_present"] is True
+    assert quality["raw_json_primary_surface_detected"] is False
+    assert quality["unsafe_execution_language_detected"] is False
+    assert quality["unsupported_market_read_claim_detected"] is False
+    assert quality["unsupported_contract_language_detected"] is False
+    assert quality["missing_narrative_detected"] is False
+
+
+def test_market_read_contract_fails_unsupported_market_claim_even_when_prose_is_polished() -> None:
+    replay = build_decision_review_replay_vm(
+        complete_audit_event(),
+        audit_replay_record=audit_replay_record(),
+    ).to_dict()
+
+    quality = validate_decision_review_narrative_quality(
+        replay,
+        primary_surface_text=(
+            professional_no_trade_market_read()
+            + " Footprint confirms hidden buyers and DOM shows a guaranteed upside continuation."
+        ),
+    ).to_dict()
+
+    assert quality["status"] == "FAIL"
+    assert quality["unsupported_market_read_claim_detected"] is True
+    assert "unsupported_market_read_claim_detected" in quality["blocking_reasons"]
+    assert _check_message(quality, "unsupported_market_read_claim_detected") == (
+        "Unsupported market-read claim was detected."
+    )
+
+
+def test_market_read_contract_fails_execution_implying_language() -> None:
+    replay = build_decision_review_replay_vm(
+        complete_audit_event(),
+        audit_replay_record=audit_replay_record(),
+    ).to_dict()
+
+    quality = validate_decision_review_narrative_quality(
+        replay,
+        primary_surface_text=professional_no_trade_market_read() + " Buy now if price reclaims VWAP.",
+    ).to_dict()
+
+    assert quality["status"] == "FAIL"
+    assert quality["unsafe_execution_language_detected"] is True
+    assert "unsafe_execution_language_detected" in quality["blocking_reasons"]
+    assert _check_message(quality, "unsafe_execution_language_detected") == "Unsafe authority language was detected."
+
+
+def test_market_read_contract_fails_preserved_engine_authority_confusion() -> None:
+    replay = build_decision_review_replay_vm(
+        complete_audit_event(),
+        audit_replay_record=audit_replay_record(),
+    ).to_dict()
+    replay["manual_only_execution"] = False
+    replay["preserved_engine_authority"] = False
+    replay["authority_statement"] = "Narrative review decides whether this setup is acceptable."
+    replay["readiness_explanation"] = "Narrative review can approve the setup without the preserved pipeline."
+
+    quality = validate_decision_review_narrative_quality(
+        replay,
+        primary_surface_text="This market read is cautious and avoids execution wording.",
+    ).to_dict()
+
+    assert quality["status"] == "FAIL"
+    assert quality["manual_only_language_present"] is False
+    assert quality["preserved_engine_authority_language_present"] is False
+    assert "manual_only_language_present" in quality["blocking_reasons"]
+    assert "preserved_engine_authority_language_present" in quality["blocking_reasons"]
+
+
+def test_market_read_contract_fails_unsupported_contract_language() -> None:
+    replay = build_decision_review_replay_vm(
+        complete_audit_event(contract="MGC", setup_id="mgc_setup_1", trigger_id="mgc_trigger_1"),
+        audit_replay_record=audit_replay_record(),
+    ).to_dict()
+
+    quality = validate_decision_review_narrative_quality(
+        replay,
+        primary_surface_text=professional_no_trade_market_read(contract="MGC") + " Compare this GC read to ZN.",
+    ).to_dict()
+
+    assert quality["status"] == "FAIL"
+    assert quality["unsupported_contract_language_detected"] is True
+    assert "unsupported_contract_language_detected" in quality["blocking_reasons"]
+
+
+def test_market_read_contract_fails_raw_json_primary_surface() -> None:
+    replay = build_decision_review_replay_vm(
+        complete_audit_event(),
+        audit_replay_record=audit_replay_record(),
+    ).to_dict()
+
+    quality = validate_decision_review_narrative_quality(
+        replay,
+        primary_surface_text='{"contract":"ES","final_decision":"NO_TRADE"}',
+    ).to_dict()
+
+    assert quality["status"] == "FAIL"
+    assert quality["raw_json_primary_surface_detected"] is True
+    assert "raw_json_primary_surface_detected" in quality["blocking_reasons"]
+
+
+def test_market_read_contract_fails_when_replay_source_attribution_is_blocked() -> None:
+    replay = build_decision_review_replay_vm(
+        complete_audit_event(),
+        audit_replay_record={
+            "source": "stage_e_jsonl",
+            "stage_e_live_backend": True,
+            "replay_available": True,
+            "last_run_id": None,
+            "last_final_decision": "NO_TRADE",
+        },
+    ).to_dict()
+    replay["source"] = "unknown"
+    replay["source_fields"] = []
+
+    quality = validate_decision_review_narrative_quality(
+        replay,
+        primary_surface_text=professional_no_trade_market_read(),
+    ).to_dict()
+
+    assert quality["status"] == "FAIL"
+    assert quality["source_reference_present"] is False
+    assert quality["replay_reference_present"] is False
+    assert "source_reference_present" in quality["warnings"]
+    assert "replay_reference_present" in quality["blocking_reasons"]
+    assert _check_message(quality, "replay_reference_present") == (
+        "Replay reference is unavailable, blocked, or inconsistent."
+    )
+
+
 def complete_audit_event(
     *,
     contract: str = "ES",
@@ -199,6 +345,26 @@ def complete_audit_event(
         created_at=CREATED_AT,
         source="fixture",
     ).to_dict()
+
+
+def professional_no_trade_market_read(*, contract: str = "ES") -> str:
+    return (
+        f"{contract} market read: price is rotating near VWAP, breadth is mixed, and the recorded "
+        "trigger state is QUERY_READY for review context only. The preserved engine result is NO_TRADE, "
+        "so this is a professional pass on the setup rather than a trade approval. Source fields and "
+        "the replay run reference are present; execution remains manual and the preserved pipeline "
+        "remains the decision authority."
+    )
+
+
+def _check_message(quality: dict[str, object], check_id: str) -> str:
+    checks = quality["checks"]
+    assert isinstance(checks, list)
+    for check in checks:
+        assert isinstance(check, dict)
+        if check["check_id"] == check_id:
+            return str(check["message"])
+    raise AssertionError(f"Missing quality check: {check_id}")
 
 
 def audit_replay_record() -> dict[str, object]:

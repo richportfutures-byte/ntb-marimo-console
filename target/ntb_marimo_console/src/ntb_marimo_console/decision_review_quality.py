@@ -50,6 +50,12 @@ _UNSAFE_FIELD_KEYS: Final[tuple[str, ...]] = (
     "scale_out",
     "trailing_stop",
 )
+_UNSUPPORTED_MARKET_READ_CLAIM_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
+    re.compile(r"\bguarantees?\b", re.IGNORECASE),
+    re.compile(r"\bconfirmed\s+by\s+(?:footprint|dom|sweep|aggressive\s+order\s+flow)\b", re.IGNORECASE),
+    re.compile(r"\b(?:footprint|dom|sweep|aggressive\s+order\s+flow)\s+confirms?\b", re.IGNORECASE),
+    re.compile(r"\b(?:footprint|dom|sweep|aggressive\s+order\s+flow)\s+(?:shows?|proves?)\b", re.IGNORECASE),
+)
 
 
 @dataclass(frozen=True)
@@ -78,6 +84,7 @@ class NarrativeQualityReport:
     preserved_engine_authority_language_present: bool
     raw_json_primary_surface_detected: bool
     unsafe_execution_language_detected: bool
+    unsupported_market_read_claim_detected: bool
     unsupported_contract_language_detected: bool
     missing_narrative_detected: bool
     schema: str = DECISION_REVIEW_NARRATIVE_QUALITY_SCHEMA
@@ -97,6 +104,7 @@ class NarrativeQualityReport:
             "preserved_engine_authority_language_present": self.preserved_engine_authority_language_present,
             "raw_json_primary_surface_detected": self.raw_json_primary_surface_detected,
             "unsafe_execution_language_detected": self.unsafe_execution_language_detected,
+            "unsupported_market_read_claim_detected": self.unsupported_market_read_claim_detected,
             "unsupported_contract_language_detected": self.unsupported_contract_language_detected,
             "missing_narrative_detected": self.missing_narrative_detected,
         }
@@ -118,6 +126,7 @@ def validate_decision_review_narrative_quality(
     preserved_engine_authority_language_present = _authority_language_present(replay_payload, text)
     raw_json_primary_surface_detected = _raw_json_primary_surface_detected(primary_surface_text)
     unsafe_execution_language_detected = _unsafe_language_detected(text, field_keys)
+    unsupported_market_read_claim_detected = _unsupported_market_read_claim_detected(text)
     unsupported_contract_language_detected = _unsupported_contract_language_detected(replay_payload, text)
     missing_narrative_detected = _missing_narrative_detected(replay_payload)
 
@@ -194,6 +203,15 @@ def validate_decision_review_narrative_quality(
     )
     checks.append(
         _check(
+            "unsupported_market_read_claim_detected",
+            "FAIL" if unsupported_market_read_claim_detected else "PASS",
+            "Unsupported market-read claim was detected."
+            if unsupported_market_read_claim_detected
+            else "No unsupported market-read claims detected.",
+        )
+    )
+    checks.append(
+        _check(
             "missing_narrative_detected",
             _missing_narrative_status(available, missing_narrative_detected),
             "Narrative content is present."
@@ -214,6 +232,7 @@ def validate_decision_review_narrative_quality(
         preserved_engine_authority_language_present=preserved_engine_authority_language_present,
         raw_json_primary_surface_detected=raw_json_primary_surface_detected,
         unsafe_execution_language_detected=unsafe_execution_language_detected,
+        unsupported_market_read_claim_detected=unsupported_market_read_claim_detected,
         unsupported_contract_language_detected=unsupported_contract_language_detected,
         missing_narrative_detected=missing_narrative_detected,
     )
@@ -273,6 +292,10 @@ def _unsafe_language_detected(text: str, field_keys: set[str]) -> bool:
     return any(pattern.search(text) for pattern in _UNSAFE_PHRASE_PATTERNS) or any(
         key in field_keys for key in _UNSAFE_FIELD_KEYS
     )
+
+
+def _unsupported_market_read_claim_detected(text: str) -> bool:
+    return any(pattern.search(text) for pattern in _UNSUPPORTED_MARKET_READ_CLAIM_PATTERNS)
 
 
 def _unsupported_contract_language_detected(replay: Mapping[str, Any], text: str) -> bool:
