@@ -65,6 +65,7 @@ class PipelineQueryGateRequest:
     event_lockout_active: bool = False
     fixture_mode_accepted: bool = False
     evaluated_at: str | None = None
+    trigger_state_from_real_producer: bool = False
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,7 @@ class PipelineQueryGateResult:
     session_valid: bool
     event_lockout_active: bool
     evaluated_at: str | None
+    trigger_state_from_real_producer: bool
     pipeline_query_authorized: bool = field(init=False)
     schema: str = PIPELINE_QUERY_GATE_SCHEMA
     decision_authority: str = "preserved_engine_only"
@@ -115,6 +117,7 @@ class PipelineQueryGateResult:
             "session_valid": self.session_valid,
             "event_lockout_active": self.event_lockout_active,
             "evaluated_at": self.evaluated_at,
+            "trigger_state_from_real_producer": self.trigger_state_from_real_producer,
             "pipeline_query_authorized": self.pipeline_query_authorized,
             "decision_authority": self.decision_authority,
             "query_scope": self.query_scope,
@@ -165,6 +168,7 @@ def evaluate_pipeline_query_gate(request: PipelineQueryGateRequest) -> PipelineQ
         session_valid=request.session_valid,
         event_lockout_active=request.event_lockout_active,
         evaluated_at=evaluated_at,
+        trigger_state_from_real_producer=request.trigger_state_from_real_producer,
     )
 
 

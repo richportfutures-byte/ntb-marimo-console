@@ -189,6 +189,11 @@ def _build_pipeline_gate(gate: Mapping[str, Any]) -> dict[str, object]:
     return {
         "gate_enabled": enabled,
         "manual_query_allowed": enabled,
+        "contract": _safe_text(_string_or_none(gate.get("contract")) or "unavailable"),
+        "setup_id": _safe_text(_string_or_none(gate.get("setup_id")) or "unavailable"),
+        "trigger_id": _safe_text(_string_or_none(gate.get("trigger_id")) or "unavailable"),
+        "trigger_state": _safe_text(_string_or_none(gate.get("trigger_state")) or "UNAVAILABLE").upper(),
+        "trigger_state_from_real_producer": gate.get("trigger_state_from_real_producer") is True,
         "enabled_reasons": list(_sequence_text(gate.get("enabled_reasons"))),
         "disabled_reasons": list(disabled_reasons),
         "blocking_reasons": list(blocking_reasons),

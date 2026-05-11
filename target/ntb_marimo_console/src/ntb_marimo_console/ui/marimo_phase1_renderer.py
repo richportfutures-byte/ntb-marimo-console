@@ -632,6 +632,7 @@ def _render_surface_section(
             f"- Status Summary: {_as_str(panel.get('status_summary'), default='<unavailable>')}",
             f"- Next Action: {_as_str(panel.get('next_action'), default='<unavailable>')}",
         ]
+        lines.extend(_render_pipeline_query_gate_lines(panel))
         blocked_reasons = panel.get("blocked_reasons")
         if isinstance(blocked_reasons, list) and blocked_reasons:
             lines.append("- Blocked Reasons:")
@@ -927,6 +928,82 @@ def _ready_outcome_suffix(state: object, outcome: object) -> str:
     if outcome is None:
         return state_text
     return f"{state_text} ({_as_str(outcome)})"
+
+
+def _render_pipeline_query_gate_lines(panel: Mapping[str, object]) -> list[str]:
+    gate = panel.get("pipeline_query_gate")
+    if not isinstance(gate, Mapping):
+        return [
+            "",
+            "### Pipeline Query Gate",
+            "- Status: `unavailable`",
+            "- Reason: `pipeline_query_gate_result_unavailable`",
+        ]
+
+    enabled = gate.get("enabled") is True or gate.get("pipeline_query_authorized") is True
+    status = _as_str(gate.get("status"), default="DISABLED" if not enabled else "ENABLED")
+    contract = _as_str(gate.get("contract"), default="<unavailable>")
+    setup_id = _as_str(gate.get("setup_id"), default="<unavailable>")
+    trigger_id = _as_str(gate.get("trigger_id"), default="<unavailable>")
+    trigger_state = _as_str(gate.get("trigger_state"), default="UNAVAILABLE")
+    from_real_producer = gate.get("trigger_state_from_real_producer") is True
+
+    lines = [
+        "",
+        "### Pipeline Query Gate",
+        f"- Status: `{status}`",
+        f"- Gate Enabled: `{enabled}`",
+        f"- Contract: `{contract}`",
+        f"- Selected Setup ID: `{setup_id}`",
+        f"- Selected Trigger ID: `{trigger_id}`",
+        f"- Trigger State: `{trigger_state}`",
+        f"- Trigger State From Real Producer: `{from_real_producer}`",
+        f"- Gate Statement: {_GATE_STATEMENT_TEXT}",
+    ]
+
+    if not from_real_producer:
+        lines.append(
+            "- Producer Note: Real trigger state result was not supplied; the gate fell back to UNAVAILABLE and stays fail-closed."
+        )
+
+    if enabled:
+        lines.append("- Primary Enabled Reasons:")
+        enabled_reasons = gate.get("enabled_reasons")
+        if isinstance(enabled_reasons, list) and enabled_reasons:
+            for reason in enabled_reasons:
+                lines.append(f"  - `{_as_str(reason)}`")
+        else:
+            lines.append("  - `query_ready_conditions_met`")
+        if trigger_state != "QUERY_READY":
+            lines.append(
+                "- Note: Gate enabled requires a real produced QUERY_READY trigger state; "
+                "any other state must keep this gate disabled."
+            )
+    else:
+        lines.append("- Disabled Because:")
+        disabled_reasons = gate.get("disabled_reasons")
+        if isinstance(disabled_reasons, list) and disabled_reasons:
+            for reason in disabled_reasons:
+                lines.append(f"  - `{_as_str(reason)}`")
+        else:
+            lines.append("  - `pipeline_query_gate_disabled_unspecified_reason`")
+        if trigger_state != "QUERY_READY":
+            lines.append(
+                f"- Trigger State Explanation: real produced trigger state is `{trigger_state}`, "
+                "not `QUERY_READY`; the gate stays disabled until the producer reports QUERY_READY."
+            )
+        missing_conditions = gate.get("missing_conditions")
+        if isinstance(missing_conditions, list) and missing_conditions:
+            lines.append("- Missing Required Conditions:")
+            for condition in missing_conditions:
+                lines.append(f"  - `{_as_str(condition)}`")
+
+    return lines
+
+
+_GATE_STATEMENT_TEXT = (
+    "Gate enabled means only that the operator may manually query the preserved Stage A through D pipeline."
+)
 
 
 def _render_decision_review_replay(replay: object) -> list[str]:

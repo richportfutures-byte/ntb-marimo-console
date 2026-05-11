@@ -87,10 +87,30 @@ def test_display_trigger_truth_does_not_enable_pipeline_query_without_query_read
 
     assert artifacts.pipeline_query_gate.enabled is False
     assert artifacts.pipeline_query_gate.trigger_state == "TOUCHED"
+    assert artifacts.pipeline_query_gate.trigger_state_from_real_producer is True
     assert "trigger_state_not_query_ready:TOUCHED" in artifacts.pipeline_query_gate.disabled_reasons
     assert "bar_state_required_for_confirmation" in artifacts.pipeline_query_gate.disabled_reasons
     assert artifacts.workflow_status.query_action_status == "FAILED"
     assert backend.calls == ["sweep_watchman"]
+
+
+def test_trigger_state_fallback_when_producer_yields_no_results_is_flagged_as_not_from_real_producer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = _Backend()
+    monkeypatch.setattr(app_module, "build_trigger_state_results", lambda request: ())
+
+    artifacts = build_phase1_payload(
+        backend=backend,
+        inputs=build_es_runtime_inputs(FIXTURES_ROOT),
+        dependencies=build_phase1_dependencies(FIXTURES_ROOT),
+        query_action_requested=True,
+    )
+
+    assert artifacts.pipeline_query_gate.enabled is False
+    assert artifacts.pipeline_query_gate.trigger_state == "UNAVAILABLE"
+    assert artifacts.pipeline_query_gate.trigger_state_from_real_producer is False
+    assert "trigger_state_result_unavailable" in artifacts.pipeline_query_gate.disabled_reasons
 
 
 def test_real_query_ready_trigger_state_enables_pipeline_even_when_display_rows_are_false(

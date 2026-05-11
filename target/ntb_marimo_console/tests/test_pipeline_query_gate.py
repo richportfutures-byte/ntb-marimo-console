@@ -308,6 +308,30 @@ def test_sensitive_values_are_redacted_from_output() -> None:
     assert "[REDACTED" in rendered
 
 
+def test_trigger_state_from_real_producer_flag_propagates_into_gate_result_and_to_dict() -> None:
+    real = evaluate_pipeline_query_gate(
+        ready_request("ES", trigger_state_from_real_producer=True)
+    )
+    synthetic = evaluate_pipeline_query_gate(
+        ready_request(
+            "ES",
+            trigger_state=trigger_result(
+                "ES",
+                TriggerState.UNAVAILABLE,
+                blocking_reasons=("trigger_state_result_unavailable",),
+            ),
+            trigger_state_from_real_producer=False,
+        )
+    )
+
+    assert real.trigger_state_from_real_producer is True
+    assert real.to_dict()["trigger_state_from_real_producer"] is True
+    assert synthetic.trigger_state_from_real_producer is False
+    assert synthetic.to_dict()["trigger_state_from_real_producer"] is False
+    assert synthetic.enabled is False
+    assert "trigger_state_not_query_ready:UNAVAILABLE" in synthetic.blocking_reasons
+
+
 def test_no_fixture_fallback_after_live_failure_semantics_are_not_weakened() -> None:
     live_failure = evaluate_pipeline_query_gate(
         ready_request(

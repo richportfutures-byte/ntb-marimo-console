@@ -200,6 +200,39 @@ def test_enabled_gate_displays_explicit_text_reasons() -> None:
     )
 
 
+def test_pipeline_gate_section_surfaces_selected_contract_setup_trigger_and_producer_origin() -> None:
+    gate = query_gate("ES", trigger_state_from_real_producer=True)
+    pipeline_gate = ready_workspace("ES", gate=gate).to_dict()["pipeline_gate"]
+
+    assert pipeline_gate["contract"] == "ES"
+    assert pipeline_gate["setup_id"] == "es_setup_1"
+    assert pipeline_gate["trigger_id"] == "es_trigger_1"
+    assert pipeline_gate["trigger_state"] == "QUERY_READY"
+    assert pipeline_gate["trigger_state_from_real_producer"] is True
+
+
+def test_pipeline_gate_section_marks_fallback_producer_when_trigger_state_result_is_synthetic() -> None:
+    fallback_trigger = TriggerStateResult(
+        contract="ES",
+        setup_id=None,
+        trigger_id=None,
+        state=TriggerState.UNAVAILABLE,
+        distance_to_trigger_ticks=None,
+        required_fields=(),
+        missing_fields=(),
+        invalid_reasons=(),
+        blocking_reasons=("trigger_state_result_unavailable",),
+        last_updated=None,
+    )
+    gate = query_gate("ES", trigger_state=fallback_trigger, trigger_state_from_real_producer=False)
+    pipeline_gate = ready_workspace("ES", gate=gate).to_dict()["pipeline_gate"]
+
+    assert pipeline_gate["manual_query_allowed"] is False
+    assert pipeline_gate["trigger_state"] == "UNAVAILABLE"
+    assert pipeline_gate["trigger_state_from_real_producer"] is False
+    assert "trigger_state_not_query_ready:UNAVAILABLE" in pipeline_gate["blocking_reasons"]
+
+
 def test_query_ready_is_displayed_as_query_readiness_only_not_trade_authorization() -> None:
     monitor = ready_workspace("ES").to_dict()["live_thesis_monitor"]
 

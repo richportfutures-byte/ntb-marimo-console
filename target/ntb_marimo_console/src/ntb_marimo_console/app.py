@@ -327,6 +327,8 @@ def build_phase1_shell_from_artifacts(
                     "trigger_state": artifacts.pipeline_query_gate.trigger_state,
                     "trigger_state_setup_id": artifacts.pipeline_query_gate.setup_id,
                     "trigger_state_trigger_id": artifacts.pipeline_query_gate.trigger_id,
+                    "trigger_state_from_real_producer": artifacts.pipeline_query_gate.trigger_state_from_real_producer,
+                    "pipeline_query_gate_enabled_reasons": list(artifacts.pipeline_query_gate.enabled_reasons),
                     "status_summary": artifacts.workflow_status.status_summary,
                     "next_action": artifacts.workflow_status.next_action,
                     "bounded_action_description": artifacts.workflow_status.bounded_action_description,
@@ -477,6 +479,9 @@ def _build_pipeline_query_gate(
     watchman_context: WatchmanContextLike,
     trigger_state_results: tuple[TriggerStateResult, ...],
 ) -> PipelineQueryGateResult:
+    matching_real_results = tuple(
+        result for result in trigger_state_results if result.contract == session_target.contract
+    )
     trigger_state = _select_pipeline_trigger_state_result(
         contract=session_target.contract,
         trigger_state_results=trigger_state_results,
@@ -502,6 +507,7 @@ def _build_pipeline_query_gate(
             event_lockout_active=bool(watchman_context.hard_lockout_flags),
             fixture_mode_accepted=fixture_mode_accepted,
             evaluated_at=inputs.pipeline_query.evaluation_timestamp_iso,
+            trigger_state_from_real_producer=bool(matching_real_results),
         )
     )
 

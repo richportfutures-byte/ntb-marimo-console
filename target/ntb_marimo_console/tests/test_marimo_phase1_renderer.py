@@ -12,6 +12,7 @@ from ntb_marimo_console.ui.marimo_phase1_renderer import (
     _render_decision_review_replay,
     _render_decision_review_risk_authorization,
     _render_decision_review_trade_thesis,
+    _render_pipeline_query_gate_lines,
     build_phase1_render_plan,
     build_profile_operations_markdown,
     build_session_evidence_markdown,
@@ -507,6 +508,88 @@ class EntrypointSharedRendererTests(unittest.TestCase):
         self.assertEqual(profile_selector.value, "fixture_es_demo")
         with self.assertRaises(ValueError):
             mo.ui.dropdown(options=options, value="fixture_es_demo")
+
+    def test_pipeline_query_gate_subsection_renders_readable_disabled_explanation_for_fixture_default(self) -> None:
+        shell = build_es_app_shell_for_mode(mode="fixture_demo")
+        panel = shell["surfaces"]["query_action"]
+
+        lines = _render_pipeline_query_gate_lines(panel)
+        text = "\n".join(lines)
+
+        self.assertIn("### Pipeline Query Gate", text)
+        self.assertIn("- Status: `DISABLED`", text)
+        self.assertIn("- Gate Enabled: `False`", text)
+        self.assertIn("- Contract: `ES`", text)
+        self.assertIn("- Trigger State: `TOUCHED`", text)
+        self.assertIn("- Trigger State From Real Producer: `True`", text)
+        self.assertIn("- Disabled Because:", text)
+        self.assertIn("trigger_state_not_query_ready:TOUCHED", text)
+        self.assertIn("real produced trigger state is `TOUCHED`", text)
+        self.assertIn("Missing Required Conditions:", text)
+        self.assertIn("trigger_state_query_ready", text)
+        self.assertNotIn("```json", text)
+
+    def test_pipeline_query_gate_subsection_renders_enabled_reasons_when_enabled(self) -> None:
+        panel = {
+            "pipeline_query_gate": {
+                "enabled": True,
+                "pipeline_query_authorized": True,
+                "status": "ENABLED",
+                "contract": "MGC",
+                "setup_id": "mgc_setup_1",
+                "trigger_id": "mgc_trigger_1",
+                "trigger_state": "QUERY_READY",
+                "trigger_state_from_real_producer": True,
+                "enabled_reasons": ["contract_final_supported", "trigger_state_query_ready"],
+                "disabled_reasons": [],
+                "missing_conditions": [],
+            },
+        }
+
+        text = "\n".join(_render_pipeline_query_gate_lines(panel))
+
+        self.assertIn("- Status: `ENABLED`", text)
+        self.assertIn("- Gate Enabled: `True`", text)
+        self.assertIn("- Contract: `MGC`", text)
+        self.assertIn("- Selected Setup ID: `mgc_setup_1`", text)
+        self.assertIn("- Selected Trigger ID: `mgc_trigger_1`", text)
+        self.assertIn("- Trigger State: `QUERY_READY`", text)
+        self.assertIn("- Trigger State From Real Producer: `True`", text)
+        self.assertIn("Primary Enabled Reasons:", text)
+        self.assertIn("`contract_final_supported`", text)
+        self.assertIn("`trigger_state_query_ready`", text)
+        self.assertNotIn("Disabled Because:", text)
+
+    def test_pipeline_query_gate_subsection_calls_out_synthetic_producer_fallback(self) -> None:
+        panel = {
+            "pipeline_query_gate": {
+                "enabled": False,
+                "pipeline_query_authorized": False,
+                "status": "DISABLED",
+                "contract": "ES",
+                "setup_id": None,
+                "trigger_id": None,
+                "trigger_state": "UNAVAILABLE",
+                "trigger_state_from_real_producer": False,
+                "enabled_reasons": [],
+                "disabled_reasons": ["trigger_state_not_query_ready:UNAVAILABLE", "trigger_state_result_unavailable"],
+                "missing_conditions": ["trigger_state_query_ready"],
+            },
+        }
+
+        text = "\n".join(_render_pipeline_query_gate_lines(panel))
+
+        self.assertIn("- Trigger State From Real Producer: `False`", text)
+        self.assertIn("Producer Note:", text)
+        self.assertIn("fell back to UNAVAILABLE", text)
+        self.assertIn("trigger_state_result_unavailable", text)
+
+    def test_pipeline_query_gate_subsection_is_unavailable_when_gate_absent(self) -> None:
+        text = "\n".join(_render_pipeline_query_gate_lines({}))
+
+        self.assertIn("### Pipeline Query Gate", text)
+        self.assertIn("- Status: `unavailable`", text)
+        self.assertIn("pipeline_query_gate_result_unavailable", text)
 
     def test_demo_entrypoint_uses_shared_renderer(self) -> None:
         source = (PACKAGE_ROOT / "src" / "ntb_marimo_console" / "demo_fixture_app.py").read_text(encoding="utf-8")
