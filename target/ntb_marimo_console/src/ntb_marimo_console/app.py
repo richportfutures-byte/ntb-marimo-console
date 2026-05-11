@@ -275,6 +275,20 @@ def build_phase1_app(
         dependencies=dependencies,
         query_action_requested=query_action_requested,
     )
+    return build_phase1_shell_from_artifacts(
+        artifacts,
+        inputs=inputs,
+        query_action_requested=query_action_requested,
+    )
+
+
+def build_phase1_shell_from_artifacts(
+    artifacts: Phase1BuildArtifacts,
+    *,
+    inputs: OperatorRuntimeInputs,
+    query_action_requested: bool = True,
+) -> dict[str, object]:
+    """Build the app shell from already-produced Phase 1 artifacts."""
     shell = build_app_shell(artifacts.payload)
 
     surfaces = shell.get("surfaces")

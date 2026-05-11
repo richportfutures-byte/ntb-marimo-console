@@ -27,7 +27,8 @@ from .runtime_diagnostics import (
     build_runtime_failure_report,
     runtime_identity_payload,
 )
-from .runtime_modes import build_app_shell_for_profile, parse_runtime_mode
+from .app import build_phase1_shell_from_artifacts
+from .runtime_modes import assemble_runtime_for_profile, build_phase1_artifacts_from_assembly, parse_runtime_mode
 from .runtime_profiles import (
     RuntimeProfile,
     RuntimeProfileError,
@@ -35,6 +36,7 @@ from .runtime_profiles import (
     get_runtime_profile,
 )
 from .startup_flow import build_startup_payload
+from .trigger_state import TriggerStateResult
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,7 @@ class StartupArtifacts:
     ready: bool
     config: LaunchConfig | None
     operator_runtime: OperatorRuntimeSnapshotResult
+    trigger_state_results: tuple[TriggerStateResult, ...] = ()
 
 
 def build_launch_artifacts_from_env(
@@ -460,12 +463,20 @@ def _build_startup_artifacts_from_report(
     )
 
     try:
-        shell = build_app_shell_for_profile(
+        assembly = assemble_runtime_for_profile(
             profile=config.profile,
             fixtures_root=config.fixtures_root,
             lockout=config.lockout,
             model_adapter=config.model_adapter,
             market_data_config=config.market_data_config,
+        )
+        artifacts = build_phase1_artifacts_from_assembly(
+            assembly,
+            query_action_requested=query_action_requested,
+        )
+        shell = build_phase1_shell_from_artifacts(
+            artifacts,
+            inputs=assembly.inputs,
             query_action_requested=query_action_requested,
         )
     except Exception as exc:
@@ -480,7 +491,14 @@ def _build_startup_artifacts_from_report(
         return StartupArtifacts(shell=shell, report=failed_report, ready=False, config=config, operator_runtime=operator_runtime)
 
     attach_launch_metadata(shell, report, operator_runtime=operator_runtime)
-    return StartupArtifacts(shell=shell, report=report, ready=True, config=config, operator_runtime=operator_runtime)
+    return StartupArtifacts(
+        shell=shell,
+        report=report,
+        ready=True,
+        config=config,
+        operator_runtime=operator_runtime,
+        trigger_state_results=artifacts.trigger_state_results,
+    )
 
 
 def _runtime_failure_summary(report: PreflightReport) -> str:

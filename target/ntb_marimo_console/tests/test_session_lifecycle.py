@@ -17,6 +17,7 @@ from ntb_marimo_console.evidence_replay import EVIDENCE_REPLAY_SCHEMA
 from ntb_marimo_console.market_data.stream_cache import StreamCacheRecord, StreamCacheSnapshot
 from ntb_marimo_console.session_lifecycle import (
     load_session_lifecycle_from_env,
+    observe_phase1_trigger_state_results,
     reload_current_profile,
     request_query_action,
     reset_session,
@@ -173,6 +174,51 @@ class SessionLifecycleTests(unittest.TestCase):
                 self.assertNotIn("evidence_replay_v1", rendered)
                 self.assertIsNone(item.trigger_transition_log(contract="ES"))
 
+    def test_lifecycle_observes_produced_trigger_state_results_without_first_replay(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+
+        self.assertTrue(lifecycle.ready)
+        self.assertEqual(lifecycle.trigger_transition_replay_source.events, ())
+        self.assertIsNone(lifecycle.trigger_transition_log(contract="ES"))
+        rendered = json.dumps(lifecycle.shell, sort_keys=True)
+        self.assertNotIn("trigger_transition_log", rendered)
+        self.assertNotIn("evidence_replay_v1", rendered)
+
+    def test_lifecycle_refresh_observes_real_produced_transition_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_root = FIXTURES_ROOT
+            artifact_root = Path(temp_dir) / "phase1"
+            shutil.copytree(source_root, artifact_root)
+
+            with patch.dict(
+                os.environ,
+                {
+                    "NTB_CONSOLE_PROFILE": "fixture_es_demo",
+                    "NTB_FIXTURES_ROOT": str(artifact_root),
+                },
+                clear=True,
+            ):
+                lifecycle = load_session_lifecycle_from_env()
+                self.assertIsNone(lifecycle.trigger_transition_log(contract="ES"))
+
+                observable_path = artifact_root / "observables" / "ES" / "trigger_true.json"
+                observable = json.loads(observable_path.read_text(encoding="utf-8"))
+                observable["market"]["current_price"] = 5603.5
+                observable_path.write_text(json.dumps(observable), encoding="utf-8")
+                refreshed = reload_current_profile(lifecycle)
+
+        log = refreshed.trigger_transition_log(contract="ES")
+
+        self.assertIsNotNone(log)
+        assert log is not None
+        self.assertEqual(log["schema"], EVIDENCE_REPLAY_SCHEMA)
+        self.assertEqual(log["contract"], "ES")
+        self.assertEqual(log["trigger_transitions"][0]["event_type"], "trigger_approaching")
+        self.assertEqual(log["trigger_transitions"][0]["trigger_state"], "APPROACHING")
+        self.assertEqual(log["trigger_transitions"][0]["setup_id"], "es_setup_1")
+        self.assertEqual(log["trigger_transitions"][0]["trigger_id"], "es_trigger_acceptance")
+
     def test_lifecycle_trigger_observation_first_and_identical_states_expose_no_log(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
             lifecycle = load_session_lifecycle_from_env()
@@ -303,6 +349,11 @@ class SessionLifecycleTests(unittest.TestCase):
                     lifecycle.observe_trigger_state_result(
                         display_only_input,  # type: ignore[arg-type]
                         timestamp="2026-05-06T14:00:00+00:00",
+                    )
+                with self.assertRaises(TypeError):
+                    observe_phase1_trigger_state_results(
+                        lifecycle,
+                        (display_only_input,),  # type: ignore[arg-type]
                     )
 
         app_path = Path(__file__).resolve().parents[1] / "src" / "ntb_marimo_console" / "app.py"

@@ -1,6 +1,6 @@
 # Trigger State Producer Boundary
 
-Status: producer boundary added; lifecycle observation deferred
+Status: producer boundary added; lifecycle observation wired
 Date: 2026-05-11
 Roadmap: R15
 
@@ -40,13 +40,13 @@ Quote freshness, bar state, event lockout, session lockout, and invalidator
 state are passed only when the runtime already has them. Missing inputs fail
 closed through the trigger-state engine instead of fabricating readiness.
 
-The remaining integration gap is not production of a single real result. The
-remaining gap is a lifecycle-owned handoff for chronological observations:
-`build_phase1_payload(...)` returns typed `TriggerStateResult` values, but the
-refresh/reload/query app shell path still does not pass those results to
-`SessionLifecycle.observe_trigger_state_result(...)`. Until that handoff exists,
-the app cannot establish a real prior/current sequence for the same
-contract/setup_id/trigger_id.
+`SessionLifecycle` now observes these typed results at the lifecycle app-build
+boundary. Startup, bounded-query, reload, and profile-switch builds pass
+`Phase1BuildArtifacts.trigger_state_results` to
+`SessionLifecycle.observe_trigger_state_result(...)` through the narrow
+`observe_phase1_trigger_state_results(...)` helper. The helper accepts only real
+`TriggerStateResult` values and does not read shell state, display rows,
+renderer tables, pipeline summaries, or replay payloads.
 
 ## Boundary
 
@@ -63,14 +63,9 @@ Do not derive replay evidence from these display or summary shapes:
 `TriggerTransitionReplaySource` may receive observations only through the
 session-owned seam and only from real sequential `TriggerStateResult` values.
 
-## Remaining Boundary
+## Runtime Boundary
 
-The missing boundary is now a production runtime/lifecycle handoff that passes
-the typed `Phase1BuildArtifacts.trigger_state_results` sequence to
-`SessionLifecycle.observe_trigger_state_result(...)` without reading shell
-state, display rows, renderer tables, pipeline summaries, or replay payloads.
-
-Until that boundary exists, lifecycle observation remains deferred and
-`trigger_transition_log` must stay unavailable unless tests or future runtime
-code explicitly feed real sequential `TriggerStateResult` values into the
-session seam.
+`trigger_transition_log` remains unavailable until at least two real sequential
+observations for the same contract/setup_id/trigger_id produce a material
+transition. First observations and identical-state refreshes do not create
+evidence replay.

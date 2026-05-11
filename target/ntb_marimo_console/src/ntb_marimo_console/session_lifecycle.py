@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
@@ -31,7 +31,8 @@ from .runtime_diagnostics import (
     PreflightReport,
     build_artifact_source_snapshot,
 )
-from .runtime_modes import RuntimeAssembly, assemble_runtime_for_profile, build_app_shell_from_assembly
+from .app import build_phase1_shell_from_artifacts
+from .runtime_modes import RuntimeAssembly, assemble_runtime_for_profile, build_phase1_artifacts_from_assembly
 from .session_evidence import (
     SessionEvidenceRecord,
     append_session_evidence,
@@ -136,6 +137,31 @@ class SessionLifecycle:
         )
 
 
+def observe_phase1_trigger_state_results(
+    lifecycle: SessionLifecycle,
+    trigger_state_results: Iterable[TriggerStateResult],
+    *,
+    timestamp: str | None = None,
+    profile_id: str | None = None,
+    live_snapshot_ref: str | None = None,
+    premarket_brief_ref: str | None = None,
+) -> tuple[EvidenceEvent, ...]:
+    emitted: list[EvidenceEvent] = []
+    for trigger_state_result in trigger_state_results:
+        if not isinstance(trigger_state_result, TriggerStateResult):
+            raise TypeError("observe_phase1_trigger_state_results requires TriggerStateResult values")
+        emitted.extend(
+            lifecycle.observe_trigger_state_result(
+                trigger_state_result,
+                timestamp=timestamp,
+                profile_id=profile_id,
+                live_snapshot_ref=live_snapshot_ref,
+                premarket_brief_ref=premarket_brief_ref,
+            )
+        )
+    return tuple(emitted)
+
+
 def load_session_lifecycle_from_env(
     *,
     default_mode: str = "fixture_demo",
@@ -163,7 +189,7 @@ def load_session_lifecycle_from_env(
     lifecycle_state = _shell_session_state(current_shell)
     status_summary = _initial_summary(startup)
     next_action = _extract_next_action(current_shell)
-    return _finalize_lifecycle(
+    lifecycle = _finalize_lifecycle(
         shell=current_shell,
         baseline_shell=baseline_shell,
         report=startup.report,
@@ -196,6 +222,8 @@ def load_session_lifecycle_from_env(
         runtime_snapshot_producer=runtime_snapshot_producer,
         operator_runtime_mode=startup.operator_runtime.mode,
     )
+    observe_phase1_trigger_state_results(lifecycle, startup.trigger_state_results)
+    return lifecycle
 
 
 def request_query_action(lifecycle: SessionLifecycle) -> SessionLifecycle:
@@ -209,8 +237,13 @@ def request_query_action(lifecycle: SessionLifecycle) -> SessionLifecycle:
         )
 
     operator_runtime = _resolve_operator_runtime_for_lifecycle(lifecycle)
-    current_shell = build_app_shell_from_assembly(
+    artifacts = build_phase1_artifacts_from_assembly(
         lifecycle.assembly,
+        query_action_requested=True,
+    )
+    current_shell = build_phase1_shell_from_artifacts(
+        artifacts,
+        inputs=lifecycle.assembly.inputs,
         query_action_requested=True,
     )
     attach_launch_metadata(current_shell, lifecycle.report, operator_runtime=operator_runtime)
@@ -221,7 +254,7 @@ def request_query_action(lifecycle: SessionLifecycle) -> SessionLifecycle:
     lifecycle_state = _shell_session_state(current_shell)
     status_summary = _query_summary(current_shell)
     next_action = _extract_next_action(current_shell)
-    return _finalize_lifecycle(
+    next_lifecycle = _finalize_lifecycle(
         shell=current_shell,
         baseline_shell=lifecycle.baseline_shell,
         report=lifecycle.report,
@@ -255,6 +288,8 @@ def request_query_action(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime_mode=operator_runtime.mode,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
+    observe_phase1_trigger_state_results(next_lifecycle, artifacts.trigger_state_results)
+    return next_lifecycle
 
 
 def refresh_runtime_snapshot(lifecycle: SessionLifecycle) -> SessionLifecycle:
@@ -265,7 +300,7 @@ def refresh_runtime_snapshot(lifecycle: SessionLifecycle) -> SessionLifecycle:
         lifecycle.lifecycle_history,
         runtime_shell=current_shell,
     )
-    return _finalize_lifecycle(
+    next_lifecycle = _finalize_lifecycle(
         shell=current_shell,
         baseline_shell=deepcopy(lifecycle.baseline_shell) if lifecycle.baseline_shell is not None else None,
         report=lifecycle.report,
@@ -300,6 +335,7 @@ def refresh_runtime_snapshot(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime_mode=operator_runtime.mode,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
+    return next_lifecycle
 
 
 def reset_session(lifecycle: SessionLifecycle) -> SessionLifecycle:
@@ -324,7 +360,7 @@ def reset_session(lifecycle: SessionLifecycle) -> SessionLifecycle:
         runtime_shell=current_shell,
     )
     next_action = _extract_next_action(current_shell)
-    return _finalize_lifecycle(
+    next_lifecycle = _finalize_lifecycle(
         shell=current_shell,
         baseline_shell=deepcopy(current_shell),
         report=lifecycle.report,
@@ -361,6 +397,7 @@ def reset_session(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime_mode=operator_runtime.mode,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
+    return next_lifecycle
 
 
 def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
@@ -443,7 +480,7 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
         ),
         runtime_shell=current_shell,
     )
-    return _finalize_lifecycle(
+    next_lifecycle = _finalize_lifecycle(
         shell=current_shell,
         baseline_shell=deepcopy(startup.shell),
         report=startup.report,
@@ -477,6 +514,8 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime_mode=startup.operator_runtime.mode,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
+    observe_phase1_trigger_state_results(next_lifecycle, startup.trigger_state_results)
+    return next_lifecycle
 
 
 def clear_retained_evidence(lifecycle: SessionLifecycle) -> SessionLifecycle:
@@ -662,7 +701,7 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
         runtime_shell=current_shell,
     )
     current_active_profile = _selected_profile_id_from_shell(current_shell)
-    return _finalize_lifecycle(
+    next_lifecycle = _finalize_lifecycle(
         shell=current_shell,
         baseline_shell=deepcopy(startup.shell),
         report=startup.report,
@@ -699,6 +738,8 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
         operator_runtime_mode=startup.operator_runtime.mode,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
+    observe_phase1_trigger_state_results(next_lifecycle, startup.trigger_state_results)
+    return next_lifecycle
 
 
 def _assemble_runtime(startup: StartupArtifacts) -> RuntimeAssembly | None:

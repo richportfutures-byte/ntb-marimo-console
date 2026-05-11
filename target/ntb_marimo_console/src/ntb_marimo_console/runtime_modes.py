@@ -9,7 +9,12 @@ from typing import cast
 from .adapters.schwab_futures_market_data import SchwabFuturesMarketDataAdapter
 from .adapters import PreservedEngineBackend
 from .adapters.contracts import OperatorRuntimeInputs, PipelineBackend, RuntimeMode
-from .app import Phase1AppDependencies, build_phase1_app
+from .app import (
+    Phase1AppDependencies,
+    Phase1BuildArtifacts,
+    build_phase1_payload,
+    build_phase1_shell_from_artifacts,
+)
 from .demo_fixture_runtime import (
     FixturePipelineBackend,
     build_phase1_dependencies,
@@ -188,6 +193,36 @@ def build_app_shell_for_profile(
     )
 
 
+def build_phase1_artifacts_for_profile(
+    *,
+    profile: RuntimeProfile,
+    fixtures_root: str | Path | None = None,
+    lockout: bool = False,
+    model_adapter: object | None = None,
+    market_data_config: FuturesQuoteServiceConfig | None = None,
+    market_data_fixture_quote: FuturesQuote | None = None,
+    market_data_fixture_quote_factory: FixtureQuoteFactory | None = None,
+    market_data_schwab_adapter: SchwabFuturesMarketDataAdapter | None = None,
+    market_data_schwab_adapter_factory: SchwabAdapterFactory | None = None,
+    query_action_requested: bool = True,
+) -> Phase1BuildArtifacts:
+    assembly = assemble_runtime_for_profile(
+        profile=profile,
+        fixtures_root=fixtures_root,
+        lockout=lockout,
+        model_adapter=model_adapter,
+        market_data_config=market_data_config,
+        market_data_fixture_quote=market_data_fixture_quote,
+        market_data_fixture_quote_factory=market_data_fixture_quote_factory,
+        market_data_schwab_adapter=market_data_schwab_adapter,
+        market_data_schwab_adapter_factory=market_data_schwab_adapter_factory,
+    )
+    return build_phase1_artifacts_from_assembly(
+        assembly,
+        query_action_requested=query_action_requested,
+    )
+
+
 def assemble_runtime_for_profile(
     *,
     profile: RuntimeProfile,
@@ -249,7 +284,23 @@ def build_app_shell_from_assembly(
     *,
     query_action_requested: bool = True,
 ) -> dict[str, object]:
-    return build_phase1_app(
+    artifacts = build_phase1_artifacts_from_assembly(
+        assembly,
+        query_action_requested=query_action_requested,
+    )
+    return build_phase1_shell_from_artifacts(
+        artifacts,
+        inputs=assembly.inputs,
+        query_action_requested=query_action_requested,
+    )
+
+
+def build_phase1_artifacts_from_assembly(
+    assembly: RuntimeAssembly,
+    *,
+    query_action_requested: bool = True,
+) -> Phase1BuildArtifacts:
+    return build_phase1_payload(
         backend=assembly.backend,
         inputs=assembly.inputs,
         dependencies=assembly.dependencies,
