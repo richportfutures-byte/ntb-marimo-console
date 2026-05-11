@@ -29,6 +29,30 @@ from ntb_marimo_console.runtime_modes import (
     build_es_app_shell_for_mode,
 )
 from ntb_marimo_console.runtime_profiles import RuntimeProfile, get_runtime_profile
+from ntb_marimo_console.trigger_state import TriggerState, TriggerStateResult
+
+
+def _query_ready_trigger_state_results(request: object) -> tuple[TriggerStateResult, ...]:
+    """Stub producer output: real produced QUERY_READY TriggerStateResult for the request contract.
+
+    Used only by demo tests that explicitly require a successful pipeline query path
+    (narrative sidecar surfacing, missing-sidecar fail-safe behavior).
+    """
+    contract = getattr(request, "contract", "ES")
+    return (
+        TriggerStateResult(
+            contract=contract,
+            setup_id=f"{contract.lower()}_setup_1",
+            trigger_id=f"{contract.lower()}_trigger_query_ready",
+            state=TriggerState.QUERY_READY,
+            distance_to_trigger_ticks=0.0,
+            required_fields=("market.current_price",),
+            missing_fields=(),
+            invalid_reasons=(),
+            blocking_reasons=(),
+            last_updated=getattr(request, "last_updated", None) or "2026-03-25T09:35:00-04:00",
+        ),
+    )
 
 
 TEST_MARKET_DATA_MAX_AGE_SECONDS = "3600"
@@ -87,7 +111,11 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
         self.assertIn("runtime", shell)
         self.assertEqual(shell["runtime"]["runtime_mode"], "fixture_demo")
         self.assertEqual(shell["runtime"]["profile_id"], "fixture_es_demo")
-        self.assertEqual(shell["runtime"]["session_state"], "AUDIT_REPLAY_READY")
+        gate = surfaces["query_action"]["pipeline_query_gate"]
+        self.assertFalse(surfaces["query_action"]["query_enabled"])
+        self.assertEqual(gate["trigger_state"], "TOUCHED")
+        self.assertTrue(gate["trigger_state_from_real_producer"])
+        self.assertEqual(shell["runtime"]["session_state"], "QUERY_ACTION_FAILED")
 
     def test_lockout_mode_keeps_query_disabled(self) -> None:
         shell = build_es_app_shell_for_mode(mode="fixture_demo", lockout=True)
@@ -99,7 +127,11 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
         self.assertEqual(shell["surfaces"]["run_history"]["source"], "fixture_backed")
 
     def test_fixture_sidecar_narrative_surfaces_through_replay_quality_path(self) -> None:
-        shell = build_es_app_shell_for_mode(mode="fixture_demo")
+        with patch(
+            "ntb_marimo_console.app.build_trigger_state_results",
+            new=_query_ready_trigger_state_results,
+        ):
+            shell = build_es_app_shell_for_mode(mode="fixture_demo")
         decision = shell["surfaces"]["decision_review"]
         replay = decision["narrative_audit_replay"]
 
@@ -121,10 +153,14 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
         self.assertIn("trigger_transition_narrative_present", replay["narrative_quality"]["warnings"])
 
     def test_cl_fixture_sidecar_surfaces_contract_market_read_through_replay_path(self) -> None:
-        shell = build_app_shell_for_profile(
-            profile=cl_fixture_profile(),
-            query_action_requested=True,
-        )
+        with patch(
+            "ntb_marimo_console.app.build_trigger_state_results",
+            new=_query_ready_trigger_state_results,
+        ):
+            shell = build_app_shell_for_profile(
+                profile=cl_fixture_profile(),
+                query_action_requested=True,
+            )
         decision = shell["surfaces"]["decision_review"]
         replay = decision["narrative_audit_replay"]
 
@@ -158,7 +194,11 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
             sidecar = fixture_root / "pipeline" / "ES" / "pipeline_result.no_trade.narrative.json"
             sidecar.unlink()
 
-            shell = build_es_app_shell_for_mode(mode="fixture_demo", fixtures_root=fixture_root)
+            with patch(
+                "ntb_marimo_console.app.build_trigger_state_results",
+                new=_query_ready_trigger_state_results,
+            ):
+                shell = build_es_app_shell_for_mode(mode="fixture_demo", fixtures_root=fixture_root)
             backend = FixturePipelineBackend(fixture_root, profile=profile)
 
             decision = shell["surfaces"]["decision_review"]
@@ -337,7 +377,11 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
         market_data = shell["surfaces"]["live_observables"]["market_data"]
         self.assertEqual(market_data["status"], "Market data unavailable")
         self.assertEqual(market_data["bid"], "N/A")
-        self.assertTrue(shell["surfaces"]["query_action"]["query_enabled"])
+        # Default fixture path produces TOUCHED, not QUERY_READY, so the R13 gate stays disabled.
+        gate = shell["surfaces"]["query_action"]["pipeline_query_gate"]
+        self.assertFalse(shell["surfaces"]["query_action"]["query_enabled"])
+        self.assertEqual(gate["trigger_state"], "TOUCHED")
+        self.assertIn("trigger_state_not_query_ready:TOUCHED", gate["disabled_reasons"])
 
     def test_schwab_market_data_config_remains_blocked_and_unavailable(self) -> None:
         market_data_config = resolve_futures_quote_service_config(
@@ -448,7 +492,11 @@ class DemoFixtureRuntimeSmokeTests(unittest.TestCase):
             market_data_config=market_data_config,
             market_data_schwab_adapter_factory=lambda cfg: seen_configs.append(cfg) or adapter,
         )
-        shell = build_app_shell_from_assembly(assembly)
+        with patch(
+            "ntb_marimo_console.app.build_trigger_state_results",
+            new=_query_ready_trigger_state_results,
+        ):
+            shell = build_app_shell_from_assembly(assembly)
 
         self.assertTrue(seen_configs)
         self.assertEqual(seen_configs[0].provider, "schwab")

@@ -4,6 +4,7 @@ import json
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from ntb_marimo_console.app import build_phase1_app
 from ntb_marimo_console.adapters.contracts import (
@@ -16,6 +17,29 @@ from ntb_marimo_console.adapters.contracts import (
     WatchmanSweepRequest,
 )
 from ntb_marimo_console.demo_fixture_runtime import build_es_runtime_inputs, build_phase1_dependencies
+from ntb_marimo_console.trigger_state import TriggerState, TriggerStateResult
+
+
+def _query_ready_trigger_state_results(request: object) -> tuple[TriggerStateResult, ...]:
+    """Stub producer output: real produced QUERY_READY TriggerStateResult for the request contract.
+
+    Used only by tests that explicitly require a successful pipeline query path.
+    """
+    contract = getattr(request, "contract", "ES")
+    return (
+        TriggerStateResult(
+            contract=contract,
+            setup_id=f"{contract.lower()}_setup_1",
+            trigger_id=f"{contract.lower()}_trigger_query_ready",
+            state=TriggerState.QUERY_READY,
+            distance_to_trigger_ticks=0.0,
+            required_fields=("market.current_price",),
+            missing_fields=(),
+            invalid_reasons=(),
+            blocking_reasons=(),
+            last_updated=getattr(request, "last_updated", None) or "2026-03-25T09:35:00-04:00",
+        ),
+    )
 
 
 class _FakeBackend(PipelineBackend):
@@ -91,10 +115,16 @@ class VerticalSliceFlowTests(unittest.TestCase):
 
     def test_es_happy_path_executes_pipeline_and_renders_stage_trace(self) -> None:
         backend = _FakeBackend(lockout=False, summary=self.summary_no_trade)
-        app = build_phase1_app(backend=backend, inputs=self.base_inputs, dependencies=self.dependencies)
+        with patch(
+            "ntb_marimo_console.app.build_trigger_state_results",
+            new=_query_ready_trigger_state_results,
+        ):
+            app = build_phase1_app(backend=backend, inputs=self.base_inputs, dependencies=self.dependencies)
 
         surfaces = app["surfaces"]
         self.assertTrue(surfaces["query_action"]["query_enabled"])
+        self.assertEqual(surfaces["query_action"]["pipeline_query_gate"]["trigger_state"], "QUERY_READY")
+        self.assertTrue(surfaces["query_action"]["pipeline_query_gate"]["trigger_state_from_real_producer"])
         self.assertTrue(surfaces["decision_review"]["has_result"])
         self.assertTrue(surfaces["decision_review"]["ready"])
         self.assertEqual(surfaces["decision_review"]["final_decision"], "NO_TRADE")
@@ -118,12 +148,16 @@ class VerticalSliceFlowTests(unittest.TestCase):
 
     def test_ready_path_without_query_request_stays_live_query_eligible(self) -> None:
         backend = _FakeBackend(lockout=False, summary=self.summary_no_trade)
-        app = build_phase1_app(
-            backend=backend,
-            inputs=self.base_inputs,
-            dependencies=self.dependencies,
-            query_action_requested=False,
-        )
+        with patch(
+            "ntb_marimo_console.app.build_trigger_state_results",
+            new=_query_ready_trigger_state_results,
+        ):
+            app = build_phase1_app(
+                backend=backend,
+                inputs=self.base_inputs,
+                dependencies=self.dependencies,
+                query_action_requested=False,
+            )
 
         surfaces = app["surfaces"]
         self.assertTrue(surfaces["query_action"]["query_enabled"])
@@ -153,6 +187,25 @@ class VerticalSliceFlowTests(unittest.TestCase):
         self.assertIn("LIVE_QUERY_BLOCKED", app["runtime"]["state_history"])
         self.assertEqual(backend.calls, ["sweep_watchman"])
 
+    def test_default_fixture_path_fails_closed_because_real_trigger_state_is_not_query_ready(self) -> None:
+        """Default fixture inputs produce TOUCHED, not QUERY_READY; the R13 gate must stay disabled."""
+
+        backend = _FakeBackend(lockout=False, summary=self.summary_no_trade)
+        app = build_phase1_app(
+            backend=backend,
+            inputs=self.base_inputs,
+            dependencies=self.dependencies,
+            query_action_requested=False,
+        )
+
+        surfaces = app["surfaces"]
+        gate = surfaces["query_action"]["pipeline_query_gate"]
+        self.assertFalse(surfaces["query_action"]["query_enabled"])
+        self.assertEqual(gate["trigger_state"], "TOUCHED")
+        self.assertTrue(gate["trigger_state_from_real_producer"])
+        self.assertIn("trigger_state_not_query_ready:TOUCHED", gate["disabled_reasons"])
+        self.assertEqual(backend.calls, ["sweep_watchman"])
+
     def test_missing_watchman_context_fails_closed(self) -> None:
         backend = _MissingWatchmanBackend(lockout=False, summary=self.summary_no_trade)
 
@@ -162,12 +215,16 @@ class VerticalSliceFlowTests(unittest.TestCase):
     def test_query_action_failure_is_explicit_and_fail_closed(self) -> None:
         backend = _FailingPipelineBackend(lockout=False, summary=self.summary_no_trade)
 
-        app = build_phase1_app(
-            backend=backend,
-            inputs=self.base_inputs,
-            dependencies=self.dependencies,
-            query_action_requested=True,
-        )
+        with patch(
+            "ntb_marimo_console.app.build_trigger_state_results",
+            new=_query_ready_trigger_state_results,
+        ):
+            app = build_phase1_app(
+                backend=backend,
+                inputs=self.base_inputs,
+                dependencies=self.dependencies,
+                query_action_requested=True,
+            )
 
         surfaces = app["surfaces"]
         self.assertEqual(surfaces["query_action"]["query_action_status"], "FAILED")
