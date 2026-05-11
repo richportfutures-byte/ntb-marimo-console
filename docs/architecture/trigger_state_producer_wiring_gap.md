@@ -17,6 +17,32 @@ creates real `TriggerStateResult` values, but `build_phase1_payload(...)` in
 `TriggerEvaluation` objects through `TriggerEvaluator` and immediately maps
 them into `TriggerStatusVM` display rows.
 
+## R15 Re-Audit
+
+The current trigger display row producer is:
+
+1. `trigger_specs_from_brief(premarket.brief)`
+2. `dependencies.trigger_evaluator.evaluate(trigger_specs, inputs.live_snapshot)`
+3. `trigger_status_vm_from_eval(...)`
+4. `AppShellPayload(trigger_rows=trigger_vms)`
+
+That path produces `TriggerEvaluation` and `TriggerStatusVM` values, not
+`TriggerStateResult` values. It is valid for current UI gating, but it is not a
+trigger-transition evidence source.
+
+Real `TriggerStateResult` values are available only from the separate
+trigger-state engine entry points, including `evaluate_trigger_state(...)` and
+`evaluate_trigger_state_from_brief(...)`. Those functions are not yet part of
+`build_phase1_payload(...)`, `operator_console_app.py`, or the lifecycle
+refresh/reload/query action path.
+
+Because the production app does not observe `TriggerStateResult` values before
+display conversion, it also cannot establish a real prior/current sequence for
+the same contract/setup_id/trigger_id. Runtime integration must therefore
+remain deferred until the app payload architecture introduces a pre-display
+trigger-state producer and hands those chronological observations to
+`SessionLifecycle.observe_trigger_state_result(...)`.
+
 ## Boundary
 
 Do not derive replay evidence from these display or summary shapes:
