@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import tempfile
@@ -17,6 +18,7 @@ from ntb_marimo_console.session_lifecycle import (
     reload_current_profile,
     request_query_action,
     reset_session,
+    refresh_runtime_snapshot,
     switch_profile,
 )
 
@@ -129,6 +131,20 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertEqual(refreshed.shell["workflow"]["query_action_status"], "AVAILABLE")
         self.assertFalse(refreshed.shell["workflow"]["decision_review_ready"])
         self.assertFalse(refreshed.shell["workflow"]["audit_replay_ready"])
+
+    def test_lifecycle_does_not_synthesize_trigger_transition_replay_from_shell_state(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+            refreshed = refresh_runtime_snapshot(lifecycle)
+            reloaded = reload_current_profile(refreshed)
+
+        for item in (lifecycle, refreshed, reloaded):
+            with self.subTest(action=item.last_action):
+                trigger_table = item.shell["surfaces"]["trigger_table"]
+                self.assertTrue(trigger_table["rows"])
+                rendered = json.dumps(item.shell, sort_keys=True)
+                self.assertNotIn("trigger_transition_log", rendered)
+                self.assertNotIn("evidence_replay_v1", rendered)
 
     def test_refresh_success_path_in_preserved_mode(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
