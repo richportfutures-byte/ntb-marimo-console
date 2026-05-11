@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from uuid import uuid4
 
+from .evidence_replay import EvidenceEvent, ReplaySummary
 from .launch_config import (
     LaunchConfig,
     RuntimeReadinessSnapshot,
@@ -42,6 +43,8 @@ from .session_evidence_store import (
     restore_session_evidence_history,
 )
 from .state.session_state import OperatorSessionMachine, SessionState
+from .trigger_state import TriggerStateResult
+from .trigger_transition_replay_source import TriggerTransitionReplaySource
 
 
 class LifecycleAction(str, Enum):
@@ -83,6 +86,54 @@ class SessionLifecycle:
     operator_runtime: OperatorRuntimeSnapshotResult | None = None
     runtime_snapshot_producer: RuntimeSnapshotProducer | None = None
     operator_runtime_mode: OperatorRuntimeMode | str | None = None
+    trigger_transition_replay_source: TriggerTransitionReplaySource = field(
+        default_factory=lambda: TriggerTransitionReplaySource(source="session_lifecycle"),
+        repr=False,
+        compare=False,
+    )
+
+    def observe_trigger_state_result(
+        self,
+        trigger_state_result: TriggerStateResult,
+        *,
+        timestamp: str | None = None,
+        profile_id: str | None = None,
+        live_snapshot_ref: str | None = None,
+        premarket_brief_ref: str | None = None,
+    ) -> tuple[EvidenceEvent, ...]:
+        if not isinstance(trigger_state_result, TriggerStateResult):
+            raise TypeError("observe_trigger_state_result requires a TriggerStateResult")
+        return self.trigger_transition_replay_source.observe(
+            trigger_state_result,
+            timestamp=_observation_text(timestamp)
+            or _observation_text(trigger_state_result.last_updated)
+            or "",
+            profile_id=_observation_text(profile_id) or _selected_profile_id(self) or "",
+            live_snapshot_ref=live_snapshot_ref,
+            premarket_brief_ref=premarket_brief_ref,
+        )
+
+    def trigger_transition_replay_summary(
+        self,
+        *,
+        contract: str,
+        profile_id: str | None = None,
+    ) -> ReplaySummary | None:
+        return self.trigger_transition_replay_source.replay_summary(
+            contract=contract,
+            profile_id=_observation_text(profile_id) or _selected_profile_id(self),
+        )
+
+    def trigger_transition_log(
+        self,
+        *,
+        contract: str,
+        profile_id: str | None = None,
+    ) -> dict[str, object] | None:
+        return self.trigger_transition_replay_source.trigger_transition_log(
+            contract=contract,
+            profile_id=_observation_text(profile_id) or _selected_profile_id(self),
+        )
 
 
 def load_session_lifecycle_from_env(
@@ -202,6 +253,7 @@ def request_query_action(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime=operator_runtime,
         runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
         operator_runtime_mode=operator_runtime.mode,
+        trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
 
 
@@ -246,6 +298,7 @@ def refresh_runtime_snapshot(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime=operator_runtime,
         runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
         operator_runtime_mode=operator_runtime.mode,
+        trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
 
 
@@ -306,6 +359,7 @@ def reset_session(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime=operator_runtime,
         runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
         operator_runtime_mode=operator_runtime.mode,
+        trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
 
 
@@ -377,6 +431,7 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
             operator_runtime=startup.operator_runtime,
             runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
             operator_runtime_mode=startup.operator_runtime.mode,
+            trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
         )
 
     current_shell = deepcopy(startup.shell)
@@ -420,6 +475,7 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime=startup.operator_runtime,
         runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
         operator_runtime_mode=startup.operator_runtime.mode,
+        trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
 
 
@@ -480,6 +536,7 @@ def clear_retained_evidence(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime=lifecycle.operator_runtime,
         runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
         operator_runtime_mode=lifecycle.operator_runtime_mode,
+        trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
 
 
@@ -531,6 +588,7 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
             operator_runtime=lifecycle.operator_runtime,
             runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
             operator_runtime_mode=lifecycle.operator_runtime_mode,
+            trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
         )
 
     request = _switch_request_from_lifecycle(
@@ -594,6 +652,7 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
             operator_runtime=lifecycle.operator_runtime,
             runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
             operator_runtime_mode=lifecycle.operator_runtime_mode,
+            trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
         )
 
     current_shell = deepcopy(startup.shell)
@@ -638,6 +697,7 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
         operator_runtime=startup.operator_runtime,
         runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
         operator_runtime_mode=startup.operator_runtime.mode,
+        trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
 
 
@@ -833,6 +893,13 @@ def _selected_profile_id_from_shell(shell: Mapping[str, object]) -> str | None:
     return None
 
 
+def _observation_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def _switch_request_from_lifecycle(
     lifecycle: SessionLifecycle,
     *,
@@ -912,6 +979,7 @@ def _blocked_action(lifecycle: SessionLifecycle, *, summary: str) -> SessionLife
         operator_runtime=lifecycle.operator_runtime,
         runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
         operator_runtime_mode=lifecycle.operator_runtime_mode,
+        trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
 
 
@@ -949,10 +1017,14 @@ def _finalize_lifecycle(
     operator_runtime: OperatorRuntimeSnapshotResult | None = None,
     runtime_snapshot_producer: RuntimeSnapshotProducer | None = None,
     operator_runtime_mode: OperatorRuntimeMode | str | None = None,
+    trigger_transition_replay_source: TriggerTransitionReplaySource | None = None,
 ) -> SessionLifecycle:
     resolved_operator_runtime = operator_runtime or resolve_operator_runtime_snapshot(
         mode=operator_runtime_mode,
         runtime_snapshot=runtime_snapshot,
+    )
+    resolved_transition_replay_source = trigger_transition_replay_source or TriggerTransitionReplaySource(
+        source="session_lifecycle",
     )
     shell["lifecycle"] = _build_lifecycle_panel(
         shell=shell,
@@ -1028,6 +1100,7 @@ def _finalize_lifecycle(
         operator_runtime=resolved_operator_runtime,
         runtime_snapshot_producer=runtime_snapshot_producer,
         operator_runtime_mode=operator_runtime_mode or resolved_operator_runtime.mode,
+        trigger_transition_replay_source=resolved_transition_replay_source,
     )
 
 

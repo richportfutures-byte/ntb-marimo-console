@@ -12,6 +12,7 @@ from ntb_marimo_console.contract_universe import (
     excluded_final_target_contracts,
     final_target_contracts,
 )
+from ntb_marimo_console.evidence_replay import EVIDENCE_REPLAY_SCHEMA
 from ntb_marimo_console.market_data.stream_cache import StreamCacheRecord, StreamCacheSnapshot
 from ntb_marimo_console.session_lifecycle import (
     load_session_lifecycle_from_env,
@@ -21,6 +22,7 @@ from ntb_marimo_console.session_lifecycle import (
     refresh_runtime_snapshot,
     switch_profile,
 )
+from ntb_marimo_console.trigger_state import TriggerState, TriggerStateResult
 
 
 FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "golden" / "phase1"
@@ -71,6 +73,28 @@ def runtime_cache_snapshot() -> StreamCacheSnapshot:
         records=tuple(runtime_record(contract) for contract in final_target_contracts()),
         blocking_reasons=(),
         stale_symbols=(),
+    )
+
+
+def trigger_result(
+    contract: str,
+    state: TriggerState,
+    *,
+    setup_id: str | None = None,
+    trigger_id: str | None = None,
+    last_updated: str = NOW,
+) -> TriggerStateResult:
+    return TriggerStateResult(
+        contract=contract,
+        setup_id=setup_id or f"{contract.lower()}_setup_1",
+        trigger_id=trigger_id or f"{contract.lower()}_trigger_1",
+        state=state,
+        distance_to_trigger_ticks=0.0 if state == TriggerState.QUERY_READY else None,
+        required_fields=("market.current_price",),
+        missing_fields=(),
+        invalid_reasons=(),
+        blocking_reasons=(),
+        last_updated=last_updated,
     )
 
 
@@ -145,6 +169,122 @@ class SessionLifecycleTests(unittest.TestCase):
                 rendered = json.dumps(item.shell, sort_keys=True)
                 self.assertNotIn("trigger_transition_log", rendered)
                 self.assertNotIn("evidence_replay_v1", rendered)
+                self.assertIsNone(item.trigger_transition_log(contract="ES"))
+
+    def test_lifecycle_trigger_observation_first_and_identical_states_expose_no_log(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+
+        first = lifecycle.observe_trigger_state_result(
+            trigger_result("ES", TriggerState.DORMANT),
+            timestamp="2026-05-06T14:00:00+00:00",
+        )
+        identical = lifecycle.observe_trigger_state_result(
+            trigger_result("ES", TriggerState.DORMANT),
+            timestamp="2026-05-06T14:00:01+00:00",
+        )
+
+        self.assertEqual(first, ())
+        self.assertEqual(identical, ())
+        self.assertEqual(lifecycle.trigger_transition_replay_source.events, ())
+        self.assertIsNone(lifecycle.trigger_transition_log(contract="ES"))
+        rendered = json.dumps(lifecycle.shell, sort_keys=True)
+        self.assertNotIn("trigger_transition_log", rendered)
+        self.assertNotIn("evidence_replay_v1", rendered)
+
+    def test_lifecycle_trigger_observation_material_transition_exposes_evidence_replay(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+
+        lifecycle.observe_trigger_state_result(
+            trigger_result("ES", TriggerState.DORMANT),
+            timestamp="2026-05-06T14:00:00+00:00",
+        )
+        emitted = lifecycle.observe_trigger_state_result(
+            trigger_result("ES", TriggerState.APPROACHING),
+            timestamp="2026-05-06T14:00:01+00:00",
+            premarket_brief_ref="premarket/ES/2026-05-06/brief.json",
+        )
+        log = lifecycle.trigger_transition_log(contract="ES")
+
+        self.assertEqual(len(emitted), 1)
+        self.assertIsNotNone(log)
+        assert log is not None
+        self.assertEqual(log["schema"], EVIDENCE_REPLAY_SCHEMA)
+        self.assertEqual(log["contract"], "ES")
+        self.assertEqual(log["trigger_transitions"][0]["event_type"], "trigger_approaching")
+        self.assertEqual(log["trigger_transitions"][0]["trigger_state"], "APPROACHING")
+
+    def test_lifecycle_trigger_observation_keeps_contract_keys_separate(self) -> None:
+        shared_setup = "shared_setup"
+        shared_trigger = "shared_trigger"
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+
+        lifecycle.observe_trigger_state_result(
+            trigger_result("ES", TriggerState.DORMANT, setup_id=shared_setup, trigger_id=shared_trigger),
+            timestamp="2026-05-06T14:00:00+00:00",
+            profile_id="preserved_es_phase1",
+        )
+        cross_contract_first = lifecycle.observe_trigger_state_result(
+            trigger_result("NQ", TriggerState.APPROACHING, setup_id=shared_setup, trigger_id=shared_trigger),
+            timestamp="2026-05-06T14:00:01+00:00",
+            profile_id="preserved_nq_phase1",
+        )
+        es_transition = lifecycle.observe_trigger_state_result(
+            trigger_result("ES", TriggerState.APPROACHING, setup_id=shared_setup, trigger_id=shared_trigger),
+            timestamp="2026-05-06T14:00:02+00:00",
+            profile_id="preserved_es_phase1",
+        )
+        nq_transition = lifecycle.observe_trigger_state_result(
+            trigger_result("NQ", TriggerState.TOUCHED, setup_id=shared_setup, trigger_id=shared_trigger),
+            timestamp="2026-05-06T14:00:03+00:00",
+            profile_id="preserved_nq_phase1",
+        )
+
+        es_log = lifecycle.trigger_transition_log(contract="ES", profile_id="preserved_es_phase1")
+        nq_log = lifecycle.trigger_transition_log(contract="NQ", profile_id="preserved_nq_phase1")
+
+        self.assertEqual(cross_contract_first, ())
+        self.assertEqual(len(es_transition), 1)
+        self.assertEqual(len(nq_transition), 1)
+        self.assertIsNotNone(es_log)
+        self.assertIsNotNone(nq_log)
+        assert es_log is not None
+        assert nq_log is not None
+        self.assertEqual([item["event_type"] for item in es_log["trigger_transitions"]], ["trigger_approaching"])
+        self.assertEqual([item["event_type"] for item in nq_log["trigger_transitions"]], ["trigger_touched"])
+
+    def test_lifecycle_trigger_observation_source_is_carried_across_session_actions(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+
+        lifecycle.observe_trigger_state_result(
+            trigger_result("ES", TriggerState.DORMANT),
+            timestamp="2026-05-06T14:00:00+00:00",
+        )
+        queried = request_query_action(lifecycle)
+        emitted = queried.observe_trigger_state_result(
+            trigger_result("ES", TriggerState.APPROACHING),
+            timestamp="2026-05-06T14:00:01+00:00",
+        )
+
+        self.assertIs(queried.trigger_transition_replay_source, lifecycle.trigger_transition_replay_source)
+        self.assertEqual(len(emitted), 1)
+        self.assertIsNotNone(queried.trigger_transition_log(contract="ES"))
+        self.assertNotIn("trigger_transition_log", json.dumps(queried.shell, sort_keys=True))
+
+    def test_lifecycle_trigger_observation_rejects_non_trigger_state_result_input(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+
+        with self.assertRaises(TypeError):
+            lifecycle.observe_trigger_state_result(
+                {"contract": "ES", "state": "APPROACHING"},  # type: ignore[arg-type]
+                timestamp="2026-05-06T14:00:00+00:00",
+            )
+
+        self.assertIsNone(lifecycle.trigger_transition_log(contract="ES"))
 
     def test_refresh_success_path_in_preserved_mode(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
