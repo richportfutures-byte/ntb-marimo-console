@@ -316,10 +316,13 @@ class SessionLifecycleTests(unittest.TestCase):
             app_source,
         )
         self.assertIn("trigger_rows=trigger_vms", app_source)
+        self.assertIn("build_trigger_state_results(", app_source)
+        self.assertLess(
+            app_source.index("build_trigger_state_results("),
+            app_source.index("eval_bundle = dependencies.trigger_evaluator.evaluate"),
+        )
         self.assertNotIn("observe_trigger_state_result", app_source)
-        self.assertNotIn("evaluate_trigger_state", app_source)
-        self.assertNotIn("evaluate_trigger_state_from_brief", app_source)
-        self.assertNotIn("TriggerStateResult", app_source)
+        self.assertNotIn("trigger_transition_log", app_source)
 
         console_app_path = Path(__file__).resolve().parents[1] / "src" / "ntb_marimo_console" / "operator_console_app.py"
         console_app_source = console_app_path.read_text(encoding="utf-8")

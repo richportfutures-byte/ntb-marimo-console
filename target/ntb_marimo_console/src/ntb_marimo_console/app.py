@@ -19,6 +19,11 @@ from .decision_review_replay import build_decision_review_replay_vm
 from .market_data import FuturesQuoteService
 from .adapters.trigger_specs import trigger_specs_from_brief
 from .state.session_state import OperatorSessionMachine, SessionState
+from .trigger_state import TriggerStateResult
+from .trigger_state_result_producer import (
+    TriggerStateResultProducerRequest,
+    build_trigger_state_results,
+)
 from .ui.app_shell import AppShellPayload, build_app_shell
 from .viewmodels.mappers import (
     live_observable_vm_from_snapshot,
@@ -76,6 +81,7 @@ class Phase1BuildArtifacts:
     watchman_gate: dict[str, object]
     audit_replay: AuditReplayRecord | None
     run_history_source: str
+    trigger_state_results: tuple[TriggerStateResult, ...]
 
 
 def _fail_closed(
@@ -140,6 +146,14 @@ def build_phase1_payload(
         _fail_closed(session, f"Missing watchman context for {session_target.contract}.")
 
     trigger_specs = trigger_specs_from_brief(premarket.brief)
+    trigger_state_results = build_trigger_state_results(
+        TriggerStateResultProducerRequest(
+            contract=session_target.contract,
+            premarket_brief=premarket.brief,
+            live_snapshot=inputs.live_snapshot,
+            last_updated=inputs.pipeline_query.evaluation_timestamp_iso,
+        )
+    )
     try:
         eval_bundle = dependencies.trigger_evaluator.evaluate(trigger_specs, inputs.live_snapshot)
     except Exception as exc:
@@ -242,6 +256,7 @@ def build_phase1_payload(
         watchman_gate=watchman_gate,
         audit_replay=audit_replay,
         run_history_source=run_history_source,
+        trigger_state_results=trigger_state_results,
     )
 
 
