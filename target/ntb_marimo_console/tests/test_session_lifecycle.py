@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from ntb_marimo_console.adapters.contracts import TriggerEvaluation
 from ntb_marimo_console.contract_universe import (
     excluded_final_target_contracts,
     final_target_contracts,
@@ -23,6 +24,7 @@ from ntb_marimo_console.session_lifecycle import (
     switch_profile,
 )
 from ntb_marimo_console.trigger_state import TriggerState, TriggerStateResult
+from ntb_marimo_console.viewmodels.models import TriggerStatusVM
 
 
 FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "golden" / "phase1"
@@ -278,11 +280,49 @@ class SessionLifecycleTests(unittest.TestCase):
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
             lifecycle = load_session_lifecycle_from_env()
 
-        with self.assertRaises(TypeError):
-            lifecycle.observe_trigger_state_result(
-                {"contract": "ES", "state": "APPROACHING"},  # type: ignore[arg-type]
-                timestamp="2026-05-06T14:00:00+00:00",
-            )
+        display_only_inputs = (
+            {"contract": "ES", "state": "APPROACHING"},
+            TriggerEvaluation(
+                trigger_id="es_trigger_1",
+                is_valid=True,
+                is_true=True,
+                missing_fields=(),
+                invalid_reasons=(),
+            ),
+            TriggerStatusVM(
+                trigger_id="es_trigger_1",
+                is_valid=True,
+                is_true=True,
+                missing_fields=(),
+                invalid_reasons=(),
+            ),
+        )
+        for display_only_input in display_only_inputs:
+            with self.subTest(input_type=type(display_only_input).__name__):
+                with self.assertRaises(TypeError):
+                    lifecycle.observe_trigger_state_result(
+                        display_only_input,  # type: ignore[arg-type]
+                        timestamp="2026-05-06T14:00:00+00:00",
+                    )
+
+        app_path = Path(__file__).resolve().parents[1] / "src" / "ntb_marimo_console" / "app.py"
+        app_source = app_path.read_text(encoding="utf-8")
+        self.assertIn(
+            "trigger_vms = tuple(trigger_status_vm_from_eval(item) for item in eval_bundle.evaluations)",
+            app_source,
+        )
+        self.assertNotIn("observe_trigger_state_result", app_source)
+        self.assertNotIn("evaluate_trigger_state", app_source)
+        self.assertNotIn("TriggerStateResult", app_source)
+
+        console_app_path = Path(__file__).resolve().parents[1] / "src" / "ntb_marimo_console" / "operator_console_app.py"
+        console_app_source = console_app_path.read_text(encoding="utf-8")
+        self.assertNotIn("observe_trigger_state_result", console_app_source)
+        self.assertNotIn(
+            "trigger_transition_log",
+            console_app_source,
+            "Renderer/app code must not derive replay logs from trigger rows or shell state.",
+        )
 
         self.assertIsNone(lifecycle.trigger_transition_log(contract="ES"))
 
