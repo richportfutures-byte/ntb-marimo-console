@@ -46,22 +46,16 @@ class MarimoPhase1RendererTests(unittest.TestCase):
         self.assertNotIn("stage_e", decision_panel)
         self.assertNotIn("audit_log", decision_panel)
 
-    def test_decision_review_surfaces_fixture_sidecar_narrative_when_present(self) -> None:
+    def test_decision_review_stays_unavailable_when_trigger_state_gate_blocks_query(self) -> None:
         shell = build_es_app_shell_for_mode(mode="fixture_demo")
+        query_panel = shell["surfaces"]["query_action"]
         decision_panel = shell["surfaces"]["decision_review"]
 
-        self.assertTrue(decision_panel["has_result"])
-        self.assertTrue(decision_panel["narrative_available"])
-        self.assertIsNone(decision_panel["narrative_unavailable_message"])
-        self.assertTrue(decision_panel["engine_reasoning"]["available"])
-        self.assertIn("Synthetic fixture/demo ES narrative", decision_panel["engine_reasoning"]["structural_notes"])
-        replay_quality = decision_panel["narrative_audit_replay"]["narrative_quality"]
-        self.assertEqual(replay_quality["status"], "WARN")
-        self.assertFalse(replay_quality["trigger_transition_narrative_present"])
-        self.assertIn("trigger_transition_narrative_present", replay_quality["warnings"])
-        self.assertFalse(decision_panel["trade_thesis"]["available"])
-        self.assertFalse(decision_panel["risk_authorization_detail"]["available"])
-        self.assertFalse(decision_panel["invalidation"]["available"])
+        self.assertFalse(query_panel["query_enabled"])
+        self.assertEqual(query_panel["pipeline_query_gate"]["trigger_state"], "TOUCHED")
+        self.assertIn("trigger_state_not_query_ready:TOUCHED", query_panel["pipeline_query_gate"]["disabled_reasons"])
+        self.assertFalse(decision_panel["has_result"])
+        self.assertFalse(decision_panel["narrative_available"])
 
     def test_decision_review_narrative_section_renderers_emit_unavailable_lines_for_absent_sections(self) -> None:
         """The four section-line builders emit explicit unavailable lines when narrative is absent.

@@ -33,7 +33,7 @@ class StartupFlowTests(unittest.TestCase):
                 "OPERATOR_SURFACES_READY",
             ],
         )
-        self.assertEqual(startup.shell["startup"]["current_session_state"], "LIVE_QUERY_ELIGIBLE")
+        self.assertEqual(startup.shell["startup"]["current_session_state"], "LIVE_QUERY_BLOCKED")
 
     def test_startup_flow_preserved_profile_is_operator_ready(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
@@ -43,7 +43,7 @@ class StartupFlowTests(unittest.TestCase):
         self.assertEqual(startup.shell["startup"]["selected_profile_id"], "preserved_es_phase1")
         self.assertEqual(startup.shell["startup"]["running_as"], "Preserved-Engine-Backed")
         self.assertEqual(startup.shell["startup"]["readiness_state"], "OPERATOR_SURFACES_READY")
-        self.assertEqual(startup.shell["startup"]["current_session_state"], "LIVE_QUERY_ELIGIBLE")
+        self.assertEqual(startup.shell["startup"]["current_session_state"], "LIVE_QUERY_BLOCKED")
 
     def test_startup_flow_zn_profile_fails_closed(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_zn_phase1"}, clear=True):
@@ -88,41 +88,31 @@ class StartupFlowTests(unittest.TestCase):
         self.assertEqual(startup.shell["startup"]["readiness_state"], "OPERATOR_SURFACES_READY")
         self.assertEqual(startup.config.market_data_config.provider, "disabled")
 
-    def test_fixture_profile_query_action_completion_reaches_decision_and_audit_ready(self) -> None:
+    def test_fixture_profile_query_action_request_fails_closed_without_query_ready_trigger_state(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):
             startup = build_startup_artifacts_from_env(query_action_requested=True)
 
         self.assertTrue(startup.ready)
-        self.assertEqual(startup.shell["workflow"]["query_action_status"], "COMPLETED")
-        self.assertTrue(startup.shell["workflow"]["decision_review_ready"])
-        self.assertTrue(startup.shell["workflow"]["audit_replay_ready"])
-        self.assertEqual(startup.shell["runtime"]["session_state"], "AUDIT_REPLAY_READY")
-        replay = startup.shell["surfaces"]["decision_review"]["narrative_audit_replay"]
-        self.assertEqual(replay["replay_reference_status"], "available")
-        self.assertEqual(replay["replay_reference_source"], "fixture_backed")
-        self.assertIsNotNone(replay["replay_reference_run_id"])
-        self.assertTrue(replay["replay_reference_consistent"])
-        self.assertTrue(replay["engine_narrative_available"])
-        self.assertFalse(replay["trigger_transition_narrative_available"])
-        self.assertEqual(replay["narrative_quality"]["status"], "WARN")
-        self.assertFalse(replay["narrative_quality"]["trigger_transition_narrative_present"])
-        self.assertIn("trigger_transition_narrative_present", replay["narrative_quality"]["warnings"])
-        self.assertIn("decision_review_narrative", replay["source_fields"])
+        self.assertEqual(startup.shell["workflow"]["query_action_status"], "FAILED")
+        self.assertFalse(startup.shell["workflow"]["decision_review_ready"])
+        self.assertFalse(startup.shell["workflow"]["audit_replay_ready"])
+        self.assertEqual(startup.shell["runtime"]["session_state"], "QUERY_ACTION_FAILED")
+        gate = startup.shell["workflow"]["pipeline_query_gate"]
+        self.assertEqual(gate["trigger_state"], "TOUCHED")
+        self.assertIn("trigger_state_not_query_ready:TOUCHED", gate["disabled_reasons"])
 
-    def test_preserved_profile_query_action_completion_reaches_decision_and_audit_ready(self) -> None:
+    def test_preserved_profile_query_action_request_fails_closed_without_query_ready_trigger_state(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
             startup = build_startup_artifacts_from_env(query_action_requested=True)
 
         self.assertTrue(startup.ready)
-        self.assertEqual(startup.shell["workflow"]["query_action_status"], "COMPLETED")
-        self.assertTrue(startup.shell["workflow"]["decision_review_ready"])
-        self.assertTrue(startup.shell["workflow"]["audit_replay_ready"])
-        self.assertEqual(startup.shell["runtime"]["session_state"], "AUDIT_REPLAY_READY")
-        replay = startup.shell["surfaces"]["audit_replay"]["narrative_audit_replay"]
-        self.assertEqual(replay["replay_reference_status"], "available")
-        self.assertEqual(replay["replay_reference_source"], "stage_e_jsonl")
-        self.assertIsNotNone(replay["replay_reference_run_id"])
-        self.assertTrue(replay["replay_reference_stage_e_live_backend"])
+        self.assertEqual(startup.shell["workflow"]["query_action_status"], "FAILED")
+        self.assertFalse(startup.shell["workflow"]["decision_review_ready"])
+        self.assertFalse(startup.shell["workflow"]["audit_replay_ready"])
+        self.assertEqual(startup.shell["runtime"]["session_state"], "QUERY_ACTION_FAILED")
+        gate = startup.shell["workflow"]["pipeline_query_gate"]
+        self.assertEqual(gate["trigger_state"], "TOUCHED")
+        self.assertIn("trigger_state_not_query_ready:TOUCHED", gate["disabled_reasons"])
 
     def test_zn_query_action_request_fails_closed_at_startup(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_zn_phase1"}, clear=True):

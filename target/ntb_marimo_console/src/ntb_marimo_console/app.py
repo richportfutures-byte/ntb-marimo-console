@@ -18,8 +18,13 @@ from .decision_review_audit import build_decision_review_audit_event
 from .decision_review_replay import build_decision_review_replay_vm
 from .market_data import FuturesQuoteService
 from .adapters.trigger_specs import trigger_specs_from_brief
+from .pipeline_query_gate import (
+    PipelineQueryGateRequest,
+    PipelineQueryGateResult,
+    evaluate_pipeline_query_gate,
+)
 from .state.session_state import OperatorSessionMachine, SessionState
-from .trigger_state import TriggerStateResult
+from .trigger_state import TriggerState, TriggerStateResult
 from .trigger_state_result_producer import (
     TriggerStateResultProducerRequest,
     build_trigger_state_results,
@@ -34,7 +39,7 @@ from .viewmodels.mappers import (
     session_header_vm,
     trigger_status_vm_from_eval,
 )
-from .viewmodels.models import PipelineTraceVM, TriggerStatusVM
+from .viewmodels.models import PipelineTraceVM
 from .watchman_gate import WatchmanValidatorResult, build_watchman_gate_payload, validate_watchman_brief
 
 
@@ -82,6 +87,7 @@ class Phase1BuildArtifacts:
     audit_replay: AuditReplayRecord | None
     run_history_source: str
     trigger_state_results: tuple[TriggerStateResult, ...]
+    pipeline_query_gate: PipelineQueryGateResult
 
 
 def _fail_closed(
@@ -160,13 +166,20 @@ def build_phase1_payload(
         _fail_closed(session, "Failed to evaluate trigger predicates.", exc)
 
     trigger_vms = tuple(trigger_status_vm_from_eval(item) for item in eval_bundle.evaluations)
+    pipeline_query_gate = _build_pipeline_query_gate(
+        session_target=session_target,
+        inputs=inputs,
+        watchman_validator=watchman_validator,
+        watchman_context=watchman_context,
+        trigger_state_results=trigger_state_results,
+    )
     blocked_reasons = _build_blocked_reasons(
         watchman_gate=watchman_gate,
         watchman_context=watchman_context,
-        trigger_rows=trigger_vms,
+        pipeline_query_gate=pipeline_query_gate,
     )
     readiness_gate = watchman_validator.pipeline_gate_open and not watchman_context.hard_lockout_flags
-    query_enabled = watchman_validator.pipeline_gate_open and eval_bundle.query_gate_true and not watchman_context.hard_lockout_flags
+    query_enabled = pipeline_query_gate.enabled
 
     if query_enabled:
         session.mark_live_query_eligible()
@@ -257,6 +270,7 @@ def build_phase1_payload(
         audit_replay=audit_replay,
         run_history_source=run_history_source,
         trigger_state_results=trigger_state_results,
+        pipeline_query_gate=pipeline_query_gate,
     )
 
 
@@ -306,6 +320,13 @@ def build_phase1_shell_from_artifacts(
                     "action_requested": query_action_requested,
                     "action_label": "Run bounded query for loaded snapshot",
                     "blocked_reasons": list(artifacts.workflow_status.blocked_reasons),
+                    "pipeline_query_gate": artifacts.pipeline_query_gate.to_dict(),
+                    "pipeline_query_gate_status": artifacts.pipeline_query_gate.status.value,
+                    "pipeline_query_gate_missing_conditions": list(artifacts.pipeline_query_gate.missing_conditions),
+                    "pipeline_query_gate_disabled_reasons": list(artifacts.pipeline_query_gate.disabled_reasons),
+                    "trigger_state": artifacts.pipeline_query_gate.trigger_state,
+                    "trigger_state_setup_id": artifacts.pipeline_query_gate.setup_id,
+                    "trigger_state_trigger_id": artifacts.pipeline_query_gate.trigger_id,
                     "status_summary": artifacts.workflow_status.status_summary,
                     "next_action": artifacts.workflow_status.next_action,
                     "bounded_action_description": artifacts.workflow_status.bounded_action_description,
@@ -385,6 +406,7 @@ def build_phase1_shell_from_artifacts(
         "decision_review_ready": artifacts.workflow_status.decision_review_ready,
         "audit_replay_ready": artifacts.workflow_status.audit_replay_ready,
         "blocked_reasons": list(artifacts.workflow_status.blocked_reasons),
+        "pipeline_query_gate": artifacts.pipeline_query_gate.to_dict(),
         "status_summary": artifacts.workflow_status.status_summary,
         "next_action": artifacts.workflow_status.next_action,
         "bounded_action_description": artifacts.workflow_status.bounded_action_description,
@@ -420,7 +442,7 @@ def _build_blocked_reasons(
     *,
     watchman_gate: Mapping[str, object],
     watchman_context: WatchmanContextLike,
-    trigger_rows: tuple[TriggerStatusVM, ...],
+    pipeline_query_gate: PipelineQueryGateResult,
 ) -> tuple[str, ...]:
     reasons: list[str] = []
 
@@ -442,18 +464,83 @@ def _build_blocked_reasons(
         missing = ", ".join(watchman_context.missing_inputs)
         reasons.append(f"Readiness context is incomplete: {missing}.")
 
-    invalid_triggers = [row.trigger_id for row in trigger_rows if not row.is_valid]
-    if invalid_triggers:
-        reasons.append(
-            "One or more query triggers are invalid for the loaded snapshot: "
-            + ", ".join(invalid_triggers)
-            + "."
-        )
-
-    if not any(row.is_valid and row.is_true for row in trigger_rows):
-        reasons.append("No declared query trigger is currently true for the loaded snapshot.")
+    reasons.extend(pipeline_query_gate.disabled_reasons)
 
     return tuple(reasons)
+
+
+def _build_pipeline_query_gate(
+    *,
+    session_target: SessionTarget,
+    inputs: OperatorRuntimeInputs,
+    watchman_validator: WatchmanValidatorResult,
+    watchman_context: WatchmanContextLike,
+    trigger_state_results: tuple[TriggerStateResult, ...],
+) -> PipelineQueryGateResult:
+    trigger_state = _select_pipeline_trigger_state_result(
+        contract=session_target.contract,
+        trigger_state_results=trigger_state_results,
+    )
+    fixture_mode_accepted = inputs.selection.mode in {"fixture_demo", "preserved_engine"}
+    provider_status = "fixture" if fixture_mode_accepted else None
+    stream_status = "fixture" if fixture_mode_accepted else None
+    return evaluate_pipeline_query_gate(
+        PipelineQueryGateRequest(
+            contract=session_target.contract,
+            profile_id=inputs.selection.profile_id,
+            profile_exists=True,
+            profile_preflight_passed=True,
+            watchman_validator_status=watchman_validator.status,
+            live_snapshot=inputs.live_snapshot,
+            trigger_state=trigger_state,
+            bars_available=True,
+            bars_fresh=True,
+            support_matrix_final_supported=None,
+            provider_status=provider_status,
+            stream_status=stream_status,
+            session_valid=True,
+            event_lockout_active=bool(watchman_context.hard_lockout_flags),
+            fixture_mode_accepted=fixture_mode_accepted,
+            evaluated_at=inputs.pipeline_query.evaluation_timestamp_iso,
+        )
+    )
+
+
+def _select_pipeline_trigger_state_result(
+    *,
+    contract: str,
+    trigger_state_results: tuple[TriggerStateResult, ...],
+) -> TriggerStateResult:
+    matching = tuple(result for result in trigger_state_results if result.contract == contract)
+    if not matching:
+        return TriggerStateResult(
+            contract=contract,
+            setup_id=None,
+            trigger_id=None,
+            state=TriggerState.UNAVAILABLE,
+            distance_to_trigger_ticks=None,
+            required_fields=(),
+            missing_fields=(),
+            invalid_reasons=(),
+            blocking_reasons=("trigger_state_result_unavailable",),
+            last_updated=None,
+        )
+
+    blocking_states = {
+        TriggerState.UNAVAILABLE,
+        TriggerState.BLOCKED,
+        TriggerState.INVALIDATED,
+        TriggerState.LOCKOUT,
+        TriggerState.STALE,
+        TriggerState.ERROR,
+    }
+    for result in matching:
+        if result.state in blocking_states or result.missing_fields:
+            return result
+    for result in matching:
+        if result.state == TriggerState.QUERY_READY:
+            return result
+    return matching[0]
 
 
 def _build_workflow_status(

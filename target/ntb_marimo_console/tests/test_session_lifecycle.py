@@ -110,8 +110,8 @@ class SessionLifecycleTests(unittest.TestCase):
 
         self.assertTrue(reset.ready)
         self.assertEqual(reset.shell["lifecycle"]["current_lifecycle_state"], "SESSION_RESET_COMPLETED")
-        self.assertEqual(reset.shell["runtime"]["session_state"], "LIVE_QUERY_ELIGIBLE")
-        self.assertEqual(reset.shell["workflow"]["query_action_status"], "AVAILABLE")
+        self.assertEqual(reset.shell["runtime"]["session_state"], "LIVE_QUERY_BLOCKED")
+        self.assertEqual(reset.shell["workflow"]["query_action_status"], "BLOCKED")
         self.assertFalse(reset.shell["workflow"]["decision_review_ready"])
         self.assertFalse(reset.shell["workflow"]["audit_replay_ready"])
         self.assertIn("SESSION_RESET_REQUESTED", reset.shell["lifecycle"]["state_history"])
@@ -125,8 +125,8 @@ class SessionLifecycleTests(unittest.TestCase):
 
         self.assertTrue(reset.ready)
         self.assertEqual(reset.shell["lifecycle"]["current_lifecycle_state"], "SESSION_RESET_COMPLETED")
-        self.assertEqual(reset.shell["runtime"]["session_state"], "LIVE_QUERY_ELIGIBLE")
-        self.assertEqual(reset.shell["workflow"]["query_action_status"], "AVAILABLE")
+        self.assertEqual(reset.shell["runtime"]["session_state"], "LIVE_QUERY_BLOCKED")
+        self.assertEqual(reset.shell["workflow"]["query_action_status"], "BLOCKED")
         self.assertFalse(reset.shell["workflow"]["decision_review_ready"])
         self.assertFalse(reset.shell["workflow"]["audit_replay_ready"])
 
@@ -140,8 +140,8 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertEqual(reset.shell["lifecycle"]["current_lifecycle_state"], "SESSION_RESET_COMPLETED")
         self.assertEqual(reset.shell["runtime"]["profile_id"], "preserved_nq_phase1")
         self.assertEqual(reset.shell["surfaces"]["session_header"]["contract"], "NQ")
-        self.assertEqual(reset.shell["runtime"]["session_state"], "LIVE_QUERY_ELIGIBLE")
-        self.assertEqual(reset.shell["workflow"]["query_action_status"], "AVAILABLE")
+        self.assertEqual(reset.shell["runtime"]["session_state"], "LIVE_QUERY_BLOCKED")
+        self.assertEqual(reset.shell["workflow"]["query_action_status"], "BLOCKED")
         self.assertFalse(reset.shell["workflow"]["decision_review_ready"])
         self.assertFalse(reset.shell["workflow"]["audit_replay_ready"])
 
@@ -154,8 +154,8 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertTrue(refreshed.ready)
         self.assertEqual(refreshed.shell["lifecycle"]["current_lifecycle_state"], "REFRESH_COMPLETED")
         self.assertEqual(refreshed.shell["lifecycle"]["reload_result"], "RELOADED_UNCHANGED")
-        self.assertEqual(refreshed.shell["runtime"]["session_state"], "LIVE_QUERY_ELIGIBLE")
-        self.assertEqual(refreshed.shell["workflow"]["query_action_status"], "AVAILABLE")
+        self.assertEqual(refreshed.shell["runtime"]["session_state"], "LIVE_QUERY_BLOCKED")
+        self.assertEqual(refreshed.shell["workflow"]["query_action_status"], "BLOCKED")
         self.assertFalse(refreshed.shell["workflow"]["decision_review_ready"])
         self.assertFalse(refreshed.shell["workflow"]["audit_replay_ready"])
 
@@ -395,8 +395,8 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertTrue(refreshed.ready)
         self.assertEqual(refreshed.shell["lifecycle"]["current_lifecycle_state"], "REFRESH_COMPLETED")
         self.assertEqual(refreshed.shell["lifecycle"]["reload_result"], "RELOADED_UNCHANGED")
-        self.assertEqual(refreshed.shell["runtime"]["session_state"], "LIVE_QUERY_ELIGIBLE")
-        self.assertEqual(refreshed.shell["workflow"]["query_action_status"], "AVAILABLE")
+        self.assertEqual(refreshed.shell["runtime"]["session_state"], "LIVE_QUERY_BLOCKED")
+        self.assertEqual(refreshed.shell["workflow"]["query_action_status"], "BLOCKED")
 
     def test_lifecycle_preserves_runtime_cache_derived_summary_across_operator_actions(self) -> None:
         snapshot = runtime_cache_snapshot()
@@ -426,8 +426,8 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertEqual(refreshed.shell["lifecycle"]["reload_result"], "RELOADED_UNCHANGED")
         self.assertEqual(refreshed.shell["runtime"]["profile_id"], "preserved_nq_phase1")
         self.assertEqual(refreshed.shell["surfaces"]["session_header"]["contract"], "NQ")
-        self.assertEqual(refreshed.shell["runtime"]["session_state"], "LIVE_QUERY_ELIGIBLE")
-        self.assertEqual(refreshed.shell["workflow"]["query_action_status"], "AVAILABLE")
+        self.assertEqual(refreshed.shell["runtime"]["session_state"], "LIVE_QUERY_BLOCKED")
+        self.assertEqual(refreshed.shell["workflow"]["query_action_status"], "BLOCKED")
 
     def test_refresh_fail_closed_on_invalid_reloaded_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -459,10 +459,10 @@ class SessionLifecycleTests(unittest.TestCase):
             queried = request_query_action(lifecycle)
             reset = reset_session(queried)
 
-        self.assertEqual(queried.shell["runtime"]["session_state"], "AUDIT_REPLAY_READY")
-        self.assertTrue(queried.shell["workflow"]["decision_review_ready"])
-        self.assertTrue(queried.shell["workflow"]["audit_replay_ready"])
-        self.assertEqual(reset.shell["runtime"]["session_state"], "LIVE_QUERY_ELIGIBLE")
+        self.assertEqual(queried.shell["runtime"]["session_state"], "QUERY_ACTION_FAILED")
+        self.assertFalse(queried.shell["workflow"]["decision_review_ready"])
+        self.assertFalse(queried.shell["workflow"]["audit_replay_ready"])
+        self.assertEqual(reset.shell["runtime"]["session_state"], "LIVE_QUERY_BLOCKED")
         self.assertFalse(reset.shell["workflow"]["decision_review_ready"])
         self.assertFalse(reset.shell["workflow"]["audit_replay_ready"])
 
@@ -472,8 +472,8 @@ class SessionLifecycleTests(unittest.TestCase):
             queried = request_query_action(lifecycle)
             refreshed = reload_current_profile(queried)
 
-        self.assertEqual(queried.shell["runtime"]["session_state"], "AUDIT_REPLAY_READY")
-        self.assertEqual(refreshed.shell["runtime"]["session_state"], "LIVE_QUERY_ELIGIBLE")
+        self.assertEqual(queried.shell["runtime"]["session_state"], "QUERY_ACTION_FAILED")
+        self.assertEqual(refreshed.shell["runtime"]["session_state"], "LIVE_QUERY_BLOCKED")
         self.assertFalse(refreshed.shell["workflow"]["decision_review_ready"])
         self.assertFalse(refreshed.shell["workflow"]["audit_replay_ready"])
 
@@ -487,8 +487,8 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertEqual(switched.shell["startup"]["selected_profile_id"], "preserved_es_phase1")
         self.assertEqual(switched.shell["runtime"]["profile_id"], "preserved_es_phase1")
         self.assertEqual(switched.shell["surfaces"]["session_header"]["contract"], "ES")
-        self.assertEqual(switched.shell["runtime"]["session_state"], "AUDIT_REPLAY_READY")
-        self.assertEqual(switched.shell["workflow"]["query_action_status"], "COMPLETED")
+        self.assertEqual(switched.shell["runtime"]["session_state"], "QUERY_ACTION_FAILED")
+        self.assertEqual(switched.shell["workflow"]["query_action_status"], "FAILED")
         self.assertEqual(switched.shell["lifecycle"]["current_lifecycle_state"], "PROFILE_SWITCH_BLOCKED")
         self.assertEqual(switched.shell["lifecycle"]["profile_switch_result"], "SWITCH_BLOCKED")
         self.assertEqual(switched.shell["lifecycle"]["profile_switch_target_id"], "preserved_zn_phase1")
@@ -504,8 +504,8 @@ class SessionLifecycleTests(unittest.TestCase):
             switched = switch_profile(queried, "preserved_zn_phase1")
 
         self.assertTrue(switched.ready)
-        self.assertTrue(switched.shell["workflow"]["decision_review_ready"])
-        self.assertTrue(switched.shell["workflow"]["audit_replay_ready"])
+        self.assertFalse(switched.shell["workflow"]["decision_review_ready"])
+        self.assertFalse(switched.shell["workflow"]["audit_replay_ready"])
         self.assertEqual(switched.shell["runtime"]["profile_id"], "preserved_es_phase1")
         self.assertIn("PROFILE_SWITCH_REQUESTED", switched.shell["lifecycle"]["state_history"])
         self.assertIn("PROFILE_SWITCH_VALIDATING", switched.shell["lifecycle"]["state_history"])
@@ -520,7 +520,7 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertEqual(switched.shell["startup"]["selected_profile_id"], "preserved_cl_phase1")
         self.assertEqual(switched.shell["runtime"]["profile_id"], "preserved_cl_phase1")
         self.assertEqual(switched.shell["surfaces"]["session_header"]["contract"], "CL")
-        self.assertEqual(switched.shell["workflow"]["query_action_status"], "AVAILABLE")
+        self.assertEqual(switched.shell["workflow"]["query_action_status"], "BLOCKED")
         self.assertFalse(switched.shell["workflow"]["decision_review_ready"])
         self.assertFalse(switched.shell["workflow"]["audit_replay_ready"])
 
@@ -543,7 +543,7 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertEqual(switched.shell["startup"]["selected_profile_id"], "preserved_nq_phase1")
         self.assertEqual(switched.shell["runtime"]["profile_id"], "preserved_nq_phase1")
         self.assertEqual(switched.shell["surfaces"]["session_header"]["contract"], "NQ")
-        self.assertEqual(switched.shell["workflow"]["query_action_status"], "AVAILABLE")
+        self.assertEqual(switched.shell["workflow"]["query_action_status"], "BLOCKED")
         self.assertEqual(switched.shell["lifecycle"]["current_lifecycle_state"], "PROFILE_SWITCH_COMPLETED")
         self.assertEqual(switched.shell["lifecycle"]["profile_switch_result"], "SWITCH_COMPLETED")
         self.assertEqual(switched.shell["lifecycle"]["profile_switch_target_id"], "preserved_nq_phase1")
@@ -597,14 +597,14 @@ class SessionLifecycleTests(unittest.TestCase):
                 self.assertTrue(lifecycle.ready)
                 self.assertEqual(lifecycle.shell["runtime"]["profile_id"], profile_id)
                 self.assertEqual(lifecycle.shell["surfaces"]["session_header"]["contract"], contract)
-                self.assertEqual(lifecycle.shell["runtime"]["session_state"], "LIVE_QUERY_ELIGIBLE")
-                self.assertEqual(lifecycle.shell["workflow"]["query_action_status"], "AVAILABLE")
+                self.assertEqual(lifecycle.shell["runtime"]["session_state"], "LIVE_QUERY_BLOCKED")
+                self.assertEqual(lifecycle.shell["workflow"]["query_action_status"], "BLOCKED")
                 self.assertEqual(refreshed.shell["lifecycle"]["current_lifecycle_state"], "REFRESH_COMPLETED")
                 self.assertEqual(refreshed.shell["runtime"]["profile_id"], profile_id)
-                self.assertEqual(refreshed.shell["runtime"]["session_state"], "LIVE_QUERY_ELIGIBLE")
+                self.assertEqual(refreshed.shell["runtime"]["session_state"], "LIVE_QUERY_BLOCKED")
                 self.assertEqual(reset.shell["lifecycle"]["current_lifecycle_state"], "SESSION_RESET_COMPLETED")
                 self.assertEqual(reset.shell["runtime"]["profile_id"], profile_id)
-                self.assertEqual(reset.shell["runtime"]["session_state"], "LIVE_QUERY_ELIGIBLE")
+                self.assertEqual(reset.shell["runtime"]["session_state"], "LIVE_QUERY_BLOCKED")
 
                 with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
                     starting = load_session_lifecycle_from_env()
