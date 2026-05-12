@@ -239,7 +239,11 @@ def _build_evidence_and_replay(
     live_thesis_monitor: Mapping[str, Any],
     last_pipeline_result: Mapping[str, Any],
 ) -> dict[str, object]:
-    transition_log = _trigger_transition_log_summary(request.trigger_transition_log, contract)
+    transition_log = _trigger_transition_log_summary(
+        request.trigger_transition_log,
+        contract,
+        profile_id=request.profile_id,
+    )
     transition_log_status = _safe_status(
         request.trigger_transition_log_status or transition_log["status"]
     )
@@ -282,6 +286,8 @@ def _build_evidence_and_replay(
 def _trigger_transition_log_summary(
     log: Mapping[str, Any] | None,
     contract: str,
+    *,
+    profile_id: str | None = None,
 ) -> dict[str, object]:
     if log is None:
         return {
@@ -294,11 +300,15 @@ def _trigger_transition_log_summary(
     log_contract = _safe_text(log.get("contract") or "").upper()
     source_schema = _string_or_none(log.get("schema"))
     safe_source_schema = _safe_text(source_schema) if source_schema else None
+    expected_profile_id = _safe_text(profile_id) if profile_id else None
+    log_profile_id = _string_or_none(log.get("profile_id"))
+    safe_log_profile_id = _safe_text(log_profile_id) if log_profile_id else None
     if source_schema != EVIDENCE_REPLAY_SCHEMA:
         return {
             "status": "blocked",
             "count": 0,
             "contract": contract,
+            "profile_id": expected_profile_id,
             "blocking_reasons": [
                 f"unsupported_transition_log_schema:{safe_source_schema or '<missing>'}",
             ],
@@ -311,6 +321,7 @@ def _trigger_transition_log_summary(
             "status": "blocked",
             "count": 0,
             "contract": contract,
+            "profile_id": expected_profile_id,
             "blocking_reasons": [f"cross_contract_replay_summary:{log_contract}"],
             "source_schema": safe_source_schema,
         }
@@ -319,13 +330,26 @@ def _trigger_transition_log_summary(
             "status": "unavailable",
             "count": 0,
             "contract": contract,
+            "profile_id": expected_profile_id,
             "blocking_reasons": ["log_empty_no_transitions_recorded"],
+            "source_schema": safe_source_schema,
+        }
+    if expected_profile_id and safe_log_profile_id != expected_profile_id:
+        return {
+            "status": "blocked",
+            "count": 0,
+            "contract": contract,
+            "profile_id": expected_profile_id,
+            "blocking_reasons": [
+                f"cross_profile_replay_summary:{safe_log_profile_id or '<missing>'}",
+            ],
             "source_schema": safe_source_schema,
         }
     return {
         "status": "available",
         "count": len(transition_tuple),
         "contract": contract,
+        "profile_id": expected_profile_id,
         "blocking_reasons": [],
         "source_schema": safe_source_schema,
     }

@@ -161,6 +161,7 @@ def test_replay_source_filters_events_by_contract_for_workspace_consumption() ->
         "status": "available",
         "count": 1,
         "contract": "ES",
+        "profile_id": "preserved_es_phase1",
         "blocking_reasons": [],
         "source_schema": EVIDENCE_REPLAY_SCHEMA,
     }

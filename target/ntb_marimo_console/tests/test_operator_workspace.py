@@ -420,6 +420,7 @@ def test_workspace_evidence_surfaces_supplied_trigger_transition_log_with_count_
     log = {
         "schema": "evidence_replay_v1",
         "contract": "ES",
+        "profile_id": "preserved_es_phase1",
         "trigger_transitions": (
             {
                 "event_id": "evt-es-1",
@@ -449,6 +450,7 @@ def test_workspace_evidence_surfaces_supplied_trigger_transition_log_with_count_
         "status": "available",
         "count": 2,
         "contract": "ES",
+        "profile_id": "preserved_es_phase1",
         "blocking_reasons": [],
         "source_schema": "evidence_replay_v1",
     }
@@ -489,7 +491,47 @@ def test_workspace_evidence_accepts_replay_summary_from_trigger_transition_build
         "status": "available",
         "count": 1,
         "contract": "ES",
+        "profile_id": "preserved_es_phase1",
         "blocking_reasons": [],
+        "source_schema": EVIDENCE_REPLAY_SCHEMA,
+    }
+
+
+def test_workspace_evidence_blocks_cross_profile_trigger_transition_log() -> None:
+    trigger_events = build_trigger_transition_evidence_events(
+        trigger_result("ES", TriggerState.ARMED),
+        trigger_result("ES", TriggerState.QUERY_READY),
+        timestamp="2026-05-06T14:00:05+00:00",
+        profile_id="fixture_es_demo",
+        source="fixture",
+        premarket_brief_ref="premarket/ES/2026-05-06/brief.json",
+    )
+    replay = build_replay_summary(
+        (
+            create_evidence_event(
+                contract="ES",
+                profile_id="fixture_es_demo",
+                event_id="evt-stream",
+                timestamp="2026-05-06T14:00:00+00:00",
+                event_type="stream_connected",
+                source="fixture",
+                premarket_brief_ref="premarket/ES/2026-05-06/brief.json",
+            ),
+            *trigger_events,
+        ),
+        contract="ES",
+        profile_id="fixture_es_demo",
+    ).to_dict()
+
+    evidence = ready_workspace("ES", trigger_transition_log=replay).to_dict()["evidence_and_replay"]
+
+    assert evidence["trigger_transition_log_status"] == "blocked"
+    assert evidence["trigger_transition_log"] == {
+        "status": "blocked",
+        "count": 0,
+        "contract": "ES",
+        "profile_id": "preserved_es_phase1",
+        "blocking_reasons": ["cross_profile_replay_summary:fixture_es_demo"],
         "source_schema": EVIDENCE_REPLAY_SCHEMA,
     }
 
@@ -528,6 +570,7 @@ def test_workspace_evidence_marks_supplied_but_empty_trigger_transition_log_unav
     assert evidence["trigger_transition_log_status"] == "unavailable"
     assert evidence["trigger_transition_log"]["status"] == "unavailable"
     assert evidence["trigger_transition_log"]["count"] == 0
+    assert evidence["trigger_transition_log"]["profile_id"] == "preserved_mgc_phase1"
     assert evidence["trigger_transition_log"]["blocking_reasons"] == ["log_empty_no_transitions_recorded"]
 
 
@@ -554,6 +597,7 @@ def test_workspace_evidence_blocks_transition_log_without_evidence_replay_schema
         "status": "blocked",
         "count": 0,
         "contract": "ES",
+        "profile_id": "preserved_es_phase1",
         "blocking_reasons": ["unsupported_transition_log_schema:<missing>"],
         "source_schema": None,
     }
@@ -591,9 +635,11 @@ def test_workspace_evidence_blocks_transition_log_derived_from_decision_replay_s
 
 @pytest.mark.parametrize("contract", ("ES", "NQ", "CL", "6E", "MGC"))
 def test_workspace_evidence_attributes_trigger_transition_log_per_contract_without_bleed(contract: str) -> None:
+    profile_id = f"preserved_{contract.lower()}_phase1"
     log = {
         "schema": "evidence_replay_v1",
         "contract": contract,
+        "profile_id": profile_id,
         "trigger_transitions": (
             {
                 "event_id": f"evt-{contract.lower()}-1",
@@ -624,6 +670,7 @@ def test_workspace_evidence_explicit_status_override_takes_precedence_over_log()
     log = {
         "schema": "evidence_replay_v1",
         "contract": "ES",
+        "profile_id": "preserved_es_phase1",
         "trigger_transitions": (
             {
                 "event_id": "evt-es-override",
