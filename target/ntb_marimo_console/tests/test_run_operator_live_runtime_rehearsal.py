@@ -517,6 +517,44 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertEqual(assessment["query_ready_allowed"], "no")
         self.assertIn("market_data_delivery_not_proven", assessment["blocking_reasons"])
 
+    def test_receive_pump_continues_after_initial_quiet_dispatch_until_duration(self) -> None:
+        config = rehearsal._build_stream_config(symbol_overrides={})
+        manager = FakeStartingManager(config=config, client=None)
+        manager._snapshot = manager._active_snapshot(record_count=0)
+
+        class QuietThenDataSession:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def dispatch_one(self, handler):
+                self.calls += 1
+                if self.calls == 1:
+                    return False
+                if self.calls == 2:
+                    handler(
+                        {
+                            "provider": "schwab",
+                            "service": "LEVELONE_FUTURES",
+                            "symbol": "/ESM26",
+                            "contract": "ES",
+                            "message_type": "quote",
+                            "fields": {"1": 4321.5},
+                            "received_at": NOW,
+                        }
+                    )
+                    return True
+                return False
+
+        received, distinct_count = rehearsal._pump_receive_loop(
+            session=QuietThenDataSession(),
+            manager=manager,
+            duration_seconds=1.0,
+            clock=_make_clock(),
+        )
+
+        self.assertTrue(received)
+        self.assertEqual(distinct_count, 1)
+
     def test_no_live_flag_blocks_before_env_or_token_access(self) -> None:
         sentinel_open = unittest.mock.MagicMock(side_effect=AssertionError("open_must_not_be_called"))
         with patch("builtins.open", new=sentinel_open):

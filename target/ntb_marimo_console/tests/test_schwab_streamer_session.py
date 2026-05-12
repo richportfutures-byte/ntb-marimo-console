@@ -635,6 +635,31 @@ class OperatorSchwabStreamerSessionSubscribeTests(unittest.TestCase):
         self.assertNotIn("/GCM", keys_field)
         self.assertIn("/MGCM26", keys_field)
 
+    def test_subscribe_preserves_data_frame_received_before_ack_for_dispatch(self) -> None:
+        session, _, _, wf = _build_session()
+        self._login(session, wf)
+        wf.connection.recv_queue.append(_data_frame(symbol="/ESM26", bid=4321.5))
+        wf.connection.recv_queue.append(_subs_ack(code=0))
+        request = StreamSubscriptionRequest(
+            provider="schwab",
+            services=("LEVELONE_FUTURES",),
+            symbols=("/ESM26",),
+            fields=(0, 1, 2, 3, 4, 5),
+            contracts=("ES",),
+        )
+
+        result = session.subscribe(request)
+
+        self.assertTrue(result.succeeded)
+        captured: list[dict[str, object]] = []
+        self.assertTrue(session.dispatch_one(handler=lambda message: captured.append(dict(message))))
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0]["symbol"], "/ESM26")
+        self.assertEqual(captured[0]["contract"], "ES")
+        fields = captured[0]["fields"]
+        assert isinstance(fields, dict)
+        self.assertEqual(fields["1"], 4321.5)
+
     def test_subscribe_blocks_zn_and_returns_redacted_failure_without_send(self) -> None:
         session, _, _, wf = _build_session()
         self._login(session, wf)

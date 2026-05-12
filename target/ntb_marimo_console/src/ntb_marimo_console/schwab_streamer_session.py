@@ -55,6 +55,7 @@ from __future__ import annotations
 import importlib
 import json
 import re
+from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -446,6 +447,7 @@ class OperatorSchwabStreamerSession:
         self._subscribe_attempted = False
         self._subscribe_succeeded = False
         self._closed = False
+        self._pending_data_frames: deque[tuple[Mapping[str, object], ...]] = deque()
 
     # -- login ---------------------------------------------------------------
 
@@ -563,9 +565,8 @@ class OperatorSchwabStreamerSession:
             return StreamClientResult(succeeded=False, reason=f"subscribe_send_failed:{exc}")
 
         # Drain incoming frames until the SUBS ack appears or we hit timeout.
-        # Data frames before the ack are silently dropped here; the caller
-        # invokes ``dispatch_one`` after subscribe returns to drain subsequent
-        # data frames into the manager.
+        # Schwab may deliver data before the SUBS ack frame reaches us; keep
+        # those frames for the first dispatch call instead of consuming them.
         deadline_attempts = max(1, int(self._timeout_seconds // 1) or 1) * 4
         for _ in range(deadline_attempts):
             try:
@@ -588,7 +589,14 @@ class OperatorSchwabStreamerSession:
                 )
             if code is None:
                 # No SUBS ack in this frame; could be a heartbeat or a data
-                # frame received pre-ack. Continue draining.
+                # frame received pre-ack. Continue draining after preserving
+                # any parseable data entries.
+                try:
+                    entries = tuple(extract_data_entries(str(raw_response)))
+                except OperatorSchwabStreamerSessionError:
+                    entries = ()
+                if entries:
+                    self._pending_data_frames.append(entries)
                 continue
             if code != 0:
                 return StreamClientResult(succeeded=False, reason=f"subscribe_denied:code={code}")
@@ -661,6 +669,15 @@ class OperatorSchwabStreamerSession:
         connection = self._connection
         if connection is None:
             return False
+
+        if self._pending_data_frames:
+            entries = self._pending_data_frames.popleft()
+            for entry in entries:
+                try:
+                    handler(entry)
+                except Exception:
+                    continue
+            return True
 
         try:
             raw_message = connection.recv(self._timeout_seconds)

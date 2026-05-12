@@ -100,6 +100,7 @@ REQUIRED_ENV_KEYS: tuple[str, ...] = (
 DEFAULT_DURATION_SECONDS = 10
 MIN_DURATION_SECONDS = 1
 MAX_DURATION_SECONDS = 30
+MAX_IDLE_DISPATCH_SLEEP_SECONDS = 0.05
 DEFAULT_TOKEN_URL = getattr(schwab_token_utils, "DEFAULT_TOKEN_URL", "")
 DEFAULT_FRONT_MONTH_SYMBOLS: dict[str, str] = {
     "ES": "/ESM26",
@@ -887,8 +888,14 @@ def _pump_receive_loop(
     deadline = clock() + max(0.0, duration_seconds)
     while clock() < deadline:
         if not session.dispatch_one(handler=_handler):
-            # Timeout / EOF / inactive — exit early.
-            break
+            remaining = deadline - clock()
+            if remaining <= 0:
+                break
+            # ``dispatch_one`` intentionally collapses timeout/EOF/inactive
+            # into False. Stay within the rehearsal duration so one quiet
+            # receive interval does not prove the whole bounded window quiet.
+            time.sleep(min(MAX_IDLE_DISPATCH_SLEEP_SECONDS, max(0.0, remaining)))
+            continue
     return received_at_least_one, len(contracts_seen)
 
 
