@@ -235,6 +235,95 @@ class RuntimeModesPreservedTests(unittest.TestCase):
         self.assertEqual(shell["runtime"]["profile_id"], "preserved_nq_phase1")
         self.assertEqual(_ReadyPreservedBackend.run_pipeline_calls, 1)
 
+        cockpit = shell["r14_cockpit"]
+        identity = cockpit["identity"]
+        runtime = cockpit["runtime_status"]
+        premarket = cockpit["premarket"]
+        trigger = cockpit["triggers"][0]
+        query = cockpit["query_readiness"]
+        last_result = cockpit["last_pipeline_result"]
+        replay = cockpit["replay_availability"]
+        operator_states = {
+            state["category"]: state
+            for state in cockpit["operator_states"]
+        }
+
+        self.assertEqual(identity["contract"], "NQ")
+        self.assertEqual(identity["current_profile"], "preserved_nq_phase1")
+        self.assertEqual(identity["contract_support_status"], "final_supported")
+        self.assertEqual(identity["runtime_profile_status"], "available")
+
+        self.assertEqual(runtime["provider_status"], "fixture")
+        self.assertEqual(runtime["stream_status"], "fixture")
+        self.assertEqual(runtime["quote_freshness"], "fresh")
+        self.assertEqual(runtime["bar_freshness"], "fresh")
+        self.assertEqual(runtime["event_lockout_state"], "inactive")
+
+        self.assertEqual(premarket["premarket_brief_status"], "READY")
+        self.assertIn("cross_asset.relative_strength_vs_es", premarket["required_fields"])
+        self.assertIn(
+            "Absolute NQ price action is not sufficient when ES-relative confirmation is required.",
+            premarket["warnings"],
+        )
+        self.assertIn(
+            "Missing NQ or ES anchors must keep the read model blocked.",
+            premarket["warnings"],
+        )
+        self.assertIn(
+            "Do not treat NQ as ready if ES-relative strength is unavailable or below threshold.",
+            premarket["warnings"],
+        )
+        self.assertEqual(
+            {
+                field["field"]: field["status"]
+                for field in premarket["unavailable_fields"]
+            },
+            {
+                "cross_asset.index_cash_tone": "unavailable_not_inferred",
+            },
+        )
+        self.assertEqual(
+            {
+                invalidator["invalidator_id"]: invalidator["action"]
+                for invalidator in premarket["invalidators"]
+            },
+            {
+                "nq_relative_strength_failure": "block_query_ready_read_model",
+                "nq_completed_bar_confirmation_missing": "block_query_ready_read_model",
+            },
+        )
+
+        self.assertEqual(trigger["setup_id"], "nq_setup_1")
+        self.assertEqual(trigger["trigger_state"], "QUERY_READY")
+        self.assertEqual(trigger["query_ready_provenance"], "real_trigger_state_result")
+        self.assertEqual(trigger["distance_to_trigger_ticks"], 0.0)
+        self.assertEqual(trigger["blocking_reasons"], [])
+
+        self.assertTrue(query["query_ready"])
+        self.assertTrue(query["manual_query_allowed"])
+        self.assertTrue(query["trigger_state_from_real_producer"])
+        self.assertEqual(query["pipeline_gate_state"], "ENABLED")
+        self.assertEqual(
+            query["query_ready_provenance"],
+            "real_trigger_state_result_and_pipeline_gate",
+        )
+        self.assertIn("bars_fresh_and_available", query["enabled_reasons"])
+        self.assertIn("trigger_state_query_ready", query["enabled_reasons"])
+        self.assertIn("event_lockout_inactive", query["enabled_reasons"])
+
+        self.assertEqual(last_result["final_decision"], "NO_TRADE")
+        self.assertEqual(last_result["no_trade_summary"], "Preserved engine returned NO_TRADE.")
+        self.assertIsNone(last_result["approved_summary"])
+        self.assertIsNone(last_result["rejected_summary"])
+
+        self.assertTrue(replay["audit_replay_available"])
+        self.assertEqual(replay["audit_replay_status"], "available")
+        self.assertEqual(replay["replay_statement"], "No synthetic replay is labeled as real evidence.")
+
+        self.assertEqual(operator_states["fixture_mode"]["state"], "fixture_mode")
+        self.assertEqual(operator_states["query_ready"]["state"], "query_ready")
+        self.assertEqual(operator_states["query_ready"]["source"], "query_readiness")
+
     def test_third_supported_preserved_profile_reaches_ready_state(self) -> None:
         _ReadyPreservedBackend.run_pipeline_calls = 0
         with tempfile.TemporaryDirectory() as temp_dir:
