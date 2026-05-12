@@ -29,30 +29,8 @@ from ntb_marimo_console.runtime_modes import (
     build_es_app_shell_for_mode,
 )
 from ntb_marimo_console.runtime_profiles import RuntimeProfile, get_runtime_profile
-from ntb_marimo_console.trigger_state import TriggerState, TriggerStateResult
 
-
-def _query_ready_trigger_state_results(request: object) -> tuple[TriggerStateResult, ...]:
-    """Stub producer output: real produced QUERY_READY TriggerStateResult for the request contract.
-
-    Used only by demo tests that explicitly require a successful pipeline query path
-    (narrative sidecar surfacing, missing-sidecar fail-safe behavior).
-    """
-    contract = getattr(request, "contract", "ES")
-    return (
-        TriggerStateResult(
-            contract=contract,
-            setup_id=f"{contract.lower()}_setup_1",
-            trigger_id=f"{contract.lower()}_trigger_query_ready",
-            state=TriggerState.QUERY_READY,
-            distance_to_trigger_ticks=0.0,
-            required_fields=("market.current_price",),
-            missing_fields=(),
-            invalid_reasons=(),
-            blocking_reasons=(),
-            last_updated=getattr(request, "last_updated", None) or "2026-03-25T09:35:00-04:00",
-        ),
-    )
+from tests._query_ready_producer import query_ready_trigger_state_results as _query_ready_trigger_state_results
 
 
 TEST_MARKET_DATA_MAX_AGE_SECONDS = "3600"

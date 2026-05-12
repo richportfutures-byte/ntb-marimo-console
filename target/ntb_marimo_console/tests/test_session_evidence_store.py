@@ -239,7 +239,9 @@ class SessionEvidenceStoreTests(unittest.TestCase):
             switched = switch_profile(restarted, "preserved_cl_phase1")
             outcomes = self._outcomes_by_profile(switched.shell["evidence"])
 
-        self.assertEqual(outcomes["preserved_es_phase1"]["query_action_state"], "AVAILABLE")
+        # R13: default trigger state is TOUCHED; the gate stays fail-closed for the
+        # restored ES profile after restart.
+        self.assertEqual(outcomes["preserved_es_phase1"]["query_action_state"], "BLOCKED")
         self.assertEqual(outcomes["preserved_es_phase1"]["source_scope"], "CURRENT_SESSION")
         self.assertEqual(outcomes["preserved_nq_phase1"]["source_scope"], "RESTORED_PRIOR_RUN")
         self.assertEqual(outcomes["preserved_cl_phase1"]["source_scope"], "CURRENT_SESSION")
@@ -258,7 +260,10 @@ class SessionEvidenceStoreTests(unittest.TestCase):
 
         self.assertEqual(outcomes["preserved_cl_phase1"]["source_scope"], "RESTORED_PRIOR_RUN")
         self.assertEqual(outcomes["preserved_cl_phase1"]["last_action"], "RESET_SESSION")
-        self.assertEqual(outcomes["preserved_cl_phase1"]["query_action_state"], "AVAILABLE")
+        # R13: the prior CL session's last recorded query_action_state was BLOCKED
+        # because the default trigger state is TOUCHED. Attribution persists across
+        # restart unchanged.
+        self.assertEqual(outcomes["preserved_cl_phase1"]["query_action_state"], "BLOCKED")
 
     def test_reload_attribution_persists_across_restart(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

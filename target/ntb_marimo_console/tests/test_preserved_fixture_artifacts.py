@@ -18,6 +18,8 @@ from ntb_marimo_console.preserved_fixture_artifacts import (
 from ntb_marimo_console.runtime_modes import build_app_shell_for_profile_id
 from ntb_marimo_console.runtime_profiles import get_runtime_profile
 
+from tests._query_ready_producer import query_ready_trigger_state_results
+
 
 FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "golden" / "phase1"
 
@@ -85,7 +87,10 @@ class PreservedFixtureArtifactsTests(unittest.TestCase):
             )
 
             with patch.dict(os.environ, {"NTB_STAGE_E_LOG_ROOT": str(Path(temp_dir) / ".stage_e")}):
-                with patch.object(sys, "path", [engine_src, *sys.path]):
+                with patch.object(sys, "path", [engine_src, *sys.path]), patch(
+                    "ntb_marimo_console.app.build_trigger_state_results",
+                    new=query_ready_trigger_state_results,
+                ):
                     adapter_module = importlib.import_module("ntb_marimo_console.preserved_fixture_adapter")
                     shell = build_app_shell_for_profile_id(
                         profile_id="preserved_es_phase1",
@@ -114,7 +119,10 @@ class PreservedFixtureArtifactsTests(unittest.TestCase):
             )
 
             with patch.dict(os.environ, {"NTB_STAGE_E_LOG_ROOT": str(Path(temp_dir) / ".stage_e")}):
-                with patch.object(sys, "path", [engine_src, *sys.path]):
+                with patch.object(sys, "path", [engine_src, *sys.path]), patch(
+                    "ntb_marimo_console.app.build_trigger_state_results",
+                    new=query_ready_trigger_state_results,
+                ):
                     adapter_module = importlib.import_module("ntb_marimo_console.preserved_fixture_adapter")
                     shell = build_app_shell_for_profile_id(
                         profile_id="preserved_cl_phase1",
@@ -142,7 +150,10 @@ class PreservedFixtureArtifactsTests(unittest.TestCase):
             )
 
             with patch.dict(os.environ, {"NTB_STAGE_E_LOG_ROOT": str(Path(temp_dir) / ".stage_e")}):
-                with patch.object(sys, "path", [engine_src, *sys.path]):
+                with patch.object(sys, "path", [engine_src, *sys.path]), patch(
+                    "ntb_marimo_console.app.build_trigger_state_results",
+                    new=query_ready_trigger_state_results,
+                ):
                     adapter_module = importlib.import_module("ntb_marimo_console.preserved_fixture_adapter")
                     shell = build_app_shell_for_profile_id(
                         profile_id="preserved_nq_phase1",

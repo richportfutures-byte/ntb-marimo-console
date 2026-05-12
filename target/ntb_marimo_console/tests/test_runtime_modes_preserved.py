@@ -27,6 +27,8 @@ from ntb_marimo_console.runtime_modes import (
 )
 from ntb_marimo_console.runtime_profiles import get_runtime_profile
 
+from tests._query_ready_producer import query_ready_trigger_state_results
+
 
 FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "golden" / "phase1"
 
@@ -180,6 +182,9 @@ class RuntimeModesPreservedTests(unittest.TestCase):
                 with patch(
                     "ntb_marimo_console.runtime_modes.PreservedEngineBackend",
                     _ReadyPreservedBackend,
+                ), patch(
+                    "ntb_marimo_console.app.build_trigger_state_results",
+                    new=query_ready_trigger_state_results,
                 ):
                     shell = build_app_shell_for_profile_id(
                         profile_id="preserved_es_phase1",
@@ -209,6 +214,9 @@ class RuntimeModesPreservedTests(unittest.TestCase):
                 with patch(
                     "ntb_marimo_console.runtime_modes.PreservedEngineBackend",
                     _ReadyPreservedBackend,
+                ), patch(
+                    "ntb_marimo_console.app.build_trigger_state_results",
+                    new=query_ready_trigger_state_results,
                 ):
                     shell = build_app_shell_for_profile_id(
                         profile_id="preserved_nq_phase1",
@@ -238,6 +246,9 @@ class RuntimeModesPreservedTests(unittest.TestCase):
                 with patch(
                     "ntb_marimo_console.runtime_modes.PreservedEngineBackend",
                     _ReadyPreservedBackend,
+                ), patch(
+                    "ntb_marimo_console.app.build_trigger_state_results",
+                    new=query_ready_trigger_state_results,
                 ):
                     shell = build_app_shell_for_profile_id(
                         profile_id="preserved_cl_phase1",
@@ -267,6 +278,9 @@ class RuntimeModesPreservedTests(unittest.TestCase):
                 with patch(
                     "ntb_marimo_console.runtime_modes.PreservedEngineBackend",
                     _NonLoggingPreservedBackend,
+                ), patch(
+                    "ntb_marimo_console.app.build_trigger_state_results",
+                    new=query_ready_trigger_state_results,
                 ):
                     shell = build_app_shell_for_profile_id(
                         profile_id="preserved_es_phase1",
@@ -274,6 +288,8 @@ class RuntimeModesPreservedTests(unittest.TestCase):
                         model_adapter=_ValidModelAdapter(),
                     )
 
+        # Real produced QUERY_READY allows the gate to admit the query; the test
+        # then exercises the Stage E missing failure mode after pipeline execution.
         self.assertEqual(shell["runtime"]["session_state"], "ERROR")
         self.assertFalse(shell["surfaces"]["audit_replay"]["ready"])
         self.assertIn("no persisted Stage E record", shell["surfaces"]["query_action"]["failure_message"])

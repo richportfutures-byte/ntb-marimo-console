@@ -213,7 +213,9 @@ class LaunchConfigTests(unittest.TestCase):
         self.assertEqual(artifacts.config.market_data_config.provider, "fixture")
         self.assertEqual(artifacts.shell["surfaces"]["live_observables"]["market_data"]["status"], "Market data unavailable")
         self.assertEqual(artifacts.shell["runtime"]["runtime_mode"], "fixture_demo")
-        self.assertEqual(artifacts.shell["runtime"]["session_state"], "LIVE_QUERY_ELIGIBLE")
+        # R13: default fixture trigger state is TOUCHED (not QUERY_READY), so the
+        # pipeline query gate stays fail-closed. Truthful state is LIVE_QUERY_BLOCKED.
+        self.assertEqual(artifacts.shell["runtime"]["session_state"], "LIVE_QUERY_BLOCKED")
 
     def test_build_startup_artifacts_blocks_unsupported_profile_without_crashing(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "unknown_profile"}, clear=True):

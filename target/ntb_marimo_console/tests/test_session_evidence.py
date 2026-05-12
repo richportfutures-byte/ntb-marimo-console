@@ -44,8 +44,9 @@ class SessionEvidenceTests(unittest.TestCase):
         self.assertTrue(lifecycle.evidence_history[-1].recorded_at_utc)
         self.assertEqual(es["preflight_status"], "PASS")
         self.assertEqual(es["startup_outcome"], "OPERATOR_SURFACES_READY")
-        self.assertEqual(es["query_eligibility_state"], "ELIGIBLE")
-        self.assertEqual(es["query_action_state"], "AVAILABLE")
+        # R13: default trigger state is TOUCHED; the gate stays fail-closed.
+        self.assertEqual(es["query_eligibility_state"], "BLOCKED")
+        self.assertEqual(es["query_action_state"], "BLOCKED")
 
     def test_recent_session_evidence_recording_for_nq(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_nq_phase1"}, clear=True):
@@ -58,7 +59,8 @@ class SessionEvidenceTests(unittest.TestCase):
         self.assertEqual(lifecycle.evidence_history[-1].active_profile_id, "preserved_nq_phase1")
         self.assertEqual(nq["preflight_status"], "PASS")
         self.assertEqual(nq["startup_outcome"], "OPERATOR_SURFACES_READY")
-        self.assertEqual(nq["query_action_state"], "AVAILABLE")
+        # R13: default trigger state is TOUCHED; the gate stays fail-closed.
+        self.assertEqual(nq["query_action_state"], "BLOCKED")
 
     def test_recent_session_evidence_recording_for_cl(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_cl_phase1"}, clear=True):
@@ -71,7 +73,8 @@ class SessionEvidenceTests(unittest.TestCase):
         self.assertEqual(lifecycle.evidence_history[-1].active_profile_id, "preserved_cl_phase1")
         self.assertEqual(cl["preflight_status"], "PASS")
         self.assertEqual(cl["startup_outcome"], "OPERATOR_SURFACES_READY")
-        self.assertEqual(cl["query_action_state"], "AVAILABLE")
+        # R13: default trigger state is TOUCHED; the gate stays fail-closed.
+        self.assertEqual(cl["query_action_state"], "BLOCKED")
 
     def test_profile_switch_event_attribution_integrity(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
@@ -90,11 +93,14 @@ class SessionEvidenceTests(unittest.TestCase):
         nq = outcomes["preserved_nq_phase1"]
 
         self.assertEqual(es["last_action"], "RUN_BOUNDED_QUERY")
-        self.assertEqual(es["query_action_state"], "COMPLETED")
-        self.assertEqual(es["decision_review_state"], "READY")
+        # R13: default trigger state is TOUCHED, so the requested query fails closed
+        # at the gate. The attribution chain still records the RUN_BOUNDED_QUERY action
+        # for ES; Decision Review stays NOT_READY because no pipeline was executed.
+        self.assertEqual(es["query_action_state"], "FAILED")
+        self.assertEqual(es["decision_review_state"], "NOT_READY")
         self.assertEqual(nq["last_action"], "SWITCH_PROFILE")
         self.assertEqual(nq["profile_switch_result"], "SWITCH_COMPLETED")
-        self.assertEqual(nq["query_action_state"], "AVAILABLE")
+        self.assertEqual(nq["query_action_state"], "BLOCKED")
         self.assertEqual(nq["decision_review_state"], "NOT_READY")
 
     def test_reset_reload_event_attribution_integrity(self) -> None:
@@ -113,7 +119,8 @@ class SessionEvidenceTests(unittest.TestCase):
         cl = outcomes["preserved_cl_phase1"]
         self.assertEqual(cl["last_action"], "RELOAD_CURRENT_PROFILE")
         self.assertEqual(cl["reload_result"], "RELOADED_UNCHANGED")
-        self.assertEqual(cl["query_action_state"], "AVAILABLE")
+        # R13: default trigger state is TOUCHED; reload leaves the gate fail-closed.
+        self.assertEqual(cl["query_action_state"], "BLOCKED")
         self.assertEqual(cl["decision_review_state"], "NOT_READY")
 
     def test_blocked_outcome_attribution_integrity(self) -> None:
