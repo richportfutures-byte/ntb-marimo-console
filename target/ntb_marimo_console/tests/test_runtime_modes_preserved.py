@@ -435,6 +435,131 @@ class RuntimeModesPreservedTests(unittest.TestCase):
         self.assertIn("query_ready", operator_states)
         self.assertEqual(cockpit["blocking_reasons"], [])
 
+    def test_fourth_supported_preserved_profile_reaches_ready_state(self) -> None:
+        _ReadyPreservedBackend.run_pipeline_calls = 0
+        with tempfile.TemporaryDirectory() as temp_dir:
+            artifact_root = self._build_valid_preserved_artifact_root(
+                Path(temp_dir),
+                profile_id="preserved_6e_phase1",
+            )
+            with patch.dict(os.environ, {"NTB_STAGE_E_LOG_ROOT": str(Path(temp_dir) / ".stage_e")}):
+                with patch(
+                    "ntb_marimo_console.runtime_modes.PreservedEngineBackend",
+                    _ReadyPreservedBackend,
+                ), patch(
+                    "ntb_marimo_console.app.build_trigger_state_results",
+                    new=query_ready_trigger_state_results,
+                ):
+                    shell = build_app_shell_for_profile_id(
+                        profile_id="preserved_6e_phase1",
+                        fixtures_root=artifact_root,
+                        model_adapter=_ValidModelAdapter(),
+                    )
+
+        surfaces = shell["surfaces"]
+        self.assertEqual(surfaces["session_header"]["contract"], "6E")
+        self.assertEqual(surfaces["run_history"]["source"], "stage_e_jsonl")
+        self.assertTrue(surfaces["query_action"]["query_enabled"])
+        self.assertTrue(surfaces["decision_review"]["has_result"])
+        self.assertTrue(surfaces["audit_replay"]["stage_e_live_backend"])
+        self.assertEqual(surfaces["audit_replay"]["source"], "stage_e_jsonl")
+        self.assertEqual(shell["runtime"]["runtime_mode"], "preserved_engine")
+        self.assertEqual(shell["runtime"]["profile_id"], "preserved_6e_phase1")
+        self.assertEqual(_ReadyPreservedBackend.run_pipeline_calls, 1)
+
+        cockpit = shell["r14_cockpit"]
+        identity = cockpit["identity"]
+        runtime = cockpit["runtime_status"]
+        premarket = cockpit["premarket"]
+        trigger = cockpit["triggers"][0]
+        query = cockpit["query_readiness"]
+        last_result = cockpit["last_pipeline_result"]
+        replay = cockpit["replay_availability"]
+        operator_states = {
+            state["category"]: state
+            for state in cockpit["operator_states"]
+        }
+
+        self.assertEqual(identity["contract"], "6E")
+        self.assertEqual(identity["current_profile"], "preserved_6e_phase1")
+        self.assertEqual(identity["contract_support_status"], "final_supported")
+        self.assertEqual(identity["runtime_profile_status"], "available")
+
+        self.assertEqual(runtime["provider_status"], "fixture")
+        self.assertEqual(runtime["stream_status"], "fixture")
+        self.assertEqual(runtime["quote_freshness"], "fresh")
+        self.assertEqual(runtime["bar_freshness"], "fresh")
+        self.assertEqual(runtime["event_lockout_state"], "inactive")
+
+        self.assertEqual(premarket["premarket_brief_status"], "READY")
+        self.assertIn("cross_asset.dxy", premarket["required_fields"])
+        self.assertIn("session_sequence.asia_complete", premarket["required_fields"])
+        self.assertIn("session_sequence.london_complete", premarket["required_fields"])
+        self.assertIn("session_sequence.ny_pending", premarket["required_fields"])
+        self.assertIn(
+            "Textual dollar context is not sufficient when DXY is required.",
+            premarket["warnings"],
+        )
+        self.assertIn(
+            "Absolute 6E price action is not sufficient without numeric DXY and explicit session sequence confirmation.",
+            premarket["warnings"],
+        )
+        self.assertIn(
+            "Thin liquidity after London close must keep the read model blocked or locked out when active.",
+            premarket["warnings"],
+        )
+        self.assertEqual(
+            {
+                field["field"]: field["status"]
+                for field in premarket["unavailable_fields"]
+            },
+            {
+                "dxy_textual_context": "unavailable_not_inferred",
+            },
+        )
+        self.assertEqual(
+            {
+                invalidator["invalidator_id"]: invalidator["action"]
+                for invalidator in premarket["invalidators"]
+            },
+            {
+                "sixe_numeric_dxy_failure": "block_query_ready_read_model",
+                "sixe_session_sequence_incomplete": "block_query_ready_read_model",
+            },
+        )
+
+        self.assertEqual(trigger["trigger_state"], "QUERY_READY")
+        self.assertEqual(trigger["query_ready_provenance"], "real_trigger_state_result")
+        self.assertEqual(trigger["distance_to_trigger_ticks"], 0.0)
+        self.assertEqual(trigger["missing_fields"], [])
+        self.assertEqual(trigger["blocking_reasons"], [])
+
+        self.assertTrue(query["query_ready"])
+        self.assertTrue(query["manual_query_allowed"])
+        self.assertTrue(query["trigger_state_from_real_producer"])
+        self.assertEqual(query["pipeline_gate_state"], "ENABLED")
+        self.assertEqual(query["query_ready_provenance"], "real_trigger_state_result_and_pipeline_gate")
+        self.assertIn("bars_fresh_and_available", query["enabled_reasons"])
+        self.assertIn("trigger_state_query_ready", query["enabled_reasons"])
+        self.assertIn("event_lockout_inactive", query["enabled_reasons"])
+        self.assertEqual(query["disabled_reasons"], [])
+
+        self.assertEqual(last_result["status"], "completed")
+        self.assertEqual(last_result["final_decision"], "NO_TRADE")
+        self.assertEqual(last_result["no_trade_summary"], "Preserved engine returned NO_TRADE.")
+        self.assertIsNone(last_result["approved_summary"])
+        self.assertIsNone(last_result["rejected_summary"])
+        self.assertNotIn("alternate", json.dumps(last_result, sort_keys=True).lower())
+
+        self.assertTrue(replay["audit_replay_available"])
+        self.assertEqual(replay["run_history_status"], "available")
+        self.assertEqual(replay["replay_statement"], "No synthetic replay is labeled as real evidence.")
+
+        self.assertEqual(operator_states["fixture_mode"]["state"], "fixture_mode")
+        self.assertEqual(operator_states["query_ready"]["state"], "query_ready")
+        self.assertEqual(operator_states["query_ready"]["source"], "query_readiness")
+        self.assertEqual(cockpit["blocking_reasons"], [])
+
     def test_preserved_profile_fails_closed_when_stage_e_record_is_missing(self) -> None:
         _ReadyPreservedBackend.run_pipeline_calls = 0
         with tempfile.TemporaryDirectory() as temp_dir:
