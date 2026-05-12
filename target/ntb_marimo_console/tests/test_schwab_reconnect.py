@@ -299,6 +299,9 @@ class FakeReceiveManager:
     def __init__(self) -> None:
         self.messages: list[dict[str, object]] = []
         self.connection_lost_reasons: list[str] = []
+        self.check_heartbeat_calls = 0
+        self.check_contract_heartbeats_calls = 0
+        self.last_heartbeat_at: str | None = None
 
     def ingest_message(self, message: dict[str, object]) -> None:
         self.messages.append(dict(message))
@@ -307,7 +310,13 @@ class FakeReceiveManager:
         self.connection_lost_reasons.append(str(reason))
 
     def snapshot(self) -> object:
-        return object()
+        return type("Snapshot", (), {"last_heartbeat_at": self.last_heartbeat_at})()
+
+    def check_heartbeat(self) -> None:
+        self.check_heartbeat_calls += 1
+
+    def check_contract_heartbeats(self) -> None:
+        self.check_contract_heartbeats_calls += 1
 
 
 class FakeReceiveSession:
@@ -448,3 +457,34 @@ def test_managed_receive_thread_swaps_to_reconnected_session() -> None:
     assert worker.session is new_session
     assert controller.current_sessions == [old_session]
     assert manager.connection_lost_reasons == []
+
+
+def test_managed_receive_thread_runs_watchdog_checks_after_dispatch() -> None:
+    manager = FakeReceiveManager()
+    manager.last_heartbeat_at = "2026-05-12T14:00:00+00:00"
+    session = FakeReceiveSession(
+        outcomes=[
+            (
+                True,
+                "message",
+                {
+                    "service": "LEVELONE_FUTURES",
+                    "symbol": "/ESM26",
+                    "contract": "ES",
+                    "message_type": "quote",
+                    "fields": {"1": 10.0},
+                    "received_at": "2026-05-12T14:00:00+00:00",
+                },
+            )
+        ]
+    )
+    worker = ManagedSchwabReceiveThread(
+        session=session,
+        manager=manager,
+        sleep_seconds=0,
+    )
+
+    worker.run_until_stopped(max_iterations=1)
+
+    assert manager.check_heartbeat_calls == 1
+    assert manager.check_contract_heartbeats_calls == 1

@@ -250,6 +250,123 @@ def test_heartbeat_timeout_marks_stream_stale_fail_closed() -> None:
     assert snapshot.heartbeat_age_seconds == MIN_STREAM_REFRESH_FLOOR_SECONDS + 1
 
 
+def test_contract_receiving_data_has_active_heartbeat_status() -> None:
+    manager = SchwabStreamManager(live_config(), client=FakeStreamClient(), clock=FakeClock())
+    manager.start()
+
+    snapshot = manager.ingest_message(quote_message())
+    snapshot = manager.check_contract_heartbeats()
+
+    assert snapshot.contract_heartbeat_status is not None
+    assert snapshot.contract_heartbeat_status["ES"] == {
+        "last_seen": "2026-05-06T13:00:00+00:00",
+        "age_seconds": 0.0,
+        "status": "active",
+    }
+    assert snapshot.stale_contracts == ()
+    assert snapshot.blocking_reasons == ()
+
+
+def test_contract_not_receiving_data_within_threshold_is_marked_stale() -> None:
+    clock = FakeClock()
+    manager = SchwabStreamManager(live_config(), client=FakeStreamClient(), clock=clock)
+    manager.start()
+    manager.ingest_message(quote_message())
+
+    clock.advance((2 * MIN_STREAM_REFRESH_FLOOR_SECONDS) + 1)
+    snapshot = manager.check_contract_heartbeats()
+
+    assert snapshot.state == "stale"
+    assert snapshot.stale_contracts == ("ES",)
+    assert snapshot.contract_heartbeat_status is not None
+    assert snapshot.contract_heartbeat_status["ES"]["status"] == "stale"
+    assert snapshot.contract_heartbeat_status["ES"]["age_seconds"] == (
+        2 * MIN_STREAM_REFRESH_FLOOR_SECONDS
+    ) + 1
+    assert "contract_stale:ES" in snapshot.blocking_reasons
+
+
+def test_contract_that_never_received_data_is_marked_no_data_after_threshold() -> None:
+    clock = FakeClock()
+    manager = SchwabStreamManager(live_config(), client=FakeStreamClient(), clock=clock)
+    manager.start()
+
+    clock.advance((2 * MIN_STREAM_REFRESH_FLOOR_SECONDS) + 1)
+    snapshot = manager.check_contract_heartbeats()
+
+    assert snapshot.state == "stale"
+    assert snapshot.stale_contracts == ()
+    assert snapshot.contract_heartbeat_status is not None
+    assert snapshot.contract_heartbeat_status["ES"] == {
+        "last_seen": None,
+        "age_seconds": None,
+        "status": "no_data",
+    }
+    assert "contract_no_data:ES" in snapshot.blocking_reasons
+
+
+def test_multiple_contract_heartbeat_statuses_can_be_active_stale_and_no_data() -> None:
+    clock = FakeClock()
+    manager = SchwabStreamManager(
+        live_config(
+            contracts_requested=("ES", "NQ", "CL"),
+            symbols_requested=("ES_TEST", "NQ_TEST", "CL_TEST"),
+        ),
+        client=FakeStreamClient(),
+        clock=clock,
+    )
+    manager.start()
+    manager.ingest_message(quote_message(contract="ES", symbol="ES_TEST"))
+    clock.advance(20)
+    manager.ingest_message(quote_message(contract="NQ", symbol="NQ_TEST"))
+    clock.advance(15)
+
+    snapshot = manager.check_contract_heartbeats()
+
+    assert snapshot.contract_heartbeat_status is not None
+    assert snapshot.contract_heartbeat_status["ES"]["status"] == "stale"
+    assert snapshot.contract_heartbeat_status["NQ"]["status"] == "active"
+    assert snapshot.contract_heartbeat_status["CL"]["status"] == "no_data"
+    assert snapshot.stale_contracts == ("ES",)
+    assert "contract_stale:ES" in snapshot.blocking_reasons
+    assert "contract_no_data:CL" in snapshot.blocking_reasons
+
+
+def test_contract_heartbeat_status_appears_in_snapshot_dict() -> None:
+    manager = SchwabStreamManager(live_config(), client=FakeStreamClient(), clock=FakeClock())
+    manager.start()
+    snapshot = manager.ingest_message(quote_message()).to_dict()
+
+    assert snapshot["stale_contracts"] == []
+    assert snapshot["contract_heartbeat_status"] == {
+        "ES": {
+            "last_seen": "2026-05-06T13:00:00+00:00",
+            "age_seconds": 0.0,
+            "status": "active",
+        }
+    }
+
+
+def test_contract_watchdog_threshold_defaults_to_twice_cache_max_age_seconds() -> None:
+    clock = FakeClock()
+    manager = SchwabStreamManager(
+        live_config(cache_max_age_seconds=20.0),
+        client=FakeStreamClient(),
+        clock=clock,
+    )
+    manager.start()
+    manager.ingest_message(quote_message())
+
+    clock.advance(40.0)
+    threshold_snapshot = manager.check_contract_heartbeats()
+    clock.advance(0.1)
+    stale_snapshot = manager.check_contract_heartbeats()
+
+    assert threshold_snapshot.config.contract_heartbeat_max_age_seconds == 40.0
+    assert "contract_stale:ES" not in threshold_snapshot.blocking_reasons
+    assert "contract_stale:ES" in stale_snapshot.blocking_reasons
+
+
 def test_malformed_data_is_recorded_without_permitting_readiness() -> None:
     manager = SchwabStreamManager(live_config(), client=FakeStreamClient(), clock=FakeClock())
     manager.start()

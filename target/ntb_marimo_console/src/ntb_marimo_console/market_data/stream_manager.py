@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Literal, Protocol
+from typing import Literal, Protocol, TypedDict
 
 from ntb_marimo_console.contract_universe import (
     final_target_contracts,
@@ -20,6 +20,13 @@ from .stream_lifecycle import StreamLifecycleState
 MIN_STREAM_REFRESH_FLOOR_SECONDS = 15.0
 StreamProvider = Literal["disabled", "schwab"]
 StreamStartupMode = Literal["default_non_live", "explicit_live"]
+ContractHeartbeatState = Literal["active", "stale", "no_data"]
+
+
+class ContractHeartbeatStatus(TypedDict):
+    last_seen: str | None
+    age_seconds: float | None
+    status: ContractHeartbeatState
 
 
 @dataclass(frozen=True)
@@ -31,6 +38,7 @@ class SchwabStreamManagerConfig:
     explicit_live_opt_in: bool = False
     refresh_floor_seconds: float = MIN_STREAM_REFRESH_FLOOR_SECONDS
     cache_max_age_seconds: float = MIN_STREAM_REFRESH_FLOOR_SECONDS
+    contract_heartbeat_max_age_seconds: float | None = None
     startup_mode: StreamStartupMode = "default_non_live"
     contracts_requested: tuple[str, ...] = final_target_contracts()
 
@@ -62,6 +70,12 @@ class SchwabStreamManagerConfig:
             "cache_max_age_seconds",
             max(float(self.cache_max_age_seconds), MIN_STREAM_REFRESH_FLOOR_SECONDS),
         )
+        threshold = (
+            2.0 * self.cache_max_age_seconds
+            if self.contract_heartbeat_max_age_seconds is None
+            else max(float(self.contract_heartbeat_max_age_seconds), MIN_STREAM_REFRESH_FLOOR_SECONDS)
+        )
+        object.__setattr__(self, "contract_heartbeat_max_age_seconds", threshold)
         startup_mode: StreamStartupMode = "explicit_live" if self.explicit_live_opt_in else "default_non_live"
         object.__setattr__(self, "startup_mode", startup_mode)
 
@@ -124,6 +138,8 @@ class StreamManagerSnapshot:
     reconnect_attempts: int = 0
     last_reconnect_at: str | None = None
     current_backoff_delay: float | None = None
+    stale_contracts: tuple[str, ...] = ()
+    contract_heartbeat_status: dict[str, ContractHeartbeatStatus] | None = None
 
     @property
     def operator_state(self) -> StreamLifecycleState:
@@ -144,6 +160,7 @@ class StreamManagerSnapshot:
             "contracts_requested": list(self.config.contracts_requested),
             "explicit_live_opt_in": self.config.explicit_live_opt_in,
             "refresh_floor_seconds": self.config.refresh_floor_seconds,
+            "contract_heartbeat_max_age_seconds": self.config.contract_heartbeat_max_age_seconds,
             "cache": self.cache.to_dict(),
             "events": [event.to_dict() for event in self.events],
             "blocking_reasons": list(self.blocking_reasons),
@@ -164,6 +181,8 @@ class StreamManagerSnapshot:
             "reconnect_attempts": self.reconnect_attempts,
             "last_reconnect_at": self.last_reconnect_at,
             "current_backoff_delay": self.current_backoff_delay,
+            "stale_contracts": list(self.stale_contracts),
+            "contract_heartbeat_status": dict(self.contract_heartbeat_status or {}),
             "ready": self.ready,
         }
 
@@ -196,6 +215,8 @@ class SchwabStreamManager:
         self._reconnect_attempts = 0
         self._last_reconnect_at: datetime | None = None
         self._current_backoff_delay: float | None = None
+        self._contract_last_seen_at: dict[str, datetime] = {}
+        self._contract_watchdog_started_at: datetime | None = None
 
     @property
     def state(self) -> StreamLifecycleState:
@@ -293,6 +314,7 @@ class SchwabStreamManager:
             return self.snapshot()
 
         self._state = "active"
+        self._contract_watchdog_started_at = self._clock()
         self._cache.set_provider_status("active")
         self._record_event("subscription_succeeded", summary="subscription_succeeded", state=self._state)
         return self.snapshot()
@@ -340,6 +362,7 @@ class SchwabStreamManager:
             return self.snapshot()
 
         self._cache.put_message(normalized)
+        self._contract_last_seen_at[normalized.contract] = self._clock()
         self._record_event("data_received", summary="data_received", state=self._state, symbol=normalized.symbol)
         return self.snapshot()
 
@@ -359,6 +382,28 @@ class SchwabStreamManager:
         heartbeat_age = (self._clock().astimezone(timezone.utc) - self._last_heartbeat_at.astimezone(timezone.utc))
         if heartbeat_age.total_seconds() > self._config.refresh_floor_seconds:
             return self._mark_stale("heartbeat_stale")
+        return self.snapshot()
+
+    def check_contract_heartbeats(self) -> StreamManagerSnapshot:
+        if self._state not in {"connected", "subscribing", "active", "stale"}:
+            return self.snapshot()
+
+        now = self._clock()
+        threshold = self._contract_heartbeat_threshold_seconds()
+        watchdog_age = (
+            _age_seconds_since(self._contract_watchdog_started_at, now=now)
+            if self._contract_watchdog_started_at is not None
+            else 0.0
+        )
+        for contract in self._config.contracts_requested:
+            last_seen = self._contract_last_seen_at.get(contract)
+            if last_seen is None:
+                if watchdog_age > threshold:
+                    self._mark_stale(f"contract_no_data:{contract}")
+                continue
+            age_seconds = _age_seconds_since(last_seen, now=now)
+            if age_seconds > threshold:
+                self._mark_stale(f"contract_stale:{contract}")
         return self.snapshot()
 
     def mark_connection_lost(self, reason: object = "connection_lost") -> StreamManagerSnapshot:
@@ -400,6 +445,7 @@ class SchwabStreamManager:
         self._cache.set_provider_status("active")
         self._reconnect_attempts = max(self._reconnect_attempts, int(attempt))
         self._last_reconnect_at = self._clock()
+        self._contract_watchdog_started_at = self._last_reconnect_at
         self._current_backoff_delay = None
         self._record_event(
             "reconnect_succeeded",
@@ -464,6 +510,8 @@ class SchwabStreamManager:
                 else None
             ),
             current_backoff_delay=self._current_backoff_delay,
+            stale_contracts=self._stale_contracts(),
+            contract_heartbeat_status=self._contract_heartbeat_status(),
         )
 
     def _startup_blocking_reasons(self) -> tuple[str, ...]:
@@ -528,6 +576,41 @@ class SchwabStreamManager:
             blocking_reason=reason,
         )
         return self.snapshot()
+
+    def _contract_heartbeat_threshold_seconds(self) -> float:
+        configured = self._config.contract_heartbeat_max_age_seconds
+        if configured is None:
+            return 2.0 * self._config.cache_max_age_seconds
+        return float(configured)
+
+    def _contract_heartbeat_status(self) -> dict[str, ContractHeartbeatStatus]:
+        now = self._clock()
+        threshold = self._contract_heartbeat_threshold_seconds()
+        statuses: dict[str, ContractHeartbeatStatus] = {}
+        for contract in self._config.contracts_requested:
+            last_seen = self._contract_last_seen_at.get(contract)
+            if last_seen is None:
+                statuses[contract] = {
+                    "last_seen": None,
+                    "age_seconds": None,
+                    "status": "no_data",
+                }
+                continue
+            age_seconds = _age_seconds_since(last_seen, now=now)
+            statuses[contract] = {
+                "last_seen": _isoformat(last_seen),
+                "age_seconds": age_seconds,
+                "status": "stale" if age_seconds > threshold else "active",
+            }
+        return statuses
+
+    def _stale_contracts(self) -> tuple[str, ...]:
+        statuses = self._contract_heartbeat_status()
+        return tuple(
+            contract
+            for contract in self._config.contracts_requested
+            if statuses.get(contract, {}).get("status") == "stale"
+        )
 
     def _block(
         self,

@@ -142,6 +142,7 @@ class ManagedSchwabReceiveThread:
                 self._quiet_count += 1
 
         if received:
+            self._run_watchdog_checks()
             return self.status()
 
         token_reason = _token_refresh_blocking_reason(self.session)
@@ -152,6 +153,8 @@ class ManagedSchwabReceiveThread:
 
         if should_attempt_reconnect(self.session):
             self._attempt_reconnect(reason=status or "connection_lost")
+        if not self._stop_event.is_set():
+            self._run_watchdog_checks()
         return self.status()
 
     def status(self) -> ManagedReceiveThreadStatus:
@@ -200,6 +203,28 @@ class ManagedSchwabReceiveThread:
             self.manager.mark_connection_lost(safe_reason)
         except Exception:
             pass
+
+    def _run_watchdog_checks(self) -> None:
+        snapshot_func = getattr(self.manager, "snapshot", None)
+        heartbeat_checker = getattr(self.manager, "check_heartbeat", None)
+        contract_checker = getattr(self.manager, "check_contract_heartbeats", None)
+
+        if callable(snapshot_func) and callable(heartbeat_checker):
+            try:
+                snapshot = snapshot_func()
+            except Exception:
+                snapshot = None
+            if getattr(snapshot, "last_heartbeat_at", None) is not None:
+                try:
+                    heartbeat_checker()
+                except Exception:
+                    pass
+
+        if callable(contract_checker):
+            try:
+                contract_checker()
+            except Exception:
+                pass
 
 
 def _session_dispatch_status(session: object) -> str:
