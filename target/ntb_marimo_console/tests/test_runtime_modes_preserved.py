@@ -267,6 +267,85 @@ class RuntimeModesPreservedTests(unittest.TestCase):
         self.assertEqual(shell["runtime"]["profile_id"], "preserved_cl_phase1")
         self.assertEqual(_ReadyPreservedBackend.run_pipeline_calls, 1)
 
+        cockpit = shell["r14_cockpit"]
+        identity = cockpit["identity"]
+        runtime = cockpit["runtime_status"]
+        premarket = cockpit["premarket"]
+        trigger = cockpit["triggers"][0]
+        query = cockpit["query_readiness"]
+        last_result = cockpit["last_pipeline_result"]
+        replay = cockpit["replay_availability"]
+        operator_states = {
+            state["category"]: state
+            for state in cockpit["operator_states"]
+        }
+
+        self.assertEqual(identity["contract"], "CL")
+        self.assertEqual(identity["current_profile"], "preserved_cl_phase1")
+        self.assertEqual(identity["contract_support_status"], "final_supported")
+        self.assertEqual(identity["runtime_profile_status"], "available")
+
+        self.assertEqual(runtime["provider_status"], "fixture")
+        self.assertEqual(runtime["stream_status"], "fixture")
+        self.assertEqual(runtime["quote_freshness"], "fresh")
+        self.assertEqual(runtime["bar_freshness"], "fresh")
+        self.assertEqual(runtime["event_lockout_state"], "inactive")
+
+        self.assertEqual(premarket["premarket_brief_status"], "READY")
+        self.assertIn("volatility_context.current_volume_vs_average", premarket["required_fields"])
+        self.assertIn("macro_context.eia_lockout_active", premarket["required_fields"])
+        self.assertEqual(
+            {
+                field["field"]: field["status"]
+                for field in premarket["unavailable_fields"]
+            },
+            {
+                "dom": "unavailable_not_inferred",
+                "sweep": "unavailable_not_inferred",
+            },
+        )
+        self.assertIn("If the EIA lockout activates, keep the query blocked.", premarket["warnings"])
+        self.assertIn(
+            "Reduce trust in the read model around headline spikes; do not infer sweep or DOM evidence from quote or bar data.",
+            premarket["warnings"],
+        )
+        self.assertEqual(
+            {
+                invalidator["invalidator_id"]
+                for invalidator in premarket["invalidators"]
+            },
+            {
+                "cl_eia_lockout_active",
+                "cl_volume_or_delta_failure",
+            },
+        )
+
+        self.assertEqual(trigger["trigger_state"], "QUERY_READY")
+        self.assertEqual(trigger["query_ready_provenance"], "real_trigger_state_result")
+        self.assertEqual(trigger["missing_fields"], [])
+        self.assertEqual(trigger["blocking_reasons"], [])
+
+        self.assertTrue(query["query_ready"])
+        self.assertTrue(query["manual_query_allowed"])
+        self.assertTrue(query["trigger_state_from_real_producer"])
+        self.assertEqual(query["query_ready_provenance"], "real_trigger_state_result_and_pipeline_gate")
+        self.assertIn("event_lockout_inactive", query["enabled_reasons"])
+        self.assertIn("bars_fresh_and_available", query["enabled_reasons"])
+        self.assertEqual(query["disabled_reasons"], [])
+
+        self.assertEqual(last_result["status"], "completed")
+        self.assertEqual(last_result["final_decision"], "NO_TRADE")
+        self.assertEqual(last_result["no_trade_summary"], "Preserved engine returned NO_TRADE.")
+        self.assertNotIn("alternate", json.dumps(last_result, sort_keys=True).lower())
+
+        self.assertTrue(replay["audit_replay_available"])
+        self.assertEqual(replay["run_history_status"], "available")
+        self.assertEqual(replay["replay_statement"], "No synthetic replay is labeled as real evidence.")
+
+        self.assertIn("fixture_mode", operator_states)
+        self.assertIn("query_ready", operator_states)
+        self.assertEqual(cockpit["blocking_reasons"], [])
+
     def test_preserved_profile_fails_closed_when_stage_e_record_is_missing(self) -> None:
         _ReadyPreservedBackend.run_pipeline_calls = 0
         with tempfile.TemporaryDirectory() as temp_dir:
