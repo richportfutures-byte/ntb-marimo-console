@@ -11,9 +11,11 @@ from ntb_marimo_console.market_data.stream_manager import (
 )
 from ntb_marimo_console.schwab_reconnect import (
     ReconnectBackoffPolicy,
+    ReconnectResult,
     SchwabReconnectController,
     should_attempt_reconnect,
 )
+from ntb_marimo_console.schwab_receive_thread import ManagedSchwabReceiveThread
 
 
 @dataclass
@@ -291,3 +293,158 @@ def test_reconnect_is_not_triggered_by_recv_timeout() -> None:
 
     assert should_attempt_reconnect(timeout_session) is False
     assert should_attempt_reconnect(lost_session) is True
+
+
+class FakeReceiveManager:
+    def __init__(self) -> None:
+        self.messages: list[dict[str, object]] = []
+        self.connection_lost_reasons: list[str] = []
+
+    def ingest_message(self, message: dict[str, object]) -> None:
+        self.messages.append(dict(message))
+
+    def mark_connection_lost(self, reason: object = "connection_lost") -> None:
+        self.connection_lost_reasons.append(str(reason))
+
+    def snapshot(self) -> object:
+        return object()
+
+
+class FakeReceiveSession:
+    def __init__(
+        self,
+        *,
+        outcomes: list[tuple[bool, str, dict[str, object] | None]] | None = None,
+        token_reason: str | None = None,
+    ) -> None:
+        self.outcomes = list(outcomes or [])
+        self.token_reason = token_reason
+        self.dispatch_calls = 0
+        self.last_status = "idle"
+
+    def dispatch_one(self, handler) -> bool:
+        self.dispatch_calls += 1
+        if not self.outcomes:
+            self.last_status = "timeout"
+            return False
+        received, _status, message = self.outcomes.pop(0)
+        self.last_status = _status
+        if message is not None:
+            handler(message)
+        return received
+
+    def dispatch_status(self) -> str:
+        return self.last_status
+
+    def token_refresh_blocking_reason(self) -> str | None:
+        return self.token_reason
+
+
+class FakeReceiveReconnectController:
+    def __init__(self, result: ReconnectResult) -> None:
+        self.result = result
+        self.calls = 0
+        self.current_sessions: list[object | None] = []
+
+    def reconnect(
+        self,
+        *,
+        current_session: object | None = None,
+        reason: object = "connection_lost",
+    ) -> ReconnectResult:
+        self.calls += 1
+        self.current_sessions.append(current_session)
+        return self.result
+
+
+def test_managed_receive_thread_dispatches_messages_without_starting_live_by_construction() -> None:
+    manager = FakeReceiveManager()
+    session = FakeReceiveSession(
+        outcomes=[
+            (
+                True,
+                "message",
+                {
+                    "service": "LEVELONE_FUTURES",
+                    "symbol": "/ESM26",
+                    "contract": "ES",
+                    "message_type": "quote",
+                    "fields": {"1": 10.0},
+                    "received_at": "2026-05-12T14:00:00+00:00",
+                },
+            )
+        ]
+    )
+    worker = ManagedSchwabReceiveThread(
+        session=session,
+        manager=manager,
+        sleep_seconds=0,
+    )
+
+    status = worker.run_until_stopped(max_iterations=1)
+
+    assert status.dispatch_count == 1
+    assert status.message_count == 1
+    assert manager.messages[0]["contract"] == "ES"
+    assert manager.connection_lost_reasons == []
+
+
+def test_managed_receive_thread_treats_timeout_as_quiet_not_reconnect() -> None:
+    manager = FakeReceiveManager()
+    session = FakeReceiveSession(outcomes=[(False, "timeout", None)])
+    worker = ManagedSchwabReceiveThread(
+        session=session,
+        manager=manager,
+        sleep_seconds=0,
+    )
+
+    status = worker.run_until_stopped(max_iterations=1)
+
+    assert status.quiet_count == 1
+    assert status.reconnect_count == 0
+    assert manager.connection_lost_reasons == []
+
+
+def test_managed_receive_thread_marks_token_refresh_failure_fail_closed() -> None:
+    manager = FakeReceiveManager()
+    session = FakeReceiveSession(
+        outcomes=[(False, "token_refresh_failed", None)],
+        token_reason="token_refresh_failed:SchwabTokenError",
+    )
+    worker = ManagedSchwabReceiveThread(
+        session=session,
+        manager=manager,
+        sleep_seconds=0,
+    )
+
+    status = worker.run_until_stopped(max_iterations=1)
+
+    assert status.last_error == "token_refresh_failed:SchwabTokenError"
+    assert manager.connection_lost_reasons == ["token_refresh_failed:SchwabTokenError"]
+
+
+def test_managed_receive_thread_swaps_to_reconnected_session() -> None:
+    manager = FakeReceiveManager()
+    old_session = FakeReceiveSession(outcomes=[(False, "connection_lost", None)])
+    new_session = FakeReceiveSession()
+    controller = FakeReceiveReconnectController(
+        ReconnectResult(
+            reconnected=True,
+            session=new_session,
+            attempts=1,
+            reason="reconnect_succeeded",
+        )
+    )
+    worker = ManagedSchwabReceiveThread(
+        session=old_session,
+        manager=manager,
+        reconnect_controller=controller,
+        sleep_seconds=0,
+    )
+
+    status = worker.run_until_stopped(max_iterations=1)
+
+    assert status.reconnect_count == 1
+    assert worker.session is new_session
+    assert controller.current_sessions == [old_session]
+    assert manager.connection_lost_reasons == []
