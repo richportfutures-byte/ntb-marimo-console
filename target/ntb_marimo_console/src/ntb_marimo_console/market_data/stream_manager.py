@@ -75,6 +75,12 @@ class StreamClientResult:
         if self.reason is not None:
             object.__setattr__(self, "reason", redact_sensitive_text(self.reason))
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "succeeded": self.succeeded,
+            "reason": self.reason,
+        }
+
 
 @dataclass(frozen=True)
 class StreamSubscriptionRequest:
@@ -83,6 +89,15 @@ class StreamSubscriptionRequest:
     symbols: tuple[str, ...]
     fields: tuple[int, ...]
     contracts: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "provider": self.provider,
+            "services": list(self.services),
+            "symbols": list(self.symbols),
+            "fields": list(self.fields),
+            "contracts": list(self.contracts),
+        }
 
 
 class SchwabStreamClient(Protocol):
@@ -102,6 +117,10 @@ class StreamManagerSnapshot:
     blocking_reasons: tuple[str, ...]
     login_count: int
     subscription_count: int
+    last_subscription_request: StreamSubscriptionRequest | None = None
+    last_subscription_result: StreamClientResult | None = None
+    last_heartbeat_at: str | None = None
+    heartbeat_age_seconds: float | None = None
 
     @property
     def operator_state(self) -> StreamLifecycleState:
@@ -127,6 +146,18 @@ class StreamManagerSnapshot:
             "blocking_reasons": list(self.blocking_reasons),
             "login_count": self.login_count,
             "subscription_count": self.subscription_count,
+            "last_subscription_request": (
+                self.last_subscription_request.to_dict()
+                if self.last_subscription_request is not None
+                else None
+            ),
+            "last_subscription_result": (
+                self.last_subscription_result.to_dict()
+                if self.last_subscription_result is not None
+                else None
+            ),
+            "last_heartbeat_at": self.last_heartbeat_at,
+            "heartbeat_age_seconds": self.heartbeat_age_seconds,
             "ready": self.ready,
         }
 
@@ -154,6 +185,8 @@ class SchwabStreamManager:
         self._login_count = 0
         self._subscription_count = 0
         self._last_heartbeat_at: datetime | None = None
+        self._last_subscription_request: StreamSubscriptionRequest | None = None
+        self._last_subscription_result: StreamClientResult | None = None
 
     @property
     def state(self) -> StreamLifecycleState:
@@ -222,24 +255,29 @@ class SchwabStreamManager:
             summary="subscription_requested_for_configured_futures_services",
             state=self._state,
         )
+        subscription_request = StreamSubscriptionRequest(
+            provider=self._config.provider,
+            services=self._config.services_requested,
+            symbols=self._config.symbols_requested,
+            fields=self._config.fields_requested,
+            contracts=self._config.contracts_requested,
+        )
+        self._last_subscription_request = subscription_request
         try:
             self._subscription_count += 1
-            subscription_result = self._client.subscribe(
-                StreamSubscriptionRequest(
-                    provider=self._config.provider,
-                    services=self._config.services_requested,
-                    symbols=self._config.symbols_requested,
-                    fields=self._config.fields_requested,
-                    contracts=self._config.contracts_requested,
-                )
-            )
+            subscription_result = self._client.subscribe(subscription_request)
         except Exception as exc:
+            self._last_subscription_result = StreamClientResult(
+                succeeded=False,
+                reason=f"subscription_exception:{exc}",
+            )
             self._block(
                 event_type="subscription_failed",
-                summary=f"subscription_exception:{exc}",
-                blocking_reason=f"subscription_exception:{exc}",
+                summary=self._last_subscription_result.reason or "subscription_exception",
+                blocking_reason=self._last_subscription_result.reason or "subscription_exception",
             )
             return self.snapshot()
+        self._last_subscription_result = subscription_result
         if not subscription_result.succeeded:
             reason = subscription_result.reason or "subscription_failed"
             self._block(event_type="subscription_failed", summary=reason, blocking_reason=reason)
@@ -350,6 +388,18 @@ class SchwabStreamManager:
             blocking_reasons=tuple(self._blocking_reasons),
             login_count=self._login_count,
             subscription_count=self._subscription_count,
+            last_subscription_request=self._last_subscription_request,
+            last_subscription_result=self._last_subscription_result,
+            last_heartbeat_at=(
+                _isoformat(self._last_heartbeat_at)
+                if self._last_heartbeat_at is not None
+                else None
+            ),
+            heartbeat_age_seconds=(
+                _age_seconds_since(self._last_heartbeat_at, now=self._clock())
+                if self._last_heartbeat_at is not None
+                else None
+            ),
         )
 
     def _startup_blocking_reasons(self) -> tuple[str, ...]:
@@ -499,3 +549,9 @@ def _utc_now() -> datetime:
 def _isoformat(value: datetime) -> str:
     current = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
     return current.astimezone(timezone.utc).isoformat()
+
+
+def _age_seconds_since(value: datetime, *, now: datetime) -> float:
+    current = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
+    observed = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    return max(0.0, (current.astimezone(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds())

@@ -154,6 +154,48 @@ def test_fixture_client_success_transitions_to_active_connected_state() -> None:
     assert client.subscription_requests[0].symbols == ("ES_TEST",)
 
 
+def test_snapshot_exposes_subscription_request_and_result_state() -> None:
+    client = FakeStreamClient()
+    manager = SchwabStreamManager(live_config(), client=client, clock=FakeClock())
+
+    snapshot = manager.start()
+    payload = snapshot.to_dict()
+
+    assert snapshot.last_subscription_request is client.subscription_requests[0]
+    assert snapshot.last_subscription_request.symbols == ("ES_TEST",)
+    assert snapshot.last_subscription_request.contracts == ("ES",)
+    assert snapshot.last_subscription_result == StreamClientResult(succeeded=True)
+    assert payload["last_subscription_request"] == {
+        "provider": "schwab",
+        "services": ["LEVELONE_FUTURES"],
+        "symbols": ["ES_TEST"],
+        "fields": [0, 1, 2, 3, 4, 5],
+        "contracts": ["ES"],
+    }
+    assert payload["last_subscription_result"] == {"succeeded": True, "reason": None}
+
+
+def test_subscription_exception_result_is_redacted_on_snapshot() -> None:
+    class RaisingSubscribeClient(FakeStreamClient):
+        def subscribe(self, request: StreamSubscriptionRequest) -> StreamClientResult:
+            self.subscription_calls += 1
+            self.subscription_requests.append(request)
+            raise RuntimeError(sensitive_reason())
+
+    manager = SchwabStreamManager(live_config(), client=RaisingSubscribeClient(), clock=FakeClock())
+
+    snapshot = manager.start()
+    rendered = public_text(snapshot)
+
+    assert snapshot.state == "blocked"
+    assert snapshot.last_subscription_result is not None
+    assert snapshot.last_subscription_result.succeeded is False
+    assert "subscription_exception" in (snapshot.last_subscription_result.reason or "")
+    assert "ACCESS_VALUE_PRIVATE" not in rendered
+    assert "CUSTOMER_VALUE_PRIVATE" not in rendered
+    assert "stream-redaction" not in rendered
+
+
 def test_login_denied_blocks_with_redacted_reason() -> None:
     client = FakeStreamClient(login_result=StreamClientResult(succeeded=False, reason=sensitive_reason()))
     manager = SchwabStreamManager(live_config(), client=client, clock=FakeClock())
@@ -191,7 +233,10 @@ def test_heartbeat_timeout_marks_stream_stale_fail_closed() -> None:
     clock = FakeClock()
     manager = SchwabStreamManager(live_config(), client=FakeStreamClient(), clock=clock)
     manager.start()
-    manager.record_heartbeat()
+    heartbeat_snapshot = manager.record_heartbeat()
+
+    assert heartbeat_snapshot.last_heartbeat_at == "2026-05-06T13:00:00+00:00"
+    assert heartbeat_snapshot.heartbeat_age_seconds == 0.0
 
     clock.advance(MIN_STREAM_REFRESH_FLOOR_SECONDS + 1)
     snapshot = manager.check_heartbeat()
@@ -201,6 +246,8 @@ def test_heartbeat_timeout_marks_stream_stale_fail_closed() -> None:
     assert "heartbeat_stale" in snapshot.blocking_reasons
     assert snapshot.ready is False
     assert snapshot.events[-1].event_type == "heartbeat_stale"
+    assert snapshot.last_heartbeat_at == "2026-05-06T13:00:00+00:00"
+    assert snapshot.heartbeat_age_seconds == MIN_STREAM_REFRESH_FLOOR_SECONDS + 1
 
 
 def test_malformed_data_is_recorded_without_permitting_readiness() -> None:
