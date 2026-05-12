@@ -786,6 +786,12 @@ def test_r14_cockpit_contract_serializes_deterministically_from_fixture_safe_inp
     assert decoded["query_readiness"]["query_ready"] is True
     assert decoded["query_readiness"]["manual_query_allowed"] is True
     assert decoded["query_readiness"]["query_disabled_reason"] is None
+    assert {
+        (state["category"], state["state"])
+        for state in decoded["operator_states"]
+    } == {
+        ("query_ready", "query_ready"),
+    }
     assert decoded["last_pipeline_result"]["status"] == "completed"
     assert decoded["last_pipeline_result"]["no_trade_summary"] == "Preserved engine returned NO_TRADE."
     assert decoded["replay_availability"]["session_evidence_status"] == "unavailable"
@@ -805,6 +811,8 @@ def test_r14_cockpit_disabled_query_state_carries_plain_text_reason() -> None:
     assert "stream_status_blocked:stale" in query["blocking_reasons"]
     assert "event_lockout_active" in query["blocking_reasons"]
     assert "QUERY_READY requires real TriggerStateResult provenance" in query["query_disabled_reason"]
+    states = states_by_category(cockpit)
+    assert states["event_lockout"]["state"] == "lockout"
 
 
 def test_r14_cockpit_query_readiness_requires_real_trigger_state_result_not_raw_enabled_mapping() -> None:
@@ -837,6 +845,8 @@ def test_r14_cockpit_query_readiness_requires_real_trigger_state_result_not_raw_
     assert query["trigger_state_from_real_producer"] is False
     assert "cockpit_trigger_state_result_provenance_not_verified" in query["blocking_reasons"]
     assert query["query_ready_provenance"] == "unavailable_not_inferred_from_display_or_raw_enabled_mapping"
+    states = states_by_category(cockpit)
+    assert states["no_trigger_state_result_provenance"]["state"] == "unavailable"
 
 
 def test_r14_cockpit_query_readiness_cannot_be_inferred_from_display_trigger_status_vm() -> None:
@@ -855,6 +865,117 @@ def test_r14_cockpit_query_readiness_cannot_be_inferred_from_display_trigger_sta
     assert query["pipeline_gate_enabled"] is True
     assert query["query_ready"] is False
     assert "cockpit_trigger_state_result_provenance_not_verified" in query["blocking_reasons"]
+    assert states_by_category(cockpit)["no_trigger_state_result_provenance"]["state"] == "unavailable"
+
+
+def test_r14_cockpit_operator_states_surface_stable_plain_text_categories() -> None:
+    stale_gate = query_gate("ES", quote_fresh=False)
+    bars_gate = query_gate("ES", bars_available=False)
+    lockout_gate = query_gate("ES", event_lockout_active=True)
+    disabled_stream_gate = query_gate("ES", stream_status="disabled")
+    error_stream_gate = query_gate("ES", stream_status="error")
+    missing_profile_gate = query_gate("ES", profile_id=None, profile_exists=False)
+    fixture_gate = query_gate("ES", provider_status="fixture", stream_status="fixture", fixture_mode_accepted=True)
+    invalidated_trigger = trigger_result(
+        "ES",
+        TriggerState.INVALIDATED,
+        invalid_reasons=("invalidator_active",),
+    )
+    not_ready_brief = brief("ES")
+    not_ready_brief["status"] = "BLOCKED"
+
+    cases = [
+        (ready_cockpit("YM"), "unsupported_contract", "blocked"),
+        (ready_cockpit("ZN"), "excluded_contract", "blocked"),
+        (ready_cockpit("ES", gate=missing_profile_gate), "missing_runtime_profile", "unavailable"),
+        (ready_cockpit("ES", brief=not_ready_brief), "premarket_brief_not_ready", "blocked"),
+        (
+            ready_cockpit(
+                "ES",
+                trigger_state=trigger_result(
+                    "ES",
+                    TriggerState.BLOCKED,
+                    missing_fields=("market.cumulative_delta",),
+                    blocking_reasons=("missing_required_live_fields",),
+                ),
+            ),
+            "missing_required_live_field",
+            "blocked",
+        ),
+        (ready_cockpit("ES", gate=stale_gate), "stale_quote", "stale"),
+        (ready_cockpit("ES", gate=bars_gate), "missing_chart_bars", "unavailable"),
+        (ready_cockpit("ES", gate=lockout_gate), "event_lockout", "lockout"),
+        (
+            ready_cockpit(
+                "ES",
+                trigger_state=invalidated_trigger,
+                gate=query_gate("ES", trigger_state=invalidated_trigger),
+            ),
+            "trigger_invalidated",
+            "invalidated",
+        ),
+        (ready_cockpit("ES", gate=disabled_stream_gate, stream_status="disabled"), "stream_disabled", "unavailable"),
+        (ready_cockpit("ES", gate=error_stream_gate, stream_status="error"), "stream_error", "unavailable"),
+        (
+            ready_cockpit(
+                "ES",
+                gate=fixture_gate,
+                profile_id="fixture_es_demo",
+                provider_status="fixture",
+                stream_status="fixture",
+            ),
+            "fixture_mode",
+            "fixture_mode",
+        ),
+        (ready_cockpit("ES", last_pipeline_result=None), "no_pipeline_result_yet", "no_result_yet"),
+        (ready_cockpit("ES"), "query_ready", "query_ready"),
+    ]
+
+    for cockpit, category, state in cases:
+        states = states_by_category(cockpit)
+        assert category in states
+        assert states[category]["state"] == state
+        assert states[category]["summary"]
+        assert states[category]["reason"]
+
+
+def test_r14_cockpit_missing_stale_and_non_provenance_states_remain_fail_closed() -> None:
+    fake_gate = {
+        "enabled": True,
+        "pipeline_query_authorized": True,
+        "status": "ENABLED",
+        "contract": "ES",
+        "profile_id": "preserved_es_phase1",
+        "setup_id": "es_setup_1",
+        "trigger_id": "es_trigger_1",
+        "trigger_state": "QUERY_READY",
+        "trigger_state_from_real_producer": False,
+        "enabled_reasons": ["trigger_state_query_ready"],
+        "disabled_reasons": [],
+        "blocking_reasons": [],
+        "required_conditions": ["trigger_state_query_ready"],
+        "missing_conditions": [],
+        "provider_status": "connected",
+        "stream_status": "connected",
+        "session_valid": True,
+        "event_lockout_active": False,
+    }
+    stale_cockpit = ready_cockpit("ES", gate=query_gate("ES", quote_fresh=False))
+    missing_cockpit = ready_cockpit(
+        "ES",
+        trigger_state=trigger_result("ES", TriggerState.BLOCKED, missing_fields=("market.current_price",)),
+    )
+    non_provenance_cockpit = ready_cockpit("ES", gate=fake_gate, trigger_state={"state": "QUERY_READY"})
+
+    for cockpit, category in (
+        (stale_cockpit, "stale_quote"),
+        (missing_cockpit, "missing_required_live_field"),
+        (non_provenance_cockpit, "no_trigger_state_result_provenance"),
+    ):
+        states = states_by_category(cockpit)
+        assert cockpit["query_readiness"]["query_ready"] is False
+        assert cockpit["query_readiness"]["manual_query_allowed"] is False
+        assert category in states
 
 
 def test_phase1_shell_exposes_r14_cockpit_contract_without_adding_layout_surface() -> None:
@@ -914,20 +1035,23 @@ def ready_cockpit(
     trigger_state: object | None = None,
     brief: dict[str, object] | None = None,
     last_pipeline_result: dict[str, object] | None = None,
+    profile_id: str | None = None,
+    provider_status: str = "connected",
+    stream_status: str = "connected",
 ) -> dict[str, object]:
     selected_trigger = trigger_state if trigger_state is not None else trigger_result(contract, TriggerState.QUERY_READY)
     selected_gate = gate or query_gate(contract, trigger_state=selected_trigger)
     return build_r14_cockpit_view_model(
         OperatorWorkspaceRequest(
             contract=contract,
-            profile_id=f"preserved_{contract.lower()}_phase1",
+            profile_id=profile_id or f"preserved_{contract.lower()}_phase1",
             watchman_validator="READY",
             trigger_state=selected_trigger,  # type: ignore[arg-type]
             pipeline_query_gate=selected_gate,  # type: ignore[arg-type]
             premarket_brief=brief or globals()["brief"](contract),
             live_observable=live_snapshot(contract),
-            provider_status="connected",
-            stream_status="connected",
+            provider_status=provider_status,
+            stream_status=stream_status,
             quote_freshness="fresh",
             bar_freshness="fresh",
             session_status="valid",
@@ -962,6 +1086,16 @@ def query_gate(contract: str, **overrides: object) -> object:
     }
     values.update(overrides)
     return evaluate_pipeline_query_gate(PipelineQueryGateRequest(**values))  # type: ignore[arg-type]
+
+
+def states_by_category(cockpit: dict[str, object]) -> dict[str, dict[str, object]]:
+    states = cockpit["operator_states"]
+    assert isinstance(states, list)
+    return {
+        state["category"]: state
+        for state in states
+        if isinstance(state, dict) and isinstance(state.get("category"), str)
+    }
 
 
 def trigger_result(

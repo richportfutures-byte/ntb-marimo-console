@@ -271,6 +271,24 @@ class CockpitReplayAvailabilityVM:
 
 
 @dataclass(frozen=True)
+class CockpitOperatorStateVM:
+    category: str
+    state: str
+    summary: str
+    reason: str
+    source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "category": self.category,
+            "state": self.state,
+            "summary": self.summary,
+            "reason": self.reason,
+            "source": self.source,
+        }
+
+
+@dataclass(frozen=True)
 class R14CockpitViewModel:
     identity: CockpitIdentityVM
     runtime_status: CockpitRuntimeStatusVM
@@ -279,6 +297,7 @@ class R14CockpitViewModel:
     query_readiness: CockpitQueryReadinessVM
     last_pipeline_result: CockpitPipelineResultVM
     replay_availability: CockpitReplayAvailabilityVM
+    operator_states: tuple[CockpitOperatorStateVM, ...]
     blocking_reasons: tuple[str, ...]
     schema: str = R14_COCKPIT_SCHEMA
 
@@ -292,6 +311,7 @@ class R14CockpitViewModel:
             "query_readiness": self.query_readiness.to_dict(),
             "last_pipeline_result": self.last_pipeline_result.to_dict(),
             "replay_availability": self.replay_availability.to_dict(),
+            "operator_states": [state.to_dict() for state in self.operator_states],
             "blocking_reasons": list(self.blocking_reasons),
         }
 
@@ -354,50 +374,65 @@ def build_r14_cockpit_view_model(request: OperatorWorkspaceRequest) -> R14Cockpi
             *_sequence_fields(premarket_plan.get("source_context_blockers")),
         )
     )
+    identity = CockpitIdentityVM(
+        current_profile=_safe_text(header["profile_id"]),
+        contract=contract,
+        contract_support_status=_safe_status(header["final_support_status"]),
+        runtime_profile_status=_runtime_profile_status(gate),
+    )
+    runtime_status = CockpitRuntimeStatusVM(
+        provider_status=_safe_status(header["provider_status"]),
+        stream_status=_safe_status(header["stream_status"]),
+        quote_freshness=_safe_status(header["quote_freshness"]),
+        bar_freshness=_safe_status(header["bar_freshness"]),
+        session_clock_state=_safe_status(header["session_status"]),
+        event_lockout_state=_safe_status(header["event_lockout_status"]),
+        evaluated_at=_safe_text(header["evaluated_at"]),
+    )
+    premarket = CockpitPremarketVM(
+        premarket_brief_status=_premarket_brief_status(request.premarket_brief, premarket_plan),
+        active_setup_count=len(premarket_plan["setup_summaries"]),
+        global_guidance=_global_guidance(request.premarket_brief),
+        setup_summaries=tuple(_mapping_tuple(premarket_plan["setup_summaries"])),
+        trigger_definitions=tuple(_mapping_tuple(premarket_plan["trigger_summaries"])),
+        required_fields=premarket_required_fields,
+        missing_fields=premarket_missing_fields,
+        unavailable_fields=tuple(_mapping_tuple(premarket_plan["unavailable_fields"])),
+        warnings=_sequence_text(premarket_plan.get("warnings")),
+        invalidators=tuple(_mapping_tuple(premarket_plan["invalidators"])),
+        blocking_reasons=_dedupe(
+            (
+                *_sequence_text(premarket_plan.get("source_context_blockers")),
+                *_sequence_text(premarket_plan.get("validation_blockers")),
+            )
+        ),
+    )
+    triggers = (
+        _build_cockpit_trigger_summary(
+            request.trigger_state,
+            trigger,
+            live_observable=request.live_observable,
+        ),
+    )
+    last_pipeline_result = _build_cockpit_pipeline_result(request.last_pipeline_result)
+    replay_availability = _build_cockpit_replay_availability(evidence)
+    operator_states = _build_cockpit_operator_states(
+        identity=identity,
+        runtime=runtime_status,
+        premarket=premarket,
+        triggers=triggers,
+        query=query_readiness,
+        last_pipeline_result=last_pipeline_result,
+    )
     return R14CockpitViewModel(
-        identity=CockpitIdentityVM(
-            current_profile=_safe_text(header["profile_id"]),
-            contract=contract,
-            contract_support_status=_safe_status(header["final_support_status"]),
-            runtime_profile_status=_runtime_profile_status(gate),
-        ),
-        runtime_status=CockpitRuntimeStatusVM(
-            provider_status=_safe_status(header["provider_status"]),
-            stream_status=_safe_status(header["stream_status"]),
-            quote_freshness=_safe_status(header["quote_freshness"]),
-            bar_freshness=_safe_status(header["bar_freshness"]),
-            session_clock_state=_safe_status(header["session_status"]),
-            event_lockout_state=_safe_status(header["event_lockout_status"]),
-            evaluated_at=_safe_text(header["evaluated_at"]),
-        ),
-        premarket=CockpitPremarketVM(
-            premarket_brief_status=_premarket_brief_status(request.premarket_brief, premarket_plan),
-            active_setup_count=len(premarket_plan["setup_summaries"]),
-            global_guidance=_global_guidance(request.premarket_brief),
-            setup_summaries=tuple(_mapping_tuple(premarket_plan["setup_summaries"])),
-            trigger_definitions=tuple(_mapping_tuple(premarket_plan["trigger_summaries"])),
-            required_fields=premarket_required_fields,
-            missing_fields=premarket_missing_fields,
-            unavailable_fields=tuple(_mapping_tuple(premarket_plan["unavailable_fields"])),
-            warnings=_sequence_text(premarket_plan.get("warnings")),
-            invalidators=tuple(_mapping_tuple(premarket_plan["invalidators"])),
-            blocking_reasons=_dedupe(
-                (
-                    *_sequence_text(premarket_plan.get("source_context_blockers")),
-                    *_sequence_text(premarket_plan.get("validation_blockers")),
-                )
-            ),
-        ),
-        triggers=(
-            _build_cockpit_trigger_summary(
-                request.trigger_state,
-                trigger,
-                live_observable=request.live_observable,
-            ),
-        ),
+        identity=identity,
+        runtime_status=runtime_status,
+        premarket=premarket,
+        triggers=triggers,
         query_readiness=query_readiness,
-        last_pipeline_result=_build_cockpit_pipeline_result(request.last_pipeline_result),
-        replay_availability=_build_cockpit_replay_availability(evidence),
+        last_pipeline_result=last_pipeline_result,
+        replay_availability=replay_availability,
+        operator_states=operator_states,
         blocking_reasons=_dedupe(
             (
                 *query_readiness.blocking_reasons,
@@ -585,6 +620,236 @@ def _build_cockpit_replay_availability(evidence: Mapping[str, Any]) -> CockpitRe
         operator_note_available=operator_note_status == "available",
         replay_statement=_safe_text(evidence.get("replay_statement") or _NO_SYNTHETIC_REPLAY_STATEMENT),
     )
+
+
+def _build_cockpit_operator_states(
+    *,
+    identity: CockpitIdentityVM,
+    runtime: CockpitRuntimeStatusVM,
+    premarket: CockpitPremarketVM,
+    triggers: Sequence[CockpitTriggerSummaryVM],
+    query: CockpitQueryReadinessVM,
+    last_pipeline_result: CockpitPipelineResultVM,
+) -> tuple[CockpitOperatorStateVM, ...]:
+    states: list[CockpitOperatorStateVM] = []
+    query_reasons = _dedupe((*query.blocking_reasons, *query.disabled_reasons))
+
+    def append(category: str, state: str, summary: str, reason: str, source: str) -> None:
+        item = CockpitOperatorStateVM(
+            category=_safe_field(category),
+            state=_safe_status(state),
+            summary=_safe_text(summary),
+            reason=_safe_text(reason),
+            source=_safe_field(source),
+        )
+        if item not in states:
+            states.append(item)
+
+    contract = identity.contract
+    support = identity.contract_support_status
+    if support in {"excluded", "legacy_historical_excluded", "never_supported_excluded"}:
+        append(
+            "excluded_contract",
+            "blocked",
+            f"{contract} is excluded from final target support.",
+            _first_reason(query_reasons, "excluded_contract:") or support,
+            "contract_support",
+        )
+    elif support != "final_supported":
+        append(
+            "unsupported_contract",
+            "blocked",
+            f"{contract} is not final target supported.",
+            _first_reason(query_reasons, "unsupported_contract:") or support,
+            "contract_support",
+        )
+
+    if identity.runtime_profile_status in {"blocked", "unavailable"}:
+        append(
+            "missing_runtime_profile",
+            identity.runtime_profile_status,
+            "Runtime profile is missing or has not passed preflight.",
+            (
+                _first_reason(query_reasons, "runtime_profile_")
+                or _first_reason(query_reasons, "profile_preflight_")
+                or "runtime_profile_preflight_passed"
+            ),
+            "runtime_profile",
+        )
+
+    brief_status = _safe_status(premarket.premarket_brief_status)
+    if brief_status != "ready":
+        append(
+            "premarket_brief_not_ready",
+            "unavailable" if brief_status == "unavailable" else "blocked",
+            "Premarket brief is not READY.",
+            f"premarket_brief_status:{brief_status}",
+            "premarket",
+        )
+
+    missing_fields = _dedupe(
+        (
+            *(field for trigger in triggers for field in trigger.missing_fields),
+            *premarket.blocking_reasons,
+        )
+    )
+    if missing_fields or _has_reason(query_reasons, "missing_required_trigger_fields"):
+        for field in missing_fields or ("missing_required_trigger_fields",):
+            append(
+                "missing_required_live_field",
+                "blocked",
+                f"Required live field is missing or unavailable: {field}.",
+                field,
+                "required_live_fields",
+            )
+
+    if runtime.quote_freshness in {"stale", "stale_or_unavailable"} or _has_reason(query_reasons, "quote_stale"):
+        append(
+            "stale_quote",
+            "stale",
+            "Quote freshness is stale or unavailable.",
+            _first_reason(query_reasons, "quote_stale") or runtime.quote_freshness,
+            "runtime_status",
+        )
+
+    if runtime.bar_freshness in {"missing", "unavailable"} or _has_reason(query_reasons, "bars_missing"):
+        append(
+            "missing_chart_bars",
+            "unavailable",
+            "Chart bars are missing or unavailable.",
+            _first_reason(query_reasons, "bars_missing") or runtime.bar_freshness,
+            "runtime_status",
+        )
+
+    if runtime.event_lockout_state == "active" or _has_reason(query_reasons, "event_lockout_active"):
+        append(
+            "event_lockout",
+            "lockout",
+            "Event lockout is active.",
+            _first_reason(query_reasons, "event_lockout_active") or runtime.event_lockout_state,
+            "runtime_status",
+        )
+
+    for trigger in triggers:
+        trigger_state = trigger.trigger_state.upper()
+        trigger_reasons = _dedupe((*trigger.blocking_reasons, *trigger.invalid_reasons))
+        if trigger_state == "BLOCKED":
+            append(
+                "trigger_blocked",
+                "blocked",
+                "Trigger state is BLOCKED.",
+                trigger_reasons[0] if trigger_reasons else "trigger_blocked",
+                "trigger_state",
+            )
+        if trigger_state == "STALE":
+            append(
+                "trigger_stale",
+                "stale",
+                "Trigger state is STALE.",
+                trigger_reasons[0] if trigger_reasons else "trigger_stale",
+                "trigger_state",
+            )
+        if trigger_state == "LOCKOUT":
+            append(
+                "event_lockout",
+                "lockout",
+                "Trigger state is LOCKOUT.",
+                trigger_reasons[0] if trigger_reasons else "trigger_lockout",
+                "trigger_state",
+            )
+        if trigger_state == "INVALIDATED" or trigger.invalid_reasons:
+            append(
+                "trigger_invalidated",
+                "invalidated",
+                "Trigger is invalidated.",
+                trigger.invalid_reasons[0] if trigger.invalid_reasons else "trigger_invalidated",
+                "trigger_state",
+            )
+        if trigger.query_ready_provenance != "real_trigger_state_result":
+            append(
+                "no_trigger_state_result_provenance",
+                "unavailable",
+                "No produced TriggerStateResult provenance is available.",
+                trigger.query_ready_provenance,
+                "trigger_state",
+            )
+
+    if runtime.stream_status == "disabled" or _has_reason(query_reasons, "stream_status_blocked:disabled"):
+        append(
+            "stream_disabled",
+            "unavailable",
+            "Stream is disabled.",
+            _first_reason(query_reasons, "stream_status_blocked:disabled") or runtime.stream_status,
+            "runtime_status",
+        )
+    if runtime.stream_status == "error" or _has_reason(query_reasons, "stream_status_blocked:error"):
+        append(
+            "stream_error",
+            "unavailable",
+            "Stream is in error.",
+            _first_reason(query_reasons, "stream_status_blocked:error") or runtime.stream_status,
+            "runtime_status",
+        )
+
+    if _fixture_mode_represented(identity, runtime):
+        append(
+            "fixture_mode",
+            "fixture_mode",
+            "Fixture mode is active; live behavior is not implied.",
+            f"profile:{identity.current_profile}",
+            "runtime_profile",
+        )
+
+    if not query.trigger_state_from_real_producer and not query.query_ready:
+        append(
+            "no_trigger_state_result_provenance",
+            "unavailable",
+            "No produced TriggerStateResult provenance is available.",
+            _first_reason(query_reasons, "cockpit_trigger_state_result_provenance_not_verified")
+            or _first_reason(query_reasons, "trigger_state_not_from_real_producer")
+            or "trigger_state_from_real_producer:false",
+            "query_readiness",
+        )
+
+    if last_pipeline_result.status == "not_queried":
+        append(
+            "no_pipeline_result_yet",
+            "no_result_yet",
+            "No preserved pipeline result has been produced yet.",
+            "last_pipeline_result:not_queried",
+            "last_pipeline_result",
+        )
+
+    if query.query_ready:
+        append(
+            "query_ready",
+            "query_ready",
+            "QUERY_READY provenance is verified for manual preserved-pipeline query readiness only.",
+            query.query_enabled_reason or "query_ready_conditions_met",
+            "query_readiness",
+        )
+
+    return tuple(states)
+
+
+def _fixture_mode_represented(identity: CockpitIdentityVM, runtime: CockpitRuntimeStatusVM) -> bool:
+    values = (
+        identity.current_profile,
+        runtime.provider_status,
+        runtime.stream_status,
+    )
+    return any("fixture" in value.lower() for value in values)
+
+
+def _has_reason(reasons: Sequence[str], reason: str) -> bool:
+    return any(item == reason for item in reasons)
+
+
+def _first_reason(reasons: Sequence[str], prefix: str) -> str | None:
+    for reason in reasons:
+        if reason.startswith(prefix):
+            return reason
+    return None
 
 
 def _runtime_profile_status(gate: Mapping[str, Any]) -> str:

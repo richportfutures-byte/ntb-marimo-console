@@ -275,6 +275,8 @@ class MarimoPhase1RendererTests(unittest.TestCase):
         self.assertIn("trigger_state_not_query_ready:TOUCHED", text)
         self.assertIn("QUERY_READY Provenance", text)
         self.assertIn("Last Pipeline Result", text)
+        self.assertIn("Operator State Reasons", text)
+        self.assertIn("no_pipeline_result_yet", text)
         self.assertIn("## Evidence And Replay", text)
         self.assertIn("Run History Availability", text)
         self.assertIn("Audit / Replay Availability", text)
@@ -294,6 +296,126 @@ class MarimoPhase1RendererTests(unittest.TestCase):
             source.index("render_r14_cockpit_shell(cockpit)"),
             source.index('build_startup_status_markdown(startup)'),
         )
+
+    def test_r14_cockpit_renderer_prints_operator_state_categories_as_plain_text(self) -> None:
+        cockpit = {
+            "identity": {
+                "current_profile": "fixture_es_demo",
+                "contract": "ES",
+                "contract_support_status": "final_supported",
+                "runtime_profile_status": "available",
+            },
+            "runtime_status": {
+                "provider_status": "fixture",
+                "stream_status": "disabled",
+                "quote_freshness": "stale",
+                "bar_freshness": "missing",
+                "session_clock_state": "valid",
+                "event_lockout_state": "active",
+                "evaluated_at": "2026-05-06T14:00:00+00:00",
+            },
+            "query_readiness": {
+                "pipeline_gate_state": "DISABLED",
+                "query_ready": False,
+                "manual_query_allowed": False,
+                "query_disabled_reason": "Manual query disabled: quote_stale.",
+                "query_ready_provenance": "unavailable_not_inferred_from_display_or_raw_enabled_mapping",
+                "trigger_state_from_real_producer": False,
+                "enabled_reasons": [],
+                "blocking_reasons": ["quote_stale"],
+                "missing_conditions": ["quote_fresh"],
+                "gate_statement": "Gate enabled means only that the operator may manually query the preserved pipeline.",
+            },
+            "last_pipeline_result": {"status": "not_queried"},
+            "operator_states": [
+                {
+                    "category": "trigger_blocked",
+                    "state": "blocked",
+                    "summary": "Trigger state is BLOCKED.",
+                    "reason": "missing_required_live_fields",
+                    "source": "trigger_state",
+                },
+                {
+                    "category": "stream_disabled",
+                    "state": "unavailable",
+                    "summary": "Stream is disabled.",
+                    "reason": "stream_status_blocked:disabled",
+                    "source": "runtime_status",
+                },
+                {
+                    "category": "stale_quote",
+                    "state": "stale",
+                    "summary": "Quote freshness is stale or unavailable.",
+                    "reason": "quote_stale",
+                    "source": "runtime_status",
+                },
+                {
+                    "category": "event_lockout",
+                    "state": "lockout",
+                    "summary": "Event lockout is active.",
+                    "reason": "event_lockout_active",
+                    "source": "runtime_status",
+                },
+                {
+                    "category": "trigger_invalidated",
+                    "state": "invalidated",
+                    "summary": "Trigger is invalidated.",
+                    "reason": "invalidator_active",
+                    "source": "trigger_state",
+                },
+                {
+                    "category": "fixture_mode",
+                    "state": "fixture_mode",
+                    "summary": "Fixture mode is active; live behavior is not implied.",
+                    "reason": "profile:fixture_es_demo",
+                    "source": "runtime_profile",
+                },
+                {
+                    "category": "no_pipeline_result_yet",
+                    "state": "no_result_yet",
+                    "summary": "No preserved pipeline result has been produced yet.",
+                    "reason": "last_pipeline_result:not_queried",
+                    "source": "last_pipeline_result",
+                },
+                {
+                    "category": "query_ready",
+                    "state": "query_ready",
+                    "summary": "QUERY_READY provenance is verified for manual preserved-pipeline query readiness only.",
+                    "reason": "query_ready_conditions_met",
+                    "source": "query_readiness",
+                },
+            ],
+        }
+
+        text = "\n".join(
+            (
+                build_r14_cockpit_header_markdown(cockpit),
+                build_r14_cockpit_pipeline_gate_markdown(cockpit),
+            )
+        )
+
+        self.assertIn("Operator State Reasons", text)
+        for state in (
+            "blocked",
+            "unavailable",
+            "stale",
+            "lockout",
+            "invalidated",
+            "fixture_mode",
+            "no_result_yet",
+            "query_ready",
+        ):
+            self.assertIn(f"`{state}`", text)
+        for reason in (
+            "missing_required_live_fields",
+            "stream_status_blocked:disabled",
+            "quote_stale",
+            "event_lockout_active",
+            "invalidator_active",
+            "last_pipeline_result:not_queried",
+        ):
+            self.assertIn(reason, text)
+        self.assertNotIn("```json", text)
 
     def test_live_observables_renders_readable_fields(self) -> None:
         shell = build_es_app_shell_for_mode(mode="fixture_demo")

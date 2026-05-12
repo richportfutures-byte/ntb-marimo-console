@@ -540,6 +540,8 @@ def build_r14_cockpit_header_markdown(cockpit: Mapping[str, object]) -> str:
             f"- Query Reason: {_query_reason(query)}",
             f"- QUERY_READY Provenance: `{_as_str(query.get('query_ready_provenance'), default='<unavailable>')}`",
             f"- Evaluated At: `{_as_str(runtime.get('evaluated_at'), default='<unavailable>')}`",
+            "- Operator State Reasons:",
+            _operator_state_lines(cockpit.get("operator_states")),
         ]
     )
 
@@ -623,6 +625,8 @@ def build_r14_cockpit_pipeline_gate_markdown(cockpit: Mapping[str, object]) -> s
             _plain_item_lines(query.get("blocking_reasons") or query.get("disabled_reasons")),
             "- Missing Conditions:",
             _plain_item_lines(query.get("missing_conditions")),
+            "- Operator State Reasons:",
+            _operator_state_lines(cockpit.get("operator_states")),
             f"- Gate Statement: {_as_str(query.get('gate_statement'), default='<unavailable>')}",
             "",
             "### Last Pipeline Result",
@@ -1065,6 +1069,22 @@ def _plain_item_lines(value: object) -> str:
         lines = [f"  - `{_as_str(item)}`" for item in value if _as_str(item, default="").strip()]
         return "\n".join(lines) if lines else "  - `<none>`"
     return "  - `<unavailable>`"
+
+
+def _operator_state_lines(value: object) -> str:
+    if not isinstance(value, list | tuple):
+        return "  - `<unavailable>`"
+    lines: list[str] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        category = _as_str(item.get("category"), default="<unavailable>")
+        state = _as_str(item.get("state"), default="<unavailable>")
+        summary = _as_str(item.get("summary"), default="<unavailable>")
+        reason = _as_str(item.get("reason"), default="<unavailable>")
+        source = _as_str(item.get("source"), default="<unavailable>")
+        lines.append(f"  - `{state}` / `{category}`: {summary} Reason: `{reason}`. Source: `{source}`.")
+    return "\n".join(lines) if lines else "  - `<none>`"
 
 
 def _mapping_item_lines(value: object, fields: tuple[str, ...]) -> str:
