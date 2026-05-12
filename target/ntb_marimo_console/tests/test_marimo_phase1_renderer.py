@@ -15,6 +15,11 @@ from ntb_marimo_console.ui.marimo_phase1_renderer import (
     _render_pipeline_query_gate_lines,
     build_phase1_render_plan,
     build_profile_operations_markdown,
+    build_r14_cockpit_evidence_markdown,
+    build_r14_cockpit_header_markdown,
+    build_r14_cockpit_live_thesis_markdown,
+    build_r14_cockpit_pipeline_gate_markdown,
+    build_r14_cockpit_premarket_markdown,
     build_session_evidence_markdown,
     build_session_lifecycle_markdown,
     build_runtime_identity_markdown,
@@ -236,6 +241,59 @@ class MarimoPhase1RendererTests(unittest.TestCase):
 
         self.assertEqual(source.count("mo.ui.code_editor("), 1)
         self.assertIn('mo.md("## Debug (Secondary)")', source)
+
+    def test_r14_primary_cockpit_shell_renders_existing_contract_without_raw_json(self) -> None:
+        shell = build_es_app_shell_for_mode(mode="fixture_demo", query_action_requested=False)
+        cockpit = shell["r14_cockpit"]
+
+        header = build_r14_cockpit_header_markdown(cockpit)
+        premarket = build_r14_cockpit_premarket_markdown(cockpit)
+        monitor = build_r14_cockpit_live_thesis_markdown(cockpit)
+        gate = build_r14_cockpit_pipeline_gate_markdown(cockpit)
+        evidence = build_r14_cockpit_evidence_markdown(cockpit)
+        text = "\n".join((header, premarket, monitor, gate, evidence))
+
+        self.assertIn("## Primary Operator Cockpit", text)
+        self.assertIn("fixture_es_demo", text)
+        self.assertIn("Contract", text)
+        self.assertIn("Support", text)
+        self.assertIn("Provider", text)
+        self.assertIn("Gate", text)
+        self.assertIn("## Premarket Plan", text)
+        self.assertIn("Structural Setups", text)
+        self.assertIn("Global Guidance", text)
+        self.assertIn("Warnings", text)
+        self.assertIn("Invalidators", text)
+        self.assertIn("Trigger Definitions", text)
+        self.assertIn("Fields Used", text)
+        self.assertIn("## Live Thesis Monitor", text)
+        self.assertIn("Distance To Trigger Ticks", text)
+        self.assertIn("Current Live / Fixture Values", text)
+        self.assertIn("market.current_price", text)
+        self.assertIn("## Pipeline Gate", text)
+        self.assertIn("Manual Query Allowed: `False`", text)
+        self.assertIn("trigger_state_not_query_ready:TOUCHED", text)
+        self.assertIn("QUERY_READY Provenance", text)
+        self.assertIn("Last Pipeline Result", text)
+        self.assertIn("## Evidence And Replay", text)
+        self.assertIn("Run History Availability", text)
+        self.assertIn("Audit / Replay Availability", text)
+        self.assertIn("Session Evidence Availability", text)
+        self.assertIn("Operator Notes Availability", text)
+        self.assertIn("Trigger Transition Log Availability", text)
+        self.assertNotIn("```json", text)
+
+    def test_r14_primary_cockpit_renderer_is_bound_before_legacy_surfaces(self) -> None:
+        source = (PACKAGE_ROOT / "src" / "ntb_marimo_console" / "ui" / "marimo_phase1_renderer.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('cockpit = shell.get("r14_cockpit")', source)
+        self.assertIn("render_r14_cockpit_shell(cockpit)", source)
+        self.assertLess(
+            source.index("render_r14_cockpit_shell(cockpit)"),
+            source.index('build_startup_status_markdown(startup)'),
+        )
 
     def test_live_observables_renders_readable_fields(self) -> None:
         shell = build_es_app_shell_for_mode(mode="fixture_demo")

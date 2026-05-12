@@ -122,20 +122,28 @@ class CockpitRuntimeStatusVM:
 class CockpitPremarketVM:
     premarket_brief_status: str
     active_setup_count: int
+    global_guidance: tuple[str, ...]
     setup_summaries: tuple[dict[str, object], ...]
+    trigger_definitions: tuple[dict[str, object], ...]
     required_fields: tuple[str, ...]
     missing_fields: tuple[str, ...]
     unavailable_fields: tuple[dict[str, object], ...]
+    warnings: tuple[str, ...]
+    invalidators: tuple[dict[str, object], ...]
     blocking_reasons: tuple[str, ...]
 
     def to_dict(self) -> dict[str, object]:
         return {
             "premarket_brief_status": self.premarket_brief_status,
             "active_setup_count": self.active_setup_count,
+            "global_guidance": list(self.global_guidance),
             "setup_summaries": [dict(item) for item in self.setup_summaries],
+            "trigger_definitions": [dict(item) for item in self.trigger_definitions],
             "required_fields": list(self.required_fields),
             "missing_fields": list(self.missing_fields),
             "unavailable_fields": [dict(item) for item in self.unavailable_fields],
+            "warnings": list(self.warnings),
+            "invalidators": [dict(item) for item in self.invalidators],
             "blocking_reasons": list(self.blocking_reasons),
         }
 
@@ -150,6 +158,7 @@ class CockpitTriggerSummaryVM:
     missing_fields: tuple[str, ...]
     blocking_reasons: tuple[str, ...]
     invalid_reasons: tuple[str, ...]
+    current_values: tuple[dict[str, object], ...]
     query_ready_provenance: str
 
     def to_dict(self) -> dict[str, object]:
@@ -162,6 +171,7 @@ class CockpitTriggerSummaryVM:
             "missing_fields": list(self.missing_fields),
             "blocking_reasons": list(self.blocking_reasons),
             "invalid_reasons": list(self.invalid_reasons),
+            "current_values": [dict(item) for item in self.current_values],
             "query_ready_provenance": self.query_ready_provenance,
         }
 
@@ -237,6 +247,7 @@ class CockpitReplayAvailabilityVM:
     run_history_status: str
     audit_replay_status: str
     audit_replay_available: bool
+    session_evidence_status: str
     trigger_transition_status: str
     trigger_transition_available: bool
     trigger_transition_count: int
@@ -249,6 +260,7 @@ class CockpitReplayAvailabilityVM:
             "run_history_status": self.run_history_status,
             "audit_replay_status": self.audit_replay_status,
             "audit_replay_available": self.audit_replay_available,
+            "session_evidence_status": self.session_evidence_status,
             "trigger_transition_status": self.trigger_transition_status,
             "trigger_transition_available": self.trigger_transition_available,
             "trigger_transition_count": self.trigger_transition_count,
@@ -361,10 +373,14 @@ def build_r14_cockpit_view_model(request: OperatorWorkspaceRequest) -> R14Cockpi
         premarket=CockpitPremarketVM(
             premarket_brief_status=_premarket_brief_status(request.premarket_brief, premarket_plan),
             active_setup_count=len(premarket_plan["setup_summaries"]),
+            global_guidance=_global_guidance(request.premarket_brief),
             setup_summaries=tuple(_mapping_tuple(premarket_plan["setup_summaries"])),
+            trigger_definitions=tuple(_mapping_tuple(premarket_plan["trigger_summaries"])),
             required_fields=premarket_required_fields,
             missing_fields=premarket_missing_fields,
             unavailable_fields=tuple(_mapping_tuple(premarket_plan["unavailable_fields"])),
+            warnings=_sequence_text(premarket_plan.get("warnings")),
+            invalidators=tuple(_mapping_tuple(premarket_plan["invalidators"])),
             blocking_reasons=_dedupe(
                 (
                     *_sequence_text(premarket_plan.get("source_context_blockers")),
@@ -372,7 +388,13 @@ def build_r14_cockpit_view_model(request: OperatorWorkspaceRequest) -> R14Cockpi
                 )
             ),
         ),
-        triggers=(_build_cockpit_trigger_summary(request.trigger_state, trigger),),
+        triggers=(
+            _build_cockpit_trigger_summary(
+                request.trigger_state,
+                trigger,
+                live_observable=request.live_observable,
+            ),
+        ),
         query_readiness=query_readiness,
         last_pipeline_result=_build_cockpit_pipeline_result(request.last_pipeline_result),
         replay_availability=_build_cockpit_replay_availability(evidence),
@@ -411,16 +433,20 @@ def _build_header(
 def _build_cockpit_trigger_summary(
     trigger_state_source: TriggerStateResult | Mapping[str, Any] | None,
     trigger: Mapping[str, Any],
+    *,
+    live_observable: LiveObservableSnapshotV2 | Mapping[str, Any] | None = None,
 ) -> CockpitTriggerSummaryVM:
+    required_fields = _sequence_fields(trigger.get("required_fields"))
     return CockpitTriggerSummaryVM(
         setup_id=_safe_text(_string_or_none(trigger.get("setup_id")) or "unavailable"),
         trigger_id=_safe_text(_string_or_none(trigger.get("trigger_id")) or "unavailable"),
         trigger_state=_safe_text(_string_or_none(trigger.get("state")) or "UNAVAILABLE").upper(),
         distance_to_trigger_ticks=trigger.get("distance_to_trigger_ticks"),
-        required_fields=_sequence_fields(trigger.get("required_fields")),
+        required_fields=required_fields,
         missing_fields=_sequence_fields(trigger.get("missing_fields")),
         blocking_reasons=_sequence_text(trigger.get("blocking_reasons")),
         invalid_reasons=_sequence_text(trigger.get("invalid_reasons")),
+        current_values=_current_values_for_fields(live_observable, required_fields),
         query_ready_provenance=(
             "real_trigger_state_result"
             if isinstance(trigger_state_source, TriggerStateResult)
@@ -551,6 +577,7 @@ def _build_cockpit_replay_availability(evidence: Mapping[str, Any]) -> CockpitRe
         run_history_status=_safe_status(evidence.get("run_history_status") or "unavailable"),
         audit_replay_status=audit_replay_status,
         audit_replay_available=audit_replay_status == "available",
+        session_evidence_status=_safe_status(evidence.get("session_evidence_status") or "unavailable"),
         trigger_transition_status=transition_status,
         trigger_transition_available=transition_status == "available",
         trigger_transition_count=transition_count,
@@ -580,6 +607,18 @@ def _premarket_brief_status(
     return _safe_text(premarket_plan.get("validator_status") or "unavailable")
 
 
+def _global_guidance(brief: Mapping[str, Any] | None) -> tuple[str, ...]:
+    if not isinstance(brief, Mapping):
+        return ("unavailable",)
+    guidance: list[str] = []
+    for key in ("global_guidance", "guidance", "operator_guidance", "plan_guidance"):
+        guidance.extend(_sequence_text(brief.get(key)))
+        text = _string_or_none(brief.get(key))
+        if text is not None:
+            guidance.append(text)
+    return _dedupe(tuple(guidance)) or ("unavailable",)
+
+
 def _unavailable_field_names(value: object) -> tuple[str, ...]:
     if not isinstance(value, Sequence) or isinstance(value, str | bytes):
         return ()
@@ -588,6 +627,40 @@ def _unavailable_field_names(value: object) -> tuple[str, ...]:
         if isinstance(item, Mapping):
             fields.append(_safe_field(item.get("field") or "unavailable"))
     return tuple(fields)
+
+
+def _current_values_for_fields(
+    live_observable: LiveObservableSnapshotV2 | Mapping[str, Any] | None,
+    fields: Sequence[str],
+) -> tuple[dict[str, object], ...]:
+    if isinstance(live_observable, LiveObservableSnapshotV2):
+        payload: Mapping[str, Any] = live_observable.to_dict()
+    elif isinstance(live_observable, Mapping):
+        payload = live_observable
+    else:
+        payload = {}
+    values: list[dict[str, object]] = []
+    for field in fields:
+        present, value = _resolve_field_path(payload, field)
+        values.append(
+            {
+                "field": _safe_field(field),
+                "value": _safe_text(value) if present else "unavailable",
+                "status": "available" if present else "unavailable",
+            }
+        )
+    return tuple(values)
+
+
+def _resolve_field_path(payload: Mapping[str, Any], field: str) -> tuple[bool, object]:
+    current: object = payload
+    for part in field.split("."):
+        if not isinstance(current, Mapping) or part not in current:
+            return False, None
+        current = current[part]
+    if current is None:
+        return False, None
+    return True, current
 
 
 def _mapping_tuple(value: object) -> tuple[dict[str, object], ...]:
@@ -757,6 +830,7 @@ def _build_evidence_and_replay(
     return {
         "run_history_status": _safe_status(request.run_history_status or "unavailable"),
         "audit_replay_status": _safe_status(_audit_replay_status(request)),
+        "session_evidence_status": "unavailable",
         "operator_notes_status": _safe_status(request.operator_notes_status or "unavailable"),
         "trigger_transition_log_status": transition_log_status,
         "trigger_transition_log": transition_log,

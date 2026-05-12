@@ -104,15 +104,20 @@ def render_phase1_console(
     evidence_control_panel: Any | None = None,
 ) -> Any:
     plan = build_phase1_render_plan(shell)
+    startup = shell.get("startup")
+    operator_ready = True
+    if isinstance(startup, Mapping):
+        operator_ready = startup.get("operator_ready") is True
 
     elements: list[Any] = [
         _render_console_header(shell, heading=heading, mode_summary=mode_summary),
     ]
 
-    startup = shell.get("startup")
-    operator_ready = True
+    cockpit = shell.get("r14_cockpit")
+    if operator_ready and isinstance(cockpit, Mapping):
+        elements.append(render_r14_cockpit_shell(cockpit))
+
     if isinstance(startup, Mapping):
-        operator_ready = startup.get("operator_ready") is True
         elements.append(_render_markdown_card(build_startup_status_markdown(startup)))
         elements.append(_render_markdown_card(build_profile_operations_markdown(startup)))
         if profile_control_panel is not None:
@@ -491,6 +496,164 @@ def build_session_evidence_markdown(evidence: Mapping[str, object]) -> str:
     return "\n".join(lines)
 
 
+def render_r14_cockpit_shell(cockpit: Mapping[str, object]) -> Any:
+    return mo.vstack(
+        [
+            _render_markdown_card(build_r14_cockpit_header_markdown(cockpit)),
+            mo.hstack(
+                [
+                    _render_markdown_card(build_r14_cockpit_premarket_markdown(cockpit)),
+                    _render_markdown_card(build_r14_cockpit_live_thesis_markdown(cockpit)),
+                    _render_markdown_card(build_r14_cockpit_pipeline_gate_markdown(cockpit)),
+                ],
+                gap=0.75,
+            ),
+            _render_markdown_card(build_r14_cockpit_evidence_markdown(cockpit)),
+        ],
+        gap=0.75,
+    )
+
+
+def build_r14_cockpit_header_markdown(cockpit: Mapping[str, object]) -> str:
+    identity = _mapping_or_empty(cockpit.get("identity"))
+    runtime = _mapping_or_empty(cockpit.get("runtime_status"))
+    query = _mapping_or_empty(cockpit.get("query_readiness"))
+    return "\n".join(
+        [
+            "## Primary Operator Cockpit",
+            "",
+            "| Profile | Contract | Support | Runtime | Provider | Stream | Quote | Session | Event | Gate |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            (
+                f"| `{_table_value(identity.get('current_profile'))}` "
+                f"| `{_table_value(identity.get('contract'))}` "
+                f"| `{_table_value(identity.get('contract_support_status'))}` "
+                f"| `{_table_value(identity.get('runtime_profile_status'))}` "
+                f"| `{_table_value(runtime.get('provider_status'))}` "
+                f"| `{_table_value(runtime.get('stream_status'))}` "
+                f"| `{_table_value(runtime.get('quote_freshness'))}` "
+                f"| `{_table_value(runtime.get('session_clock_state'))}` "
+                f"| `{_table_value(runtime.get('event_lockout_state'))}` "
+                f"| `{_table_value(query.get('pipeline_gate_state'))}` |"
+            ),
+            f"- Manual Query Allowed: `{_as_str(query.get('manual_query_allowed'), default=False)}`",
+            f"- Query Reason: {_query_reason(query)}",
+            f"- QUERY_READY Provenance: `{_as_str(query.get('query_ready_provenance'), default='<unavailable>')}`",
+            f"- Evaluated At: `{_as_str(runtime.get('evaluated_at'), default='<unavailable>')}`",
+        ]
+    )
+
+
+def build_r14_cockpit_premarket_markdown(cockpit: Mapping[str, object]) -> str:
+    premarket = _mapping_or_empty(cockpit.get("premarket"))
+    return "\n".join(
+        [
+            "## Premarket Plan",
+            f"- Brief Status: `{_as_str(premarket.get('premarket_brief_status'), default='<unavailable>')}`",
+            f"- Active Setup Count: `{_as_str(premarket.get('active_setup_count'), default=0)}`",
+            "- Structural Setups:",
+            _mapping_item_lines(premarket.get("setup_summaries"), ("setup_id", "summary")),
+            "- Global Guidance:",
+            _plain_item_lines(premarket.get("global_guidance")),
+            "- Warnings:",
+            _plain_item_lines(premarket.get("warnings")),
+            "- Invalidators:",
+            _mapping_item_lines(premarket.get("invalidators"), ("invalidator_id", "condition", "action")),
+            "- Trigger Definitions:",
+            _mapping_item_lines(premarket.get("trigger_definitions"), ("trigger_id", "summary")),
+            "- Fields Used:",
+            _plain_item_lines(premarket.get("required_fields")),
+            "- Missing / Unavailable Fields:",
+            _mixed_item_lines(premarket.get("missing_fields"), premarket.get("unavailable_fields")),
+            "- Plan Blocking Reasons:",
+            _plain_item_lines(premarket.get("blocking_reasons")),
+        ]
+    )
+
+
+def build_r14_cockpit_live_thesis_markdown(cockpit: Mapping[str, object]) -> str:
+    triggers = cockpit.get("triggers")
+    lines = ["## Live Thesis Monitor"]
+    if not isinstance(triggers, list) or not triggers:
+        lines.append("- Trigger State: `<unavailable>`")
+        lines.append("- Blocking Reasons:")
+        lines.append("  - `<unavailable>`")
+        return "\n".join(lines)
+
+    for trigger in triggers:
+        if not isinstance(trigger, Mapping):
+            continue
+        lines.extend(
+            [
+                f"- Setup: `{_as_str(trigger.get('setup_id'), default='<unavailable>')}`",
+                f"- Trigger: `{_as_str(trigger.get('trigger_id'), default='<unavailable>')}`",
+                f"- State: `{_as_str(trigger.get('trigger_state'), default='UNAVAILABLE')}`",
+                f"- Distance To Trigger Ticks: `{_as_str(trigger.get('distance_to_trigger_ticks'), default='<unavailable>')}`",
+                f"- QUERY_READY Provenance: `{_as_str(trigger.get('query_ready_provenance'), default='<unavailable>')}`",
+                "- Current Live / Fixture Values:",
+                _mapping_item_lines(trigger.get("current_values"), ("field", "value", "status")),
+                "- Required Fields:",
+                _plain_item_lines(trigger.get("required_fields")),
+                "- Missing Fields:",
+                _plain_item_lines(trigger.get("missing_fields")),
+                "- Invalidators / Invalid Reasons:",
+                _plain_item_lines(trigger.get("invalid_reasons")),
+                "- Blocking Reasons:",
+                _plain_item_lines(trigger.get("blocking_reasons")),
+            ]
+        )
+    return "\n".join(lines)
+
+
+def build_r14_cockpit_pipeline_gate_markdown(cockpit: Mapping[str, object]) -> str:
+    query = _mapping_or_empty(cockpit.get("query_readiness"))
+    result = _mapping_or_empty(cockpit.get("last_pipeline_result"))
+    return "\n".join(
+        [
+            "## Pipeline Gate",
+            f"- Gate Status: `{_as_str(query.get('pipeline_gate_state'), default='DISABLED')}`",
+            f"- Query Ready: `{_as_str(query.get('query_ready'), default=False)}`",
+            f"- Manual Query Allowed: `{_as_str(query.get('manual_query_allowed'), default=False)}`",
+            f"- Reason: {_query_reason(query)}",
+            f"- QUERY_READY Provenance: `{_as_str(query.get('query_ready_provenance'), default='<unavailable>')}`",
+            f"- Trigger State From Real Producer: `{_as_str(query.get('trigger_state_from_real_producer'), default=False)}`",
+            "- Enabled Reasons:",
+            _plain_item_lines(query.get("enabled_reasons")),
+            "- Disabled / Blocking Reasons:",
+            _plain_item_lines(query.get("blocking_reasons") or query.get("disabled_reasons")),
+            "- Missing Conditions:",
+            _plain_item_lines(query.get("missing_conditions")),
+            f"- Gate Statement: {_as_str(query.get('gate_statement'), default='<unavailable>')}",
+            "",
+            "### Last Pipeline Result",
+            f"- Result Status: `{_as_str(result.get('status'), default='not_queried')}`",
+            f"- Stage Termination: `{_as_str(result.get('termination_stage'), default='<unavailable>')}`",
+            f"- Stage Termination Reason: `{_as_str(result.get('stage_termination_reason'), default='<unavailable>')}`",
+            f"- Final Decision: `{_as_str(result.get('final_decision'), default='<unavailable>')}`",
+            f"- NO_TRADE Summary: {_as_str(result.get('no_trade_summary'), default='<unavailable>')}",
+            f"- APPROVED Summary: {_as_str(result.get('approved_summary'), default='<unavailable>')}",
+            f"- REJECTED Summary: {_as_str(result.get('rejected_summary'), default='<unavailable>')}",
+        ]
+    )
+
+
+def build_r14_cockpit_evidence_markdown(cockpit: Mapping[str, object]) -> str:
+    replay = _mapping_or_empty(cockpit.get("replay_availability"))
+    return "\n".join(
+        [
+            "## Evidence And Replay",
+            f"- Run History Availability: `{_as_str(replay.get('run_history_status'), default='unavailable')}`",
+            f"- Audit / Replay Availability: `{_as_str(replay.get('audit_replay_status'), default='unavailable')}`",
+            f"- Audit / Replay Available: `{_as_str(replay.get('audit_replay_available'), default=False)}`",
+            f"- Session Evidence Availability: `{_as_str(replay.get('session_evidence_status'), default='unavailable')}`",
+            f"- Operator Notes Availability: `{_as_str(replay.get('operator_note_status'), default='unavailable')}`",
+            f"- Trigger Transition Log Availability: `{_as_str(replay.get('trigger_transition_status'), default='unavailable')}`",
+            f"- Trigger Transition Count: `{_as_str(replay.get('trigger_transition_count'), default=0)}`",
+            f"- Replay Statement: {_as_str(replay.get('replay_statement'), default='<unavailable>')}",
+        ]
+    )
+
+
 def _render_surface_section(
     key: str,
     panel: Mapping[str, object],
@@ -831,6 +994,17 @@ def _table_value(value: object) -> str:
     return _as_str(value, default="<unavailable>").replace("|", "\\|")
 
 
+def _mapping_or_empty(value: object) -> Mapping[str, object]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _query_reason(query: Mapping[str, object]) -> str:
+    enabled_reason = query.get("query_enabled_reason")
+    if enabled_reason is not None:
+        return _as_str(enabled_reason, default="<unavailable>")
+    return _as_str(query.get("query_disabled_reason"), default="<unavailable>")
+
+
 def _as_str(value: object, *, default: str = "<missing>") -> str:
     if value is None:
         return default
@@ -884,6 +1058,39 @@ def _bullet_lines(value: object) -> str:
         lines = [f"  - {_as_str(item)}" for item in value]
         return "\n".join(lines) if lines else "  - <none>"
     return "  - <missing>"
+
+
+def _plain_item_lines(value: object) -> str:
+    if isinstance(value, list | tuple):
+        lines = [f"  - `{_as_str(item)}`" for item in value if _as_str(item, default="").strip()]
+        return "\n".join(lines) if lines else "  - `<none>`"
+    return "  - `<unavailable>`"
+
+
+def _mapping_item_lines(value: object, fields: tuple[str, ...]) -> str:
+    if not isinstance(value, list | tuple):
+        return "  - `<unavailable>`"
+    lines: list[str] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        parts = [f"{field}={_inline_value(item.get(field))}" for field in fields if field in item]
+        lines.append("  - " + "; ".join(parts) if parts else "  - `<unavailable>`")
+    return "\n".join(lines) if lines else "  - `<none>`"
+
+
+def _mixed_item_lines(primary: object, secondary: object) -> str:
+    lines: list[str] = []
+    if isinstance(primary, list | tuple):
+        lines.extend(f"  - `{_as_str(item)}`" for item in primary)
+    if isinstance(secondary, list | tuple):
+        for item in secondary:
+            if isinstance(item, Mapping):
+                field = _as_str(item.get("field"), default="<unavailable>")
+                reason = _as_str(item.get("reason"), default="<unavailable>")
+                status = _as_str(item.get("status"), default="<unavailable>")
+                lines.append(f"  - `{field}`: {status}; {reason}")
+    return "\n".join(lines) if lines else "  - `<none>`"
 
 
 def _supported_profile_lines(value: object) -> str:

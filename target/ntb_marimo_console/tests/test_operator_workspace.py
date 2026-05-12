@@ -772,13 +772,23 @@ def test_r14_cockpit_contract_serializes_deterministically_from_fixture_safe_inp
     }
     assert decoded["runtime_status"]["provider_status"] == "connected"
     assert decoded["premarket"]["active_setup_count"] == 1
+    assert decoded["premarket"]["global_guidance"] == ["unavailable"]
     assert decoded["premarket"]["required_fields"] == ["market.current_price", "market.cumulative_delta"]
+    assert decoded["premarket"]["trigger_definitions"][0]["trigger_id"] == "mgc_trigger_1"
+    assert decoded["premarket"]["warnings"] == ["Do not infer unavailable market state."]
+    assert decoded["premarket"]["invalidators"][0]["invalidator_id"] == "mgc_invalidator_1"
     assert decoded["triggers"][0]["query_ready_provenance"] == "real_trigger_state_result"
+    assert decoded["triggers"][0]["current_values"][0] == {
+        "field": "market.current_price",
+        "value": "unavailable",
+        "status": "unavailable",
+    }
     assert decoded["query_readiness"]["query_ready"] is True
     assert decoded["query_readiness"]["manual_query_allowed"] is True
     assert decoded["query_readiness"]["query_disabled_reason"] is None
     assert decoded["last_pipeline_result"]["status"] == "completed"
     assert decoded["last_pipeline_result"]["no_trade_summary"] == "Preserved engine returned NO_TRADE."
+    assert decoded["replay_availability"]["session_evidence_status"] == "unavailable"
     assert decoded["replay_availability"]["audit_replay_available"] is False
 
 
