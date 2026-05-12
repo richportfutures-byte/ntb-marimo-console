@@ -8,6 +8,7 @@ from ntb_marimo_console.live_observables import (
     LIVE_OBSERVABLE_SNAPSHOT_V2_SCHEMA,
     build_live_observable_snapshot_v2,
 )
+from ntb_marimo_console.market_data import ChartFuturesBarBuilder
 from ntb_marimo_console.market_data.stream_cache import (
     NormalizedStreamMessage,
     StreamCache,
@@ -369,6 +370,38 @@ def test_r04_bar_and_trigger_derived_fields_remain_null() -> None:
     assert derived["bar_5m_close_count_at_or_beyond_level"] is None
     assert derived["range_expansion_state"] is None
     assert derived["volume_velocity_state"] is None
+
+
+def test_chart_futures_bar_state_can_surface_completed_close_as_derived_metadata_only() -> None:
+    builder = ChartFuturesBarBuilder(expected_symbols={"ES": "/ESM26"})
+    for minute in range(5):
+        start = NOW + timedelta(minutes=minute)
+        builder.ingest(
+            {
+                "service": "CHART_FUTURES",
+                "contract": "ES",
+                "symbol": "/ESM26",
+                "start_time": start.isoformat(),
+                "end_time": (start + timedelta(minutes=1)).isoformat(),
+                "open": 100.0 + minute,
+                "high": 100.75 + minute,
+                "low": 99.75 + minute,
+                "close": 100.5 + minute,
+                "completed": True,
+            }
+        )
+
+    payload = build_live_observable_snapshot_v2(
+        cache_snapshot(record=record()),
+        expected_symbols={"ES": "/ESM26"},
+        bar_states={"ES": builder.state("ES")},
+    ).to_dict()
+    es = payload["contracts"]["ES"]
+
+    assert es["derived"]["bar_5m_close"] == 104.5
+    assert es["sources"]["derived"]["bar_5m_close"] == "chart_futures_bar_contract"
+    assert es["derived"]["bar_5m_close_count_at_or_beyond_level"] is None
+    assert payload["data_quality"]["ready"] is False
 
 
 def test_cache_read_snapshot_builder_does_not_start_login_or_subscription() -> None:

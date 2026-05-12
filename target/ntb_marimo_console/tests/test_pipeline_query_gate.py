@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from ntb_marimo_console.contract_universe import final_target_contracts
+from ntb_marimo_console.market_data import ChartFuturesBarBuilder
+from ntb_marimo_console.market_data.chart_bars import ContractBarState
 from ntb_marimo_console.pipeline_query_gate import (
     PIPELINE_QUERY_GATE_SCHEMA,
     PipelineQueryGateRequest,
@@ -361,6 +364,62 @@ def test_query_ready_result_still_requires_real_producer_provenance_flag() -> No
     assert "trigger_state_not_from_real_producer" in gate.blocking_reasons
 
 
+def test_bar_readiness_contract_can_satisfy_gate_bar_condition() -> None:
+    gate = evaluate_pipeline_query_gate(
+        ready_request(
+            "ES",
+            bars_available=False,
+            bars_fresh=False,
+            bar_readiness=completed_bar_state("ES").readiness(),
+        )
+    )
+
+    assert gate.enabled is True
+    assert "bars_fresh_and_available" in gate.enabled_reasons
+
+
+def test_missing_partial_or_stale_bar_readiness_blocks_query_gate() -> None:
+    missing = evaluate_pipeline_query_gate(
+        ready_request("ES", bar_readiness=ChartFuturesBarBuilder(expected_symbols=EXPECTED_SYMBOLS).state("ES").readiness())
+    )
+    partial = evaluate_pipeline_query_gate(
+        ready_request("ES", bar_readiness=partial_bar_state("ES").readiness())
+    )
+    stale = evaluate_pipeline_query_gate(
+        ready_request("ES", bar_readiness=stale_bar_state("ES").readiness())
+    )
+
+    assert missing.enabled is False
+    assert "bars_missing" in missing.blocking_reasons
+    assert "completed_five_minute_bars_unavailable" in missing.blocking_reasons
+    assert partial.enabled is False
+    assert "bars_missing" in partial.blocking_reasons
+    assert "building_five_minute_bar_not_confirmation" in partial.blocking_reasons
+    assert stale.enabled is False
+    assert "bars_stale" in stale.blocking_reasons
+    assert any(reason.startswith("stale_bar_data:") for reason in stale.blocking_reasons)
+
+
+def test_display_bar_readiness_mapping_cannot_enable_query_gate() -> None:
+    gate = evaluate_pipeline_query_gate(
+        ready_request(
+            "ES",
+            bar_readiness={
+                "schema": "display_bar_row",
+                "contract": "ES",
+                "state": "available",
+                "available": True,
+                "completed_five_minute_available": True,
+                "fresh": True,
+            },
+        )
+    )
+
+    assert gate.enabled is False
+    assert gate.pipeline_query_authorized is False
+    assert "bar_readiness_provenance_not_verified" in gate.blocking_reasons
+
+
 def test_no_fixture_fallback_after_live_failure_semantics_are_not_weakened() -> None:
     live_failure = evaluate_pipeline_query_gate(
         ready_request(
@@ -467,4 +526,56 @@ def live_snapshot(
             }
         },
         "data_quality": {"ready": ready, "blocking_reasons": []},
+    }
+
+
+EXPECTED_SYMBOLS = {
+    "ES": "/ESM26",
+    "NQ": "/NQM26",
+    "CL": "/CLM26",
+    "6E": "/6EM26",
+    "MGC": "/MGCM26",
+}
+
+
+def completed_bar_state(contract: str) -> ContractBarState:
+    builder = ChartFuturesBarBuilder(expected_symbols=EXPECTED_SYMBOLS)
+    for minute in range(5):
+        builder.ingest(bar_message(contract, minute=minute))
+    return builder.state(contract)
+
+
+def partial_bar_state(contract: str) -> ContractBarState:
+    builder = ChartFuturesBarBuilder(expected_symbols=EXPECTED_SYMBOLS)
+    for minute in range(4):
+        builder.ingest(bar_message(contract, minute=minute))
+    builder.ingest(bar_message(contract, minute=4, completed=False))
+    return builder.state(contract)
+
+
+def stale_bar_state(contract: str) -> ContractBarState:
+    builder = ChartFuturesBarBuilder(expected_symbols=EXPECTED_SYMBOLS)
+    for minute in range(5):
+        builder.ingest(bar_message(contract, minute=minute))
+    return builder.state(
+        contract,
+        now=datetime(2026, 5, 6, 14, 30, 0, tzinfo=timezone.utc),
+        max_completed_bar_age_seconds=60.0,
+    )
+
+
+def bar_message(contract: str, *, minute: int, completed: bool = True) -> dict[str, object]:
+    start = datetime(2026, 5, 6, 14, 0, 0, tzinfo=timezone.utc) + timedelta(minutes=minute)
+    return {
+        "service": "CHART_FUTURES",
+        "contract": contract,
+        "symbol": EXPECTED_SYMBOLS[contract],
+        "start_time": start.isoformat(),
+        "end_time": (start + timedelta(minutes=1)).isoformat(),
+        "open": 100.0 + minute,
+        "high": 100.75 + minute,
+        "low": 99.75 + minute,
+        "close": 100.5 + minute,
+        "volume": 100 + minute,
+        "completed": completed,
     }

@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ntb_marimo_console.market_data import ChartFuturesBarBuilder
+from ntb_marimo_console.market_data import CHART_FUTURES_BAR_CONTRACT_SCHEMA, ChartFuturesBarBuilder
 
 
 BASE_TIME = datetime(2026, 5, 6, 14, 0, 0, tzinfo=timezone.utc)
@@ -68,19 +68,23 @@ def test_one_minute_bar_schema_serializes_deterministically() -> None:
     assert result.accepted is True
     assert payload == {
         "contract": "ES",
+        "profile_id": None,
+        "provider": "schwab",
+        "source": "chart_futures_fixture",
         "symbol": "/ESM26",
         "interval": "1m",
         "start_time": "2026-05-06T14:00:00+00:00",
         "end_time": "2026-05-06T14:01:00+00:00",
+        "observed_at": "2026-05-06T14:01:00+00:00",
         "open": 100.0,
         "high": 100.5,
         "low": 99.75,
         "close": 100.25,
         "volume": 100,
         "completed": True,
-        "source": "chart_futures_fixture",
         "quality": {"state": "usable", "usable": True, "blocking_reasons": []},
         "blocking_reasons": [],
+        "schema": CHART_FUTURES_BAR_CONTRACT_SCHEMA,
     }
     assert json.loads(json.dumps(payload, sort_keys=True))["interval"] == "1m"
 
@@ -148,11 +152,18 @@ def test_five_minute_bar_completes_only_after_all_required_one_minute_bars_are_p
     assert completed.completed is True
     assert completed.start_time == "2026-05-06T14:00:00+00:00"
     assert completed.end_time == "2026-05-06T14:05:00+00:00"
+    assert completed.observed_at == "2026-05-06T14:05:00+00:00"
     assert completed.open == 100.0
     assert completed.close == 104.5
     assert completed.volume == 510
     assert state.building_five_minute_bar is None
     assert state.usable is True
+    readiness = state.readiness()
+    assert readiness.available is True
+    assert readiness.completed_one_minute_available is True
+    assert readiness.completed_five_minute_available is True
+    assert readiness.fresh is True
+    assert readiness.blocking_reasons == ()
 
 
 def test_gap_prevents_completed_five_minute_confirmation() -> None:
@@ -165,6 +176,10 @@ def test_gap_prevents_completed_five_minute_confirmation() -> None:
     assert "gap_in_one_minute_bars:ES:2026-05-06T14:00:00+00:00" in state.blocking_reasons
     assert state.building_five_minute_bar is not None
     assert state.building_five_minute_bar.start_time == "2026-05-06T14:05:00+00:00"
+    readiness = state.readiness()
+    assert readiness.available is False
+    assert readiness.completed_five_minute_available is False
+    assert "completed_five_minute_bars_unavailable" in readiness.blocking_reasons
 
 
 def test_out_of_order_input_is_rejected_deterministically() -> None:
@@ -243,6 +258,62 @@ def test_stale_bar_state_adds_blocking_reason_without_fabricating_data() -> None
 
     assert any(reason.startswith("stale_bar_data:") for reason in state.blocking_reasons)
     assert len(state.completed_five_minute_bars) == 1
+    assert state.readiness().state == "stale"
+    assert state.readiness().fresh is False
+
+
+def test_building_one_minute_bar_remains_display_only_not_completed_readiness() -> None:
+    builder = ChartFuturesBarBuilder(expected_symbols=EXPECTED_SYMBOLS)
+    ingest_minutes(builder, range(4))
+    builder.ingest(bar_message(minute=4, completed=False))
+
+    state = builder.state("ES")
+    readiness = state.readiness()
+
+    assert state.completed_five_minute_bars == ()
+    assert state.building_five_minute_bar is not None
+    assert readiness.state == "building"
+    assert readiness.available is False
+    assert "building_five_minute_bar_not_confirmation" in readiness.blocking_reasons
+
+
+def test_optional_volume_is_preserved_as_unavailable_and_not_fabricated() -> None:
+    builder = ChartFuturesBarBuilder(expected_symbols=EXPECTED_SYMBOLS)
+    for minute in range(10):
+        message = bar_message(minute=minute, open_price=100.0 + minute, close=100.5 + minute)
+        message.pop("volume")
+        builder.ingest(message)
+
+    state = builder.state("ES")
+
+    assert len(state.completed_five_minute_bars) == 2
+    assert state.completed_one_minute_bars[0].volume is None
+    assert state.completed_five_minute_bars[0].volume is None
+    volume_result = builder.volume_velocity_state("ES")
+    assert volume_result.status == "unavailable"
+    assert "volume_unavailable_for_volume_velocity" in volume_result.blocking_reasons
+
+
+def test_naive_start_timestamp_is_rejected_as_ambiguous() -> None:
+    builder = ChartFuturesBarBuilder(expected_symbols=EXPECTED_SYMBOLS)
+    message = bar_message()
+    message["start_time"] = "2026-05-06T14:00:00"
+
+    result = builder.ingest(message)
+
+    assert result.accepted is False
+    assert "timezone_aware_start_time_required" in result.blocking_reasons
+
+
+def test_one_minute_interval_mismatch_is_rejected_fail_closed() -> None:
+    builder = ChartFuturesBarBuilder(expected_symbols=EXPECTED_SYMBOLS)
+    message = bar_message()
+    message["end_time"] = (BASE_TIME + timedelta(minutes=2)).isoformat()
+
+    result = builder.ingest(message)
+
+    assert result.accepted is False
+    assert "one_minute_interval_mismatch" in result.blocking_reasons
 
 
 def test_bar_builder_has_no_network_or_stream_client_surface() -> None:

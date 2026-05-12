@@ -257,6 +257,24 @@ def test_partial_bars_are_not_treated_as_completed_confirmation() -> None:
     assert result.pipeline_query_authorized is False
 
 
+def test_display_bar_object_cannot_provide_query_ready_provenance() -> None:
+    class DisplayBarState:
+        completed_five_minute_bars = completed_bar_state("ES").completed_five_minute_bars
+        completed_one_minute_bars = completed_bar_state("ES").completed_one_minute_bars
+        building_five_minute_bar = None
+        blocking_reasons: tuple[str, ...] = ()
+
+    result = evaluate_trigger_state_from_brief(
+        _brief("ES"),
+        _observable("ES"),
+        bar_state=DisplayBarState(),  # type: ignore[arg-type]
+    )
+
+    assert result.state == TriggerState.BLOCKED
+    assert "bar_state_provenance_not_verified" in result.blocking_reasons
+    assert result.pipeline_query_authorized is False
+
+
 def test_completed_five_minute_confirmation_requires_every_quality_gate() -> None:
     ready = evaluate_trigger_state_from_brief(
         _brief("ES"),

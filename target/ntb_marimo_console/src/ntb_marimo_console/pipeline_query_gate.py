@@ -14,6 +14,7 @@ from ntb_marimo_console.contract_universe import (
 )
 from ntb_marimo_console.live_observables.quality import normalize_provider_status
 from ntb_marimo_console.live_observables.schema_v2 import LiveObservableSnapshotV2
+from ntb_marimo_console.market_data.chart_bars import ContractBarReadiness
 from ntb_marimo_console.market_data.stream_events import redact_sensitive_text
 from ntb_marimo_console.trigger_state import TriggerState, TriggerStateResult
 
@@ -56,6 +57,7 @@ class PipelineQueryGateRequest:
     quote_fresh: bool | None = None
     bars_available: bool = True
     bars_fresh: bool | None = None
+    bar_readiness: ContractBarReadiness | object | None = None
     required_trigger_fields_present: bool | None = None
     unsupported_live_field_dependencies: tuple[str, ...] = ()
     support_matrix_final_supported: bool | None = None
@@ -274,6 +276,9 @@ def _check_bars(
     missing: list[str],
     disabled: list[str],
 ) -> None:
+    if request.bar_readiness is not None:
+        _check_bar_readiness(request.bar_readiness, passed, missing, disabled)
+        return
     if not request.bars_available:
         missing.append("bars_fresh_and_available")
         disabled.append("bars_missing")
@@ -281,6 +286,35 @@ def _check_bars(
     if request.bars_fresh is not True:
         missing.append("bars_fresh_and_available")
         disabled.append("bars_stale")
+        return
+    passed.append("bars_fresh_and_available")
+
+
+def _check_bar_readiness(
+    bar_readiness: ContractBarReadiness | object,
+    passed: list[str],
+    missing: list[str],
+    disabled: list[str],
+) -> None:
+    if not isinstance(bar_readiness, ContractBarReadiness):
+        missing.append("bars_fresh_and_available")
+        disabled.append("bar_readiness_provenance_not_verified")
+        return
+    reasons = tuple(_safe_reason(reason) for reason in bar_readiness.blocking_reasons)
+    if not bar_readiness.completed_one_minute_available or not bar_readiness.completed_five_minute_available:
+        missing.append("bars_fresh_and_available")
+        disabled.append("bars_missing")
+        disabled.extend(reasons)
+        return
+    if not bar_readiness.fresh or bar_readiness.state == "stale":
+        missing.append("bars_fresh_and_available")
+        disabled.append("bars_stale")
+        disabled.extend(reasons)
+        return
+    if bar_readiness.building or bar_readiness.state != "available":
+        missing.append("bars_fresh_and_available")
+        disabled.append("bars_partial_or_blocked")
+        disabled.extend(reasons)
         return
     passed.append("bars_fresh_and_available")
 

@@ -20,6 +20,7 @@ from .bar_quality import (
 )
 from .chart_bars import (
     BarIngestionResult,
+    BarSource,
     BuildingFiveMinuteBar,
     ContractBarState,
     FiveMinuteBar,
@@ -113,6 +114,9 @@ class ChartFuturesBarBuilder:
             building_five_minute_bar=building_five_minute,
             blocking_reasons=reasons,
             latest_start_time=_isoformat(latest) if latest is not None else None,
+            provider=_state_provider(completed_one_minute, building_five_minute),
+            source=_state_source(completed_one_minute, building_five_minute),
+            profile_id=_state_profile_id(completed_one_minute, building_five_minute),
         )
 
     def states(self) -> dict[str, ContractBarState]:
@@ -162,13 +166,17 @@ class ChartFuturesBarBuilder:
 class _NormalizedMessage:
     contract: str
     symbol: str
+    provider: str
+    source: BarSource
+    profile_id: str | None
     start_time: datetime
     end_time: datetime
+    observed_at: datetime
     open: float | int
     high: float | int
     low: float | int
     close: float | int
-    volume: float | int
+    volume: float | int | None
     completed: bool
 
 
@@ -205,12 +213,20 @@ def _normalize_message(
     service = _string_value(message, "service")
     if service is not None and service != "CHART_FUTURES":
         reasons.append(f"unsupported_service:{service}")
+    provider = _string_value(message, "provider") or "SCHWAB"
+    source = _source_value(message.get("source"))
+    profile_id = _optional_string_value(message, "profile_id")
     start_time = _datetime_value(message, "start_time")
     if start_time is None:
-        reasons.append("start_time_required")
+        reasons.append("timezone_aware_start_time_required")
     end_time = _datetime_value(message, "end_time")
     if start_time is not None and end_time is None:
         end_time = start_time + timedelta(minutes=1)
+    observed_at = _datetime_value(message, "observed_at") or _datetime_value(message, "received_at")
+    if observed_at is None and end_time is not None:
+        observed_at = end_time
+    if start_time is not None and end_time is not None and end_time != start_time + timedelta(minutes=1):
+        reasons.append("one_minute_interval_mismatch")
     completed = message.get("completed")
     if not isinstance(completed, bool):
         reasons.append("completed_flag_required")
@@ -221,10 +237,12 @@ def _normalize_message(
         "close": _number_value(message, "close"),
         "volume": _number_value(message, "volume"),
     }
-    missing = tuple(key for key, value in ohlcv.items() if value is None)
+    missing = tuple(key for key, value in ohlcv.items() if key != "volume" and value is None)
     if missing:
         reasons.append("missing_ohlcv_fields:" + ",".join(missing))
-    if not missing and ohlcv["volume"] is not None and float(ohlcv["volume"]) < 0:
+    if "volume" in message and ohlcv["volume"] is None:
+        reasons.append("invalid_volume")
+    if ohlcv["volume"] is not None and float(ohlcv["volume"]) < 0:
         reasons.append("invalid_volume")
     if not missing and not _ohlc_is_coherent(ohlcv["open"], ohlcv["high"], ohlcv["low"], ohlcv["close"]):
         reasons.append("malformed_ohlc")
@@ -238,12 +256,17 @@ def _normalize_message(
     assert symbol is not None
     assert start_time is not None
     assert end_time is not None
+    assert observed_at is not None
     assert isinstance(completed, bool)
     return _NormalizedMessage(
         contract=contract,
         symbol=symbol,
+        provider=provider.lower(),
+        source=source,
+        profile_id=profile_id,
         start_time=start_time,
         end_time=end_time,
+        observed_at=observed_at,
         open=ohlcv["open"],
         high=ohlcv["high"],
         low=ohlcv["low"],
@@ -257,8 +280,12 @@ def _one_minute_bar(message: _NormalizedMessage) -> OneMinuteBar:
     return OneMinuteBar(
         contract=message.contract,
         symbol=message.symbol,
+        provider=message.provider,
+        source=message.source,
+        profile_id=message.profile_id,
         start_time=_isoformat(message.start_time),
         end_time=_isoformat(message.end_time),
+        observed_at=_isoformat(message.observed_at),
         open=message.open,
         high=message.high,
         low=message.low,
@@ -319,13 +346,17 @@ def _completed_five_minute_bar(contract: str, bars: list[OneMinuteBar], bucket_s
     return FiveMinuteBar(
         contract=contract,
         symbol=bars[-1].symbol,
+        provider=bars[-1].provider,
+        source=bars[-1].source,
+        profile_id=bars[-1].profile_id,
         start_time=_isoformat(bucket_start),
         end_time=_isoformat(bucket_start + timedelta(minutes=5)),
+        observed_at=bars[-1].observed_at,
         open=bars[0].open,
         high=max(bar.high for bar in bars),
         low=min(bar.low for bar in bars),
         close=bars[-1].close,
-        volume=sum(bar.volume for bar in bars),
+        volume=_sum_volume(bars),
         quality=BarQuality(state="usable"),
     )
 
@@ -341,8 +372,11 @@ def _building_five_minute_bar(
         return BuildingFiveMinuteBar(
             contract=contract,
             symbol="",
+            provider="schwab",
+            source="chart_futures_fixture",
             start_time=_isoformat(bucket_start),
             end_time=_isoformat(bucket_start + timedelta(minutes=5)),
+            observed_at=None,
             open=None,
             high=None,
             low=None,
@@ -354,13 +388,17 @@ def _building_five_minute_bar(
     return BuildingFiveMinuteBar(
         contract=contract,
         symbol=sorted_bars[-1].symbol,
+        provider=sorted_bars[-1].provider,
+        source=sorted_bars[-1].source,
+        profile_id=sorted_bars[-1].profile_id,
         start_time=_isoformat(bucket_start),
         end_time=_isoformat(bucket_start + timedelta(minutes=5)),
+        observed_at=sorted_bars[-1].observed_at,
         open=sorted_bars[0].open,
         high=max(bar.high for bar in sorted_bars),
         low=min(bar.low for bar in sorted_bars),
         close=sorted_bars[-1].close,
-        volume=sum(bar.volume for bar in sorted_bars),
+        volume=_sum_volume(sorted_bars),
         contributing_bar_count=len(sorted_bars),
         missing_start_times=tuple(_isoformat(start) for start in missing_starts),
         quality=BarQuality(state="building", blocking_reasons=("building_five_minute_bar",)),
@@ -393,6 +431,19 @@ def _string_value(message: Mapping[str, object], key: str) -> str | None:
     return value.strip().upper()
 
 
+def _optional_string_value(message: Mapping[str, object], key: str) -> str | None:
+    value = message.get(key)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value.strip()
+
+
+def _source_value(value: object) -> BarSource:
+    if isinstance(value, str) and value.strip().lower() == "chart_futures":
+        return "chart_futures"
+    return "chart_futures_fixture"
+
+
 def _number_value(message: Mapping[str, object], key: str) -> float | int | None:
     value = message.get(key)
     if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -409,7 +460,7 @@ def _datetime_value(message: Mapping[str, object], key: str) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
+        return None
     return parsed.astimezone(timezone.utc)
 
 
@@ -438,6 +489,45 @@ def _ohlc_is_coherent(
 def _isoformat(value: datetime) -> str:
     current = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
     return current.astimezone(timezone.utc).isoformat()
+
+
+def _sum_volume(bars: tuple[OneMinuteBar, ...] | list[OneMinuteBar]) -> float | int | None:
+    if any(bar.volume is None for bar in bars):
+        return None
+    return sum(bar.volume for bar in bars if bar.volume is not None)
+
+
+def _state_provider(
+    completed_one_minute: tuple[OneMinuteBar, ...],
+    building_five_minute: BuildingFiveMinuteBar | None,
+) -> str:
+    if completed_one_minute:
+        return completed_one_minute[-1].provider
+    if building_five_minute is not None:
+        return building_five_minute.provider
+    return "schwab"
+
+
+def _state_source(
+    completed_one_minute: tuple[OneMinuteBar, ...],
+    building_five_minute: BuildingFiveMinuteBar | None,
+) -> BarSource:
+    if completed_one_minute:
+        return completed_one_minute[-1].source
+    if building_five_minute is not None:
+        return building_five_minute.source
+    return "chart_futures_fixture"
+
+
+def _state_profile_id(
+    completed_one_minute: tuple[OneMinuteBar, ...],
+    building_five_minute: BuildingFiveMinuteBar | None,
+) -> str | None:
+    if completed_one_minute:
+        return completed_one_minute[-1].profile_id
+    if building_five_minute is not None:
+        return building_five_minute.profile_id
+    return None
 
 
 def _dedupe(reasons: tuple[str, ...]) -> tuple[str, ...]:

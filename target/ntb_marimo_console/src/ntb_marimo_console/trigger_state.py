@@ -236,6 +236,17 @@ def evaluate_trigger_state(request: TriggerStateRequest) -> TriggerStateResult:
 
     snapshot_inputs = _snapshot_inputs(request.live_snapshot, contract)
     last_updated = request.last_updated or snapshot_inputs.last_updated or last_updated
+    bar_provenance_reasons = _bar_state_provenance_reasons(request.bar_state)
+    if bar_provenance_reasons:
+        return _result(
+            TriggerState.BLOCKED,
+            contract=contract,
+            setup_id=request.setup_id,
+            trigger_id=trigger_id,
+            required_fields=required_fields,
+            blocking_reasons=bar_provenance_reasons,
+            last_updated=last_updated,
+        )
     payload = _payload_with_completed_bar_facts(
         snapshot_inputs.payload,
         request.bar_state,
@@ -700,6 +711,8 @@ def _payload_with_completed_bar_facts(
     direction: TriggerDirection,
 ) -> dict[str, Any]:
     merged = copy.deepcopy(dict(payload))
+    if bar_state is not None and not isinstance(bar_state, ContractBarState):
+        return merged
     confirmation = _confirmation_facts(bar_state, level=level, direction=direction, required=True)
     if not confirmation.confirmed:
         return merged
@@ -729,6 +742,8 @@ def _quote_stale_reasons(request: TriggerStateRequest, snapshot_inputs: _Snapsho
 
 def _bar_stale_reasons(request: TriggerStateRequest) -> tuple[str, ...]:
     explicit_reasons = ("bar_data_stale",) if request.bar_fresh is False else ()
+    if request.bar_state is not None and not isinstance(request.bar_state, ContractBarState):
+        return _dedupe(explicit_reasons + ("bar_state_provenance_not_verified",))
     state_reasons = tuple(
         f"bar_state_stale:{reason}"
         for reason in getattr(request.bar_state, "blocking_reasons", ())
@@ -740,6 +755,8 @@ def _bar_stale_reasons(request: TriggerStateRequest) -> tuple[str, ...]:
 def _bar_blocking_reasons(bar_state: ContractBarState | None) -> tuple[str, ...]:
     if bar_state is None:
         return ()
+    if not isinstance(bar_state, ContractBarState):
+        return ("bar_state_provenance_not_verified",)
     return tuple(
         f"bar_state_blocked:{reason}"
         for reason in bar_state.blocking_reasons
@@ -800,6 +817,14 @@ def _confirmation_facts(
             latest_completed_five_minute_close=None,
             completed_five_minute_close_count_at_or_beyond_level=None,
             blocking_reasons=("bar_state_required_for_confirmation",),
+        )
+    if not isinstance(bar_state, ContractBarState):
+        return _ConfirmationFacts(
+            confirmed=False,
+            partial=False,
+            latest_completed_five_minute_close=None,
+            completed_five_minute_close_count_at_or_beyond_level=None,
+            blocking_reasons=("bar_state_provenance_not_verified",),
         )
     completed_five_minute = tuple(
         bar for bar in bar_state.completed_five_minute_bars if bool(getattr(bar, "completed", False))
@@ -867,6 +892,12 @@ def _completed_five_minute_bar_is_usable(bar: object) -> bool:
         return False
     quality = getattr(bar, "quality", None)
     return bool(getattr(quality, "usable", True))
+
+
+def _bar_state_provenance_reasons(bar_state: object | None) -> tuple[str, ...]:
+    if bar_state is None or isinstance(bar_state, ContractBarState):
+        return ()
+    return ("bar_state_provenance_not_verified",)
 
 
 def _has_required_completed_one_minute_support(

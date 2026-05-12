@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Protocol
 
 from ntb_marimo_console.contract_universe import final_target_contracts
+from ntb_marimo_console.market_data.chart_bars import ContractBarState
 from ntb_marimo_console.market_data.stream_cache import StreamCacheSnapshot
 
 from .quality import contract_tick_size, normalize_provider_status, provider_blocking_reason
@@ -76,6 +77,7 @@ class StreamCacheSnapshotLike(Protocol):
 @dataclass(frozen=True)
 class LiveObservableSnapshotBuilder:
     expected_symbols: Mapping[str, str] | None = None
+    bar_states: Mapping[str, ContractBarState] | None = None
     clock: object | None = None
 
     def build(self, cache_snapshot: StreamCacheSnapshotLike | None = None) -> LiveObservableSnapshotV2:
@@ -96,6 +98,7 @@ class LiveObservableSnapshotBuilder:
                 generated_at=generated_at,
                 provider_reason=provider_reason,
                 cache_blocking_reasons=cache_blocking_reasons,
+                bar_state=_bar_state(contract, self.bar_states),
             )
 
         all_blocking_reasons = _dedupe(
@@ -146,9 +149,14 @@ def build_live_observable_snapshot_v2(
     cache_snapshot: StreamCacheSnapshot | None = None,
     *,
     expected_symbols: Mapping[str, str] | None = None,
+    bar_states: Mapping[str, ContractBarState] | None = None,
     clock: object | None = None,
 ) -> LiveObservableSnapshotV2:
-    return LiveObservableSnapshotBuilder(expected_symbols=expected_symbols, clock=clock).build(cache_snapshot)
+    return LiveObservableSnapshotBuilder(
+        expected_symbols=expected_symbols,
+        bar_states=bar_states,
+        clock=clock,
+    ).build(cache_snapshot)
 
 
 def _contract_observable(
@@ -159,6 +167,7 @@ def _contract_observable(
     generated_at: str,
     provider_reason: str | None,
     cache_blocking_reasons: tuple[str, ...],
+    bar_state: ContractBarState | None,
 ) -> ContractObservableV2:
     if record is None:
         reasons = _dedupe(
@@ -208,6 +217,7 @@ def _contract_observable(
     derived = DerivedObservableV2(
         spread_ticks=_spread_ticks(quote.bid, quote.ask, tick_size),
         mid=_mid(quote.bid, quote.ask),
+        bar_5m_close=_latest_completed_bar_close(bar_state),
     )
     required_reasons = _required_field_reasons(contract, quote, session)
     symbol_match = bool(expected_symbol and symbol == expected_symbol)
@@ -238,8 +248,15 @@ def _contract_observable(
             blocking_reasons=reasons,
         ),
         label=_contract_label(contract),
-        sources=_sources_for_observable(quote, session, derived),
+        sources=_sources_for_observable(quote, session, derived, bar_state),
     )
+
+
+def _bar_state(contract: str, bar_states: Mapping[str, ContractBarState] | None) -> ContractBarState | None:
+    if not bar_states:
+        return None
+    candidate = bar_states.get(contract)
+    return candidate if isinstance(candidate, ContractBarState) else None
 
 
 def _records_by_contract(cache_snapshot: StreamCacheSnapshotLike | None) -> dict[str, object]:
@@ -386,6 +403,13 @@ def _spread_ticks(bid: float | int | None, ask: float | int | None, tick_size: f
     return round((float(ask) - float(bid)) / tick_size, 10)
 
 
+def _latest_completed_bar_close(bar_state: ContractBarState | None) -> float | int | None:
+    if bar_state is None or not bar_state.completed_five_minute_bars:
+        return None
+    latest = bar_state.completed_five_minute_bars[-1]
+    return latest.close if latest.completed else None
+
+
 def _age_seconds(value: str | None, *, generated_at: str) -> float | None:
     if value is None:
         return None
@@ -466,7 +490,9 @@ def _sources_for_observable(
     quote: QuoteObservableV2,
     session: SessionObservableV2,
     derived: DerivedObservableV2,
+    bar_state: ContractBarState | None,
 ) -> dict[str, object]:
+    bar_source = "chart_futures_bar_contract" if bar_state is not None else "unavailable_until_chart_futures"
     return {
         "quote": {
             field_name: _observed_source(getattr(quote, field_name))
@@ -480,7 +506,7 @@ def _sources_for_observable(
             "mid": _derived_source(derived.mid),
             "spread_ticks": _derived_source(derived.spread_ticks),
             "distance_to_primary_trigger_ticks": "unavailable_until_trigger_context",
-            "bar_5m_close": "unavailable_until_chart_futures",
+            "bar_5m_close": _bar_derived_source(derived.bar_5m_close, bar_source),
             "bar_5m_close_count_at_or_beyond_level": "unavailable_until_chart_futures",
             "range_expansion_state": "unavailable_until_chart_futures",
             "volume_velocity_state": "unavailable_until_chart_futures",
@@ -522,3 +548,7 @@ def _observed_source(value: object) -> str:
 
 def _derived_source(value: object) -> str:
     return "derived_from_level_one_quote" if value is not None else "unavailable"
+
+
+def _bar_derived_source(value: object, bar_source: str) -> str:
+    return bar_source if value is not None else "unavailable_until_chart_futures"

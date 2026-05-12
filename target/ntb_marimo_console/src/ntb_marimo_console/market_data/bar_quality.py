@@ -125,6 +125,12 @@ def volume_velocity_state_from_completed_bars(bars: tuple[object, ...]) -> BarFa
             value=None,
             blocking_reasons=("insufficient_completed_bars_for_volume_velocity",),
         )
+    if any(getattr(bar, "volume", None) is None for bar in completed_bars):
+        return BarFactResult(
+            status="unavailable",
+            value=None,
+            blocking_reasons=("volume_unavailable_for_volume_velocity",),
+        )
     previous_volumes = [float(bar.volume) for bar in completed_bars[:-1]]
     latest_volume = float(completed_bars[-1].volume)
     average_previous = sum(previous_volumes) / len(previous_volumes)
