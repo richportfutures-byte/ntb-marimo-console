@@ -47,6 +47,7 @@ from ntb_marimo_console.schwab_streamer_session import (
     build_operator_schwab_streamer_session_factory,
     default_schwab_websocket_factory,
 )
+from ntb_marimo_console.schwab_token_lifecycle import TokenRefreshResult
 from ntb_marimo_console.session_lifecycle import (
     load_session_lifecycle_from_env,
     refresh_runtime_snapshot,
@@ -134,6 +135,30 @@ class CountingTokenProvider:
         if self.exception is not None:
             raise self.exception
         return self.token
+
+
+@dataclass
+class RefreshingTokenProvider:
+    token: str = PLACEHOLDER_TOKEN
+    refresh_result: TokenRefreshResult = field(default_factory=lambda: TokenRefreshResult(succeeded=True))
+    load_count: int = 0
+    refresh_count: int = 0
+
+    def load_access_token(self) -> str:
+        self.load_count += 1
+        return self.token
+
+    def refresh_if_needed(self) -> TokenRefreshResult:
+        self.refresh_count += 1
+        return self.refresh_result
+
+    def token_status(self) -> dict[str, object]:
+        return {
+            "valid": self.refresh_result.succeeded,
+            "expires_in_seconds": 1200,
+            "last_refresh_at": None,
+            "refresh_count": self.refresh_count,
+        }
 
 
 @dataclass
@@ -827,6 +852,67 @@ class OperatorSchwabStreamerSessionDispatchTests(unittest.TestCase):
         second = session.dispatch_one(handler=handler)
         self.assertFalse(second)
         self.assertEqual(captured, [])
+
+    def test_dispatch_one_refreshes_token_without_new_connection_login_or_subscribe(self) -> None:
+        token_provider = RefreshingTokenProvider()
+        session, _, _, wf = _build_session(token_provider=token_provider)
+        wf.connection.recv_queue.append(_admin_login_ack(code=0))
+        self.assertTrue(session.login(_live_config()).succeeded)
+        wf.connection.recv_queue.append(_subs_ack(code=0))
+        request = StreamSubscriptionRequest(
+            provider="schwab",
+            services=("LEVELONE_FUTURES",),
+            symbols=("/ESM26",),
+            fields=(0, 1, 2, 3),
+            contracts=("ES",),
+        )
+        self.assertTrue(session.subscribe(request).succeeded)
+        sent_count_before_dispatch = len(wf.connection.sent)
+        connect_count_before_dispatch = wf.call_count
+
+        captured: list[dict[str, object]] = []
+        wf.connection.recv_queue.append(_data_frame(symbol="/ESM26", bid=4321.5))
+
+        self.assertTrue(session.dispatch_one(handler=lambda message: captured.append(dict(message))))
+
+        self.assertEqual(token_provider.load_count, 1)
+        self.assertEqual(token_provider.refresh_count, 1)
+        self.assertEqual(wf.call_count, connect_count_before_dispatch)
+        self.assertEqual(len(wf.connection.sent), sent_count_before_dispatch)
+        self.assertEqual(len(captured), 1)
+        self.assertIsNone(session.token_refresh_blocking_reason())
+        self.assertEqual(session.token_status()["refresh_count"], 1)
+
+    def test_dispatch_one_token_refresh_failure_returns_false_without_exception(self) -> None:
+        token_provider = RefreshingTokenProvider(
+            refresh_result=TokenRefreshResult(
+                succeeded=False,
+                reason="token_refresh_failed:SchwabTokenError",
+            )
+        )
+        session, _, _, wf = _build_session(token_provider=token_provider)
+        wf.connection.recv_queue.append(_admin_login_ack(code=0))
+        self.assertTrue(session.login(_live_config()).succeeded)
+        wf.connection.recv_queue.append(_subs_ack(code=0))
+        request = StreamSubscriptionRequest(
+            provider="schwab",
+            services=("LEVELONE_FUTURES",),
+            symbols=("/ESM26",),
+            fields=(0, 1, 2, 3),
+            contracts=("ES",),
+        )
+        self.assertTrue(session.subscribe(request).succeeded)
+
+        captured: list[dict[str, object]] = []
+        wf.connection.recv_queue.append(_data_frame(symbol="/ESM26", bid=4321.5))
+
+        self.assertFalse(session.dispatch_one(handler=lambda message: captured.append(dict(message))))
+
+        self.assertEqual(token_provider.load_count, 1)
+        self.assertEqual(token_provider.refresh_count, 1)
+        self.assertEqual(captured, [])
+        self.assertEqual(session.token_refresh_blocking_reason(), "token_refresh_failed:SchwabTokenError")
+        self.assertFalse(session.token_status()["valid"])
 
 
 class OperatorSchwabStreamerSessionLauncherIntegrationTests(unittest.TestCase):

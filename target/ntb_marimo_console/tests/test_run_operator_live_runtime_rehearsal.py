@@ -146,6 +146,7 @@ class FakeStartingManager:
     shutdown_count: int = 0
     _snapshot: StreamManagerSnapshot | None = None
     _ingested: int = 0
+    connection_lost_reasons: list[str] = field(default_factory=list)
 
     def start(self) -> StreamManagerSnapshot:
         self.start_count += 1
@@ -206,6 +207,12 @@ class FakeStartingManager:
         if not replaced:
             existing.append(record)
         self._snapshot = self._active_snapshot(record_count=len(existing), records=tuple(existing))
+        return self._snapshot
+
+    def mark_connection_lost(self, reason: object = "connection_lost") -> StreamManagerSnapshot:
+        text = str(reason)
+        self.connection_lost_reasons.append(text)
+        self._snapshot = self._blocked(text)
         return self._snapshot
 
     def _active_snapshot(self, *, record_count: int, records: tuple[StreamCacheRecord, ...] = ()) -> StreamManagerSnapshot:
@@ -554,6 +561,32 @@ class RehearsalCliBlockingTests(unittest.TestCase):
 
         self.assertTrue(received)
         self.assertEqual(distinct_count, 1)
+
+    def test_receive_pump_surfaces_token_refresh_failure_as_blocking_reason(self) -> None:
+        config = rehearsal._build_stream_config(symbol_overrides={})
+        manager = FakeStartingManager(config=config, client=None)
+        manager._snapshot = manager._active_snapshot(record_count=0)
+
+        class TokenRefreshFailureSession:
+            def dispatch_one(self, handler):
+                return False
+
+            def token_refresh_blocking_reason(self) -> str:
+                return "token_refresh_failed:SchwabTokenError"
+
+        received, distinct_count = rehearsal._pump_receive_loop(
+            session=TokenRefreshFailureSession(),
+            manager=manager,
+            duration_seconds=1.0,
+            clock=_make_clock(),
+        )
+
+        self.assertFalse(received)
+        self.assertEqual(distinct_count, 0)
+        self.assertEqual(manager.connection_lost_reasons, ["token_refresh_failed:SchwabTokenError"])
+        assert manager._snapshot is not None
+        self.assertEqual(manager._snapshot.state, "blocked")
+        self.assertIn("token_refresh_failed:SchwabTokenError", manager._snapshot.blocking_reasons)
 
     def test_no_live_flag_blocks_before_env_or_token_access(self) -> None:
         sentinel_open = unittest.mock.MagicMock(side_effect=AssertionError("open_must_not_be_called"))

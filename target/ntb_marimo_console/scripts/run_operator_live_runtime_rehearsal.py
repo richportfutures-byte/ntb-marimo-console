@@ -69,6 +69,12 @@ from ntb_marimo_console.schwab_streamer_session import (
     build_operator_schwab_streamer_session_factory,
     default_schwab_websocket_factory,
 )
+from ntb_marimo_console.schwab_token_lifecycle import (
+    DEFAULT_TOKEN_URL,
+    RefreshableAccessTokenProvider,
+    TokenContractReport,
+    validate_token_contract,
+)
 
 
 _THIS_DIR = Path(__file__).resolve().parent
@@ -85,10 +91,9 @@ def _load_sibling_module(name: str):
     return module
 
 
-# Sibling scripts. Loading these is import-time inert (only stdlib imports
-# at their module tops). Their network/file work happens only when their
-# functions are called.
-schwab_token_utils = _load_sibling_module("schwab_token_utils")
+# Sibling scripts. Loading this is import-time inert (only stdlib imports
+# at module top). Its network/file work happens only when its functions are
+# called.
 levelone_probe = _load_sibling_module("probe_schwab_levelone_futures")
 
 
@@ -101,7 +106,6 @@ DEFAULT_DURATION_SECONDS = 10
 MIN_DURATION_SECONDS = 1
 MAX_DURATION_SECONDS = 30
 MAX_IDLE_DISPATCH_SLEEP_SECONDS = 0.05
-DEFAULT_TOKEN_URL = getattr(schwab_token_utils, "DEFAULT_TOKEN_URL", "")
 DEFAULT_FRONT_MONTH_SYMBOLS: dict[str, str] = {
     "ES": "/ESM26",
     "NQ": "/NQM26",
@@ -667,47 +671,6 @@ def _rejected_contracts(candidate_contracts: Sequence[str]) -> tuple[DryRunRejec
 
 
 @dataclass
-class _RefreshingAccessTokenProvider:
-    """Access-token provider that refreshes via existing token utilities.
-
-    Lazy: nothing is read until ``load_access_token()`` is invoked. Wraps
-    ``schwab_token_utils.load_token_with_refresh_if_needed`` so the access
-    token returned to the streamer session is always fresh.
-    """
-
-    token_path: Path
-    target_root: Path
-    app_key: str
-    app_secret: str
-    token_url: str
-    refresh_func: Callable[..., dict[str, Any]] | None = None
-    _cached: str | None = None
-
-    def load_access_token(self) -> str:
-        if self._cached is not None:
-            return self._cached
-        loader = self.refresh_func or schwab_token_utils.load_token_with_refresh_if_needed
-        try:
-            token_data = loader(
-                self.token_path,
-                target_root=self.target_root,
-                app_key=self.app_key,
-                app_secret=self.app_secret,
-                token_url=self.token_url,
-            )
-        except Exception as exc:
-            raise OperatorSchwabStreamerSessionError(f"token_load_failed:{type(exc).__name__}") from exc
-        try:
-            access = schwab_token_utils.access_token_from(token_data)
-        except Exception as exc:
-            raise OperatorSchwabStreamerSessionError(f"access_token_extract_failed:{type(exc).__name__}") from exc
-        if not isinstance(access, str) or not access.strip():
-            raise OperatorSchwabStreamerSessionError("access_token_invalid")
-        self._cached = access.strip()
-        return self._cached
-
-
-@dataclass
 class _CachedStreamerCredentialsProvider:
     """Fetches user-preference once via the existing probe helper, then caches."""
 
@@ -840,7 +803,7 @@ def _validate_token_path_under_target_state(env: Mapping[str, str], target_root:
 
 def _apply_token_contract_report(
     report: RehearsalReport,
-    token_contract: schwab_token_utils.TokenContractReport,
+    token_contract: TokenContractReport,
 ) -> None:
     report.token_file_present = token_contract.token_file_present
     report.token_file_parseable = token_contract.token_file_parseable
@@ -888,6 +851,12 @@ def _pump_receive_loop(
     deadline = clock() + max(0.0, duration_seconds)
     while clock() < deadline:
         if not session.dispatch_one(handler=_handler):
+            token_refresh_reason = _token_refresh_blocking_reason(session)
+            if token_refresh_reason:
+                marker = getattr(manager, "mark_connection_lost", None)
+                if callable(marker):
+                    marker(token_refresh_reason)
+                break
             remaining = deadline - clock()
             if remaining <= 0:
                 break
@@ -897,6 +866,19 @@ def _pump_receive_loop(
             time.sleep(min(MAX_IDLE_DISPATCH_SLEEP_SECONDS, max(0.0, remaining)))
             continue
     return received_at_least_one, len(contracts_seen)
+
+
+def _token_refresh_blocking_reason(session: object) -> str | None:
+    reason_func = getattr(session, "token_refresh_blocking_reason", None)
+    if not callable(reason_func):
+        return None
+    try:
+        reason = reason_func()
+    except Exception:
+        return "token_refresh_status_unavailable"
+    if not isinstance(reason, str) or not reason.strip():
+        return None
+    return _sanitize_text(reason.strip())
 
 
 # ---------------------------------------------------------------------------
@@ -972,7 +954,7 @@ def run_with_dependencies(
         return report
     report.checks.append(RehearsalCheck("token_path_under_target_state", "ok"))
 
-    token_contract = schwab_token_utils.validate_token_contract(token_path, target_root=target_root)
+    token_contract = validate_token_contract(token_path, target_root=target_root)
     _apply_token_contract_report(report, token_contract)
     if not report.token_file_present:
         report.mode = "blocked"
@@ -1005,7 +987,7 @@ def run_with_dependencies(
     app_secret = env.get("SCHWAB_APP_SECRET", "").strip()
     token_url = env.get("SCHWAB_TOKEN_URL", "").strip() or DEFAULT_TOKEN_URL
 
-    token_provider = deps.token_provider or _RefreshingAccessTokenProvider(
+    token_provider = deps.token_provider or RefreshableAccessTokenProvider(
         token_path=token_path,
         target_root=target_root,
         app_key=app_key,

@@ -73,6 +73,7 @@ from .market_data.stream_manager import (
     StreamClientResult,
     StreamSubscriptionRequest,
 )
+from .market_data.stream_events import redact_sensitive_text
 
 
 DEFAULT_LEVELONE_FUTURES_FIELD_IDS: tuple[int, ...] = (0, 1, 2, 3, 4, 5)
@@ -448,6 +449,7 @@ class OperatorSchwabStreamerSession:
         self._subscribe_succeeded = False
         self._closed = False
         self._pending_data_frames: deque[tuple[Mapping[str, object], ...]] = deque()
+        self._last_token_refresh_error: str | None = None
 
     # -- login ---------------------------------------------------------------
 
@@ -670,6 +672,9 @@ class OperatorSchwabStreamerSession:
         if connection is None:
             return False
 
+        if not self._refresh_access_token_if_supported():
+            return False
+
         if self._pending_data_frames:
             entries = self._pending_data_frames.popleft()
             for entry in entries:
@@ -700,6 +705,42 @@ class OperatorSchwabStreamerSession:
                 continue
         return True
 
+    def token_status(self) -> dict[str, object]:
+        status_func = getattr(self._access_token_provider, "token_status", None)
+        if callable(status_func):
+            try:
+                status = status_func()
+            except Exception:
+                return _empty_token_status()
+            if isinstance(status, Mapping):
+                return {
+                    "valid": bool(status.get("valid", False)),
+                    "expires_in_seconds": _optional_int(status.get("expires_in_seconds")),
+                    "last_refresh_at": _optional_string(status.get("last_refresh_at")),
+                    "refresh_count": int(status.get("refresh_count", 0) or 0),
+                }
+        return _empty_token_status()
+
+    def token_refresh_blocking_reason(self) -> str | None:
+        return self._last_token_refresh_error
+
+    def _refresh_access_token_if_supported(self) -> bool:
+        refresh_func = getattr(self._access_token_provider, "refresh_if_needed", None)
+        if not callable(refresh_func):
+            self._last_token_refresh_error = None
+            return True
+        try:
+            result = refresh_func()
+        except Exception as exc:
+            self._last_token_refresh_error = f"token_refresh_exception:{type(exc).__name__}"
+            return False
+        if bool(getattr(result, "succeeded", False)):
+            self._last_token_refresh_error = None
+            return True
+        reason = getattr(result, "reason", None) or "token_refresh_failed"
+        self._last_token_refresh_error = redact_sensitive_text(reason)
+        return False
+
 
 def _credentials_look_valid(credentials: StreamerCredentials) -> bool:
     fields = (
@@ -711,6 +752,31 @@ def _credentials_look_valid(credentials: StreamerCredentials) -> bool:
         credentials.schwab_client_function_id,
     )
     return all(isinstance(value, str) and value.strip() for value in fields)
+
+
+def _empty_token_status() -> dict[str, object]:
+    return {
+        "valid": False,
+        "expires_in_seconds": None,
+        "last_refresh_at": None,
+        "refresh_count": 0,
+    }
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_string(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 # ---------------------------------------------------------------------------
