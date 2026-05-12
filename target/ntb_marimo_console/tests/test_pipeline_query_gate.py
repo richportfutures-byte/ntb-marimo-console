@@ -332,6 +332,35 @@ def test_trigger_state_from_real_producer_flag_propagates_into_gate_result_and_t
     assert "trigger_state_not_query_ready:UNAVAILABLE" in synthetic.blocking_reasons
 
 
+@pytest.mark.parametrize("synthetic_state", (TriggerState.QUERY_READY, "QUERY_READY"))
+def test_synthetic_query_ready_state_does_not_enable_gate(synthetic_state: object) -> None:
+    gate = evaluate_pipeline_query_gate(
+        ready_request(
+            "ES",
+            trigger_state=synthetic_state,
+            trigger_state_from_real_producer=False,
+        )
+    )
+
+    assert gate.enabled is False
+    assert gate.pipeline_query_authorized is False
+    assert gate.trigger_state == "QUERY_READY"
+    assert gate.trigger_state_from_real_producer is False
+    assert "trigger_state_not_from_real_producer" in gate.blocking_reasons
+    assert "trigger_state_query_ready" in gate.missing_conditions
+
+
+def test_query_ready_result_still_requires_real_producer_provenance_flag() -> None:
+    gate = evaluate_pipeline_query_gate(
+        ready_request("ES", trigger_state_from_real_producer=False)
+    )
+
+    assert gate.enabled is False
+    assert gate.pipeline_query_authorized is False
+    assert gate.trigger_state == "QUERY_READY"
+    assert "trigger_state_not_from_real_producer" in gate.blocking_reasons
+
+
 def test_no_fixture_fallback_after_live_failure_semantics_are_not_weakened() -> None:
     live_failure = evaluate_pipeline_query_gate(
         ready_request(
@@ -375,6 +404,7 @@ def ready_request(contract: str, **overrides: object) -> PipelineQueryGateReques
         "session_valid": True,
         "event_lockout_active": False,
         "fixture_mode_accepted": False,
+        "trigger_state_from_real_producer": True,
         "evaluated_at": "2026-05-06T14:00:00+00:00",
     }
     values.update(overrides)

@@ -143,6 +143,7 @@ def evaluate_pipeline_query_gate(request: PipelineQueryGateRequest) -> PipelineQ
     _check_bars(request, passed, missing, disabled)
     _check_trigger_fields(request, trigger_missing, passed, missing, disabled)
     _check_trigger_state(trigger_state, trigger_blocking, passed, missing, disabled)
+    _check_trigger_state_provenance(request, trigger_state, missing, disabled)
     _check_session(request, passed, missing, disabled)
     _check_provider(provider_status, request.fixture_mode_accepted, passed, missing, disabled)
     _check_stream(stream_status, request.fixture_mode_accepted, passed, missing, disabled)
@@ -321,6 +322,20 @@ def _check_trigger_state(
         disabled.extend(trigger_blocking)
         return
     passed.append("trigger_state_query_ready")
+
+
+def _check_trigger_state_provenance(
+    request: PipelineQueryGateRequest,
+    trigger_state: str,
+    missing: list[str],
+    disabled: list[str],
+) -> None:
+    if trigger_state != TriggerState.QUERY_READY.value:
+        return
+    if isinstance(request.trigger_state, TriggerStateResult) and request.trigger_state_from_real_producer:
+        return
+    missing.append("trigger_state_query_ready")
+    disabled.append("trigger_state_not_from_real_producer")
 
 
 def _check_session(
