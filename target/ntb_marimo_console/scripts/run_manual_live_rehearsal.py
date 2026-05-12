@@ -48,6 +48,13 @@ FINAL_TARGET_SYMBOLS: dict[str, str] = {
 REHEARSAL_SERVICES = ("LEVELONE_FUTURES", "CHART_FUTURES")
 REHEARSAL_FIELDS = (0, 1, 2, 3, 4, 5)
 UNSUPPORTED_CONTRACT_CHECKS = ("ZN", "GC")
+FIXTURE_DEPENDENCIES: dict[str, tuple[str, ...]] = {
+    "ES": ("cumulative_delta", "breadth"),
+    "NQ": ("relative_strength_vs_es",),
+    "CL": ("eia_lockout", "cumulative_delta", "current_volume_vs_average"),
+    "6E": ("dxy", "session_sequence"),
+    "MGC": ("dxy", "cash_10y_yield", "fear_catalyst_state"),
+}
 FixtureScenario = Literal["ready", "missing", "stale", "mismatch", "live_failure"]
 
 
@@ -165,7 +172,16 @@ def run_fixture_rehearsal(scenario: FixtureScenario = "ready") -> RehearsalRepor
     manager.record_heartbeat()
     _ingest_levelone_fixture_messages(manager, scenario=scenario)
     bar_states = _ingest_chart_fixture_messages(scenario=scenario)
-    refresh_snapshots = tuple(build_live_observable_snapshot_v2(manager.read_cache_snapshot(), expected_symbols=FINAL_TARGET_SYMBOLS) for _ in range(3))
+    dependency_states = _fixture_dependency_states()
+    refresh_snapshots = tuple(
+        build_live_observable_snapshot_v2(
+            manager.read_cache_snapshot(),
+            expected_symbols=FINAL_TARGET_SYMBOLS,
+            bar_states=bar_states,
+            dependency_states=dependency_states,
+        )
+        for _ in range(3)
+    )
     cache_snapshot = manager.read_cache_snapshot()
     live_snapshot = refresh_snapshots[-1]
     gate = _fail_closed_query_gate(live_snapshot.to_dict(), bar_states["ES"].usable)
@@ -392,6 +408,22 @@ def _ingest_chart_fixture_messages(*, scenario: FixtureScenario) -> dict[str, ob
                 }
             )
     return builder.states()
+
+
+def _fixture_dependency_states() -> dict[str, dict[str, dict[str, object]]]:
+    return {
+        contract: {
+            dependency: {
+                "status": "available",
+                "source": "fixture_manual_rehearsal",
+                "source_status": "available",
+                "fresh": True,
+                "value": "fixture_available",
+            }
+            for dependency in dependencies
+        }
+        for contract, dependencies in FIXTURE_DEPENDENCIES.items()
+    }
 
 
 def _fail_closed_query_gate(live_snapshot: dict[str, object], bars_usable: bool) -> object:
