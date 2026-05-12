@@ -14,6 +14,9 @@ AUDIT_DOC_PATH = (
 LIVE_PROOF_ARTIFACT_DIRECTORY = (
     Path(__file__).resolve().parents[1] / "docs" / "live_proof"
 )
+LIVE_REHEARSAL_RESULT_PATH = (
+    LIVE_PROOF_ARTIFACT_DIRECTORY / "five_contract_live_rehearsal_result_2026-05-12.md"
+)
 
 FORBIDDEN_SENSITIVE_FRAGMENTS = (
     "Authorization: Bearer",
@@ -115,6 +118,10 @@ def test_audit_distinguishes_fixture_evidence_from_real_live_proof(audit_text: s
 def test_audit_does_not_claim_real_five_contract_proof_unless_artifact_exists(audit_text: str) -> None:
     artifact_present = real_five_contract_live_proof_artifact_exists()
     if artifact_present:
+        assert "market_data_received=no" in audit_text
+        assert "received_contracts_count=0" in audit_text
+        assert "Real five-contract live market-data proof" in audit_text
+        assert "still classified as pending" in audit_text
         return
     assert "Real five-contract Schwab live proof is pending operator-run validation" in audit_text
     assert "real-live proof gap" in audit_text
@@ -161,3 +168,25 @@ def test_audit_does_not_include_forbidden_sensitive_labels(audit_text: str) -> N
     lowered = audit_text.lower()
     for label in forbidden_labels:
         assert label not in lowered, f"audit must not surface forbidden sensitive label {label!r}"
+
+
+def test_live_rehearsal_result_records_partial_fail_closed_outcome() -> None:
+    assert LIVE_REHEARSAL_RESULT_PATH.exists(), "D3 sanitized live rehearsal result must be recorded"
+    text = LIVE_REHEARSAL_RESULT_PATH.read_text(encoding="utf-8")
+
+    assert "**PARTIAL / FAIL-CLOSED**" in text
+    assert "| live_login_succeeded | yes |" in text
+    assert "| live_subscribe_succeeded | yes |" in text
+    assert "| subscribed_contracts_count | 5 |" in text
+    assert "| market_data_received | no |" in text
+    assert "| received_contracts_count | 0 |" in text
+    assert "does not prove production live readiness" in text
+    assert "must remain fail-closed" in text
+    assert "market-data delivery proof" in text
+
+
+def test_live_rehearsal_result_has_no_sensitive_values() -> None:
+    text = LIVE_REHEARSAL_RESULT_PATH.read_text(encoding="utf-8")
+
+    for fragment in FORBIDDEN_SENSITIVE_FRAGMENTS:
+        assert fragment not in text, f"live rehearsal result must not include sensitive fragment {fragment!r}"

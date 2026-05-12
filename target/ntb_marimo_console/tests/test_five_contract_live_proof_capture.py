@@ -208,9 +208,11 @@ def test_release_audit_remains_conditionally_ready_without_live_artifact() -> No
     audit_text = AUDIT_DOC_PATH.read_text(encoding="utf-8")
 
     assert "**Verdict: CONDITIONALLY READY**" in audit_text
-    assert "Real five-contract Schwab live proof is pending operator-run validation" in audit_text
+    assert "market_data_received=no" in audit_text
+    assert "received_contracts_count=0" in audit_text
+    assert "market-data delivery proof" in audit_text
     assert "scripts/capture_five_contract_live_proof.py" in audit_text
-    assert "R19 does not claim that real live proof has passed" in audit_text
+    assert "R19 does not claim that real live market-data proof has passed" in audit_text
     assert "**Verdict: READY**" not in audit_text
 
 

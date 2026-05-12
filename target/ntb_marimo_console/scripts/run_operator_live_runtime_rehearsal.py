@@ -222,6 +222,26 @@ class RehearsalDryRunReport:
         }
 
 
+@dataclass(frozen=True)
+class RehearsalReadinessAssessment:
+    classification: str
+    login_subscription_plumbing_proven: bool
+    market_data_delivery_proven: bool
+    production_live_ready: bool
+    query_ready_allowed: bool
+    blocking_reasons: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "classification": self.classification,
+            "login_subscription_plumbing_proven": _yes_no(self.login_subscription_plumbing_proven),
+            "market_data_delivery_proven": _yes_no(self.market_data_delivery_proven),
+            "production_live_ready": _yes_no(self.production_live_ready),
+            "query_ready_allowed": _yes_no(self.query_ready_allowed),
+            "blocking_reasons": list(self.blocking_reasons),
+        }
+
+
 @dataclass
 class RehearsalReport:
     mode: str = "blocked"  # "live" | "blocked" | "error"
@@ -282,6 +302,50 @@ class RehearsalReport:
                 for check in self.checks
             ],
         }
+
+
+def assess_rehearsal_readiness(report: RehearsalReport) -> RehearsalReadinessAssessment:
+    plumbing_proven = (
+        report.mode == "live"
+        and report.status == "ok"
+        and report.live_flag
+        and report.operator_live_runtime_env
+        and report.streamer_credentials_obtained
+        and report.runtime_start_attempted
+        and report.live_login_succeeded
+        and report.live_subscribe_succeeded
+        and report.subscribed_contracts_count == len(final_target_contracts())
+        and report.cleanup_status == "ok"
+        and not report.repeated_login_on_refresh
+    )
+    market_data_proven = (
+        plumbing_proven
+        and report.market_data_received
+        and report.received_contracts_count == len(final_target_contracts())
+    )
+    if market_data_proven:
+        classification = "live_market_data_delivery_proven"
+        blocking_reasons: tuple[str, ...] = ("rehearsal_result_is_review_only_not_query_authority",)
+    elif plumbing_proven:
+        classification = "partial_live_login_and_subscription_only"
+        blocking_reasons = (
+            "market_data_delivery_not_proven",
+            "rehearsal_result_is_review_only_not_query_authority",
+        )
+    else:
+        classification = "blocked_live_rehearsal"
+        blocking_reasons = (
+            "live_login_subscription_not_proven",
+            "rehearsal_result_is_review_only_not_query_authority",
+        )
+    return RehearsalReadinessAssessment(
+        classification=classification,
+        login_subscription_plumbing_proven=plumbing_proven,
+        market_data_delivery_proven=market_data_proven,
+        production_live_ready=False,
+        query_ready_allowed=False,
+        blocking_reasons=blocking_reasons,
+    )
 
 
 def _yes_no(value: bool) -> str:

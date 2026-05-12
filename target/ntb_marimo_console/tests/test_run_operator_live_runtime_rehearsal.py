@@ -481,6 +481,42 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("mode=dry_run", stdout.getvalue())
 
+    def test_live_rehearsal_without_market_data_is_partial_and_never_query_ready(self) -> None:
+        report = rehearsal.RehearsalReport(
+            mode="live",
+            status="ok",
+            repo_check=True,
+            live_flag=True,
+            operator_live_runtime_env=True,
+            env_keys_present=True,
+            token_path_under_target_state=True,
+            token_file_present=True,
+            token_file_parseable=True,
+            token_contract_valid=True,
+            access_token_present=True,
+            refresh_token_present=True,
+            token_fresh="unknown",
+            streamer_credentials_obtained=True,
+            runtime_start_attempted=True,
+            live_login_succeeded=True,
+            live_subscribe_succeeded=True,
+            subscribed_contracts_count=5,
+            market_data_received=False,
+            received_contracts_count=0,
+            repeated_login_on_refresh=False,
+            cleanup_status="ok",
+            duration_seconds=15.0,
+        )
+
+        assessment = rehearsal.assess_rehearsal_readiness(report).to_dict()
+
+        self.assertEqual(assessment["classification"], "partial_live_login_and_subscription_only")
+        self.assertEqual(assessment["login_subscription_plumbing_proven"], "yes")
+        self.assertEqual(assessment["market_data_delivery_proven"], "no")
+        self.assertEqual(assessment["production_live_ready"], "no")
+        self.assertEqual(assessment["query_ready_allowed"], "no")
+        self.assertIn("market_data_delivery_not_proven", assessment["blocking_reasons"])
+
     def test_no_live_flag_blocks_before_env_or_token_access(self) -> None:
         sentinel_open = unittest.mock.MagicMock(side_effect=AssertionError("open_must_not_be_called"))
         with patch("builtins.open", new=sentinel_open):
