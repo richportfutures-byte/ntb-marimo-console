@@ -280,6 +280,9 @@ def _result_from_snapshot(snapshot: RuntimeReadinessSnapshot) -> OperatorRuntime
     status: OperatorRuntimeStatus = OPERATOR_LIVE_RUNTIME
     if provider_status == "disabled" or manager_state == "disabled":
         status = LIVE_RUNTIME_DISABLED
+    elif manager_state == "reconnecting":
+        status = LIVE_RUNTIME_UNAVAILABLE
+        reasons = _dedupe(reasons + ("operator_live_runtime_reconnecting",))
     elif provider_status == "stale" or cache.stale_symbols or manager_state == "stale":
         status = LIVE_RUNTIME_STALE
     elif provider_status in {"blocked", "error", "shutdown"} or manager_state in {"blocked", "error", "shutdown"}:

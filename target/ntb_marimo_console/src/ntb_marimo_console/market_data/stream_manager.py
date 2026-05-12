@@ -121,6 +121,9 @@ class StreamManagerSnapshot:
     last_subscription_result: StreamClientResult | None = None
     last_heartbeat_at: str | None = None
     heartbeat_age_seconds: float | None = None
+    reconnect_attempts: int = 0
+    last_reconnect_at: str | None = None
+    current_backoff_delay: float | None = None
 
     @property
     def operator_state(self) -> StreamLifecycleState:
@@ -158,6 +161,9 @@ class StreamManagerSnapshot:
             ),
             "last_heartbeat_at": self.last_heartbeat_at,
             "heartbeat_age_seconds": self.heartbeat_age_seconds,
+            "reconnect_attempts": self.reconnect_attempts,
+            "last_reconnect_at": self.last_reconnect_at,
+            "current_backoff_delay": self.current_backoff_delay,
             "ready": self.ready,
         }
 
@@ -187,6 +193,9 @@ class SchwabStreamManager:
         self._last_heartbeat_at: datetime | None = None
         self._last_subscription_request: StreamSubscriptionRequest | None = None
         self._last_subscription_result: StreamClientResult | None = None
+        self._reconnect_attempts = 0
+        self._last_reconnect_at: datetime | None = None
+        self._current_backoff_delay: float | None = None
 
     @property
     def state(self) -> StreamLifecycleState:
@@ -365,6 +374,54 @@ class SchwabStreamManager:
         )
         return self.snapshot()
 
+    def begin_reconnect_attempt(
+        self,
+        *,
+        attempt: int,
+        delay_seconds: float,
+        reason: object = "connection_lost",
+    ) -> StreamManagerSnapshot:
+        safe_reason = redact_sensitive_text(reason)
+        self._state = "reconnecting"
+        self._cache.set_provider_status("blocked")
+        self._reconnect_attempts = max(self._reconnect_attempts, int(attempt))
+        self._last_reconnect_at = self._clock()
+        self._current_backoff_delay = max(0.0, float(delay_seconds))
+        self._record_event(
+            "reconnect_attempt",
+            summary=f"reconnect_attempt:{int(attempt)}",
+            state=self._state,
+            blocking_reason=safe_reason,
+        )
+        return self.snapshot()
+
+    def reconnect_succeeded(self, *, attempt: int) -> StreamManagerSnapshot:
+        self._state = "active"
+        self._cache.set_provider_status("active")
+        self._reconnect_attempts = max(self._reconnect_attempts, int(attempt))
+        self._last_reconnect_at = self._clock()
+        self._current_backoff_delay = None
+        self._record_event(
+            "reconnect_succeeded",
+            summary=f"reconnect_succeeded:{int(attempt)}",
+            state=self._state,
+        )
+        return self.snapshot()
+
+    def reconnect_exhausted(self, reason: object = "reconnect_failed") -> StreamManagerSnapshot:
+        safe_reason = redact_sensitive_text(reason)
+        self._state = "blocked"
+        self._cache.set_provider_status("blocked")
+        self._current_backoff_delay = None
+        self._add_blocking_reason(safe_reason)
+        self._record_event(
+            "reconnect_exhausted",
+            summary=safe_reason,
+            state=self._state,
+            blocking_reason=safe_reason,
+        )
+        return self.snapshot()
+
     def shutdown(self) -> StreamManagerSnapshot:
         if self._state == "shutdown":
             return self.snapshot()
@@ -400,6 +457,13 @@ class SchwabStreamManager:
                 if self._last_heartbeat_at is not None
                 else None
             ),
+            reconnect_attempts=self._reconnect_attempts,
+            last_reconnect_at=(
+                _isoformat(self._last_reconnect_at)
+                if self._last_reconnect_at is not None
+                else None
+            ),
+            current_backoff_delay=self._current_backoff_delay,
         )
 
     def _startup_blocking_reasons(self) -> tuple[str, ...]:
@@ -500,6 +564,9 @@ class SchwabStreamManager:
             "subscription_requested",
             "subscription_succeeded",
             "subscription_failed",
+            "reconnect_attempt",
+            "reconnect_succeeded",
+            "reconnect_exhausted",
             "data_received",
             "heartbeat_seen",
             "heartbeat_stale",

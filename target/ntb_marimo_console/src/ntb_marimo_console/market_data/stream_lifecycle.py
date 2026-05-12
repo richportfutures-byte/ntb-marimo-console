@@ -11,6 +11,7 @@ StreamLifecycleState = Literal[
     "connected",
     "subscribing",
     "active",
+    "reconnecting",
     "stale",
     "disconnected",
     "error",
@@ -26,6 +27,7 @@ STREAM_LIFECYCLE_STATES: Final[tuple[StreamLifecycleState, ...]] = (
     "connected",
     "subscribing",
     "active",
+    "reconnecting",
     "stale",
     "disconnected",
     "error",
@@ -35,6 +37,7 @@ STREAM_LIFECYCLE_STATES: Final[tuple[StreamLifecycleState, ...]] = (
 
 FAIL_CLOSED_STATES: Final[tuple[StreamLifecycleState, ...]] = (
     "disabled",
+    "reconnecting",
     "stale",
     "disconnected",
     "error",

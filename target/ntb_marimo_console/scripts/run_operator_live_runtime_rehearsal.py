@@ -58,6 +58,10 @@ from ntb_marimo_console.operator_live_runtime import (
 from ntb_marimo_console.schwab_stream_client import (
     build_operator_schwab_stream_client_factory,
 )
+from ntb_marimo_console.schwab_reconnect import (
+    SchwabReconnectController,
+    should_attempt_reconnect,
+)
 from ntb_marimo_console.schwab_streamer_session import (
     DEFAULT_LEVELONE_FUTURES_FIELD_IDS,
     OperatorSchwabStreamerSession,
@@ -824,6 +828,7 @@ def _pump_receive_loop(
     manager: object,
     duration_seconds: float,
     clock: Callable[[], float],
+    reconnect_controller: SchwabReconnectController | None = None,
 ) -> tuple[bool, int]:
     """Drive the bounded dispatch loop.
 
@@ -848,14 +853,24 @@ def _pump_receive_loop(
                     contracts_seen.add(str(record.contract))
                     received_at_least_one = True
 
+    active_session = session
     deadline = clock() + max(0.0, duration_seconds)
     while clock() < deadline:
-        if not session.dispatch_one(handler=_handler):
-            token_refresh_reason = _token_refresh_blocking_reason(session)
+        if not active_session.dispatch_one(handler=_handler):
+            token_refresh_reason = _token_refresh_blocking_reason(active_session)
             if token_refresh_reason:
                 marker = getattr(manager, "mark_connection_lost", None)
                 if callable(marker):
                     marker(token_refresh_reason)
+                break
+            if reconnect_controller is not None and should_attempt_reconnect(active_session):
+                result = reconnect_controller.reconnect(
+                    current_session=active_session,
+                    reason="connection_lost",
+                )
+                if result.reconnected and result.session is not None:
+                    active_session = result.session
+                    continue
                 break
             remaining = deadline - clock()
             if remaining <= 0:
@@ -1038,6 +1053,8 @@ def run_with_dependencies(
     )
 
     launch: OperatorLiveLaunchResult | None = None
+    reconnect_controller: SchwabReconnectController | None = None
+    initial_session: OperatorSchwabStreamerSession | None = None
     report.runtime_start_attempted = True
     report.checks.append(RehearsalCheck("runtime_start_attempted", "ok"))
     duration_clamped = max(MIN_DURATION_SECONDS, min(MAX_DURATION_SECONDS, int(getattr(args, "duration", DEFAULT_DURATION_SECONDS))))
@@ -1083,12 +1100,19 @@ def run_with_dependencies(
             report.blocking_reason = "session_capture_missing"
             return report
         session = captured_sessions[-1]
+        initial_session = session
+        reconnect_controller = SchwabReconnectController(
+            config=config,
+            session_factory=_capturing_session_factory,
+            manager=launch.manager,
+        )
 
         received, distinct_count = _pump_receive_loop(
             session=session,
             manager=launch.manager,
             duration_seconds=float(duration_clamped),
             clock=clock,
+            reconnect_controller=reconnect_controller,
         )
         report.market_data_received = received
         report.received_contracts_count = distinct_count
@@ -1099,16 +1123,31 @@ def run_with_dependencies(
             )
         )
 
-        # Refresh-discipline pin: the dispatch loop must not have re-invoked
-        # the session factory or manager.start(). We do not have direct counts
-        # here in production wiring (the manager is the real SchwabStreamManager
-        # by default), but we explicitly never call start/login/subscribe in the
-        # loop above, and `repeated_login_on_refresh` is reported as "no".
-        report.mode = "live"
-        report.status = "ok"
+        post_receive_snapshot = launch.manager.snapshot()
+        if isinstance(post_receive_snapshot, StreamManagerSnapshot) and post_receive_snapshot.state in {
+            "blocked",
+            "disconnected",
+            "error",
+        }:
+            report.mode = "blocked"
+            report.status = "blocked"
+            report.blocking_reason = (
+                post_receive_snapshot.blocking_reasons[0]
+                if post_receive_snapshot.blocking_reasons
+                else f"stream_manager_state:{post_receive_snapshot.state}"
+            )
+        else:
+            report.mode = "live"
+            report.status = "ok"
     finally:
         if launch is not None:
             try:
+                if (
+                    reconnect_controller is not None
+                    and reconnect_controller.active_session is not None
+                    and reconnect_controller.active_session is not initial_session
+                ):
+                    reconnect_controller.active_session.close()
                 stop_operator_live_runtime(launch.manager)
                 report.cleanup_status = "ok"
                 report.checks.append(RehearsalCheck("cleanup_status", "ok"))

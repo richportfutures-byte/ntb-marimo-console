@@ -59,7 +59,7 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
 
 from .contract_universe import (
@@ -87,6 +87,15 @@ LOGIN_COMMAND: str = "LOGIN"
 LOGOUT_COMMAND: str = "LOGOUT"
 LEVELONE_FUTURES_SERVICE: str = "LEVELONE_FUTURES"
 SUBS_COMMAND: str = "SUBS"
+DispatchStatus = Literal[
+    "idle",
+    "inactive",
+    "message",
+    "timeout",
+    "connection_lost",
+    "parse_error",
+    "token_refresh_failed",
+]
 
 _FUTURES_SYMBOL_PATTERN = re.compile(
     r"^/(?P<root>[A-Z0-9]{1,6})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})$"
@@ -450,6 +459,7 @@ class OperatorSchwabStreamerSession:
         self._closed = False
         self._pending_data_frames: deque[tuple[Mapping[str, object], ...]] = deque()
         self._last_token_refresh_error: str | None = None
+        self._last_dispatch_status: DispatchStatus = "idle"
 
     # -- login ---------------------------------------------------------------
 
@@ -667,12 +677,15 @@ class OperatorSchwabStreamerSession:
         """
 
         if self._closed or not self._subscribe_succeeded:
+            self._last_dispatch_status = "inactive"
             return False
         connection = self._connection
         if connection is None:
+            self._last_dispatch_status = "inactive"
             return False
 
         if not self._refresh_access_token_if_supported():
+            self._last_dispatch_status = "token_refresh_failed"
             return False
 
         if self._pending_data_frames:
@@ -682,18 +695,22 @@ class OperatorSchwabStreamerSession:
                     handler(entry)
                 except Exception:
                     continue
+            self._last_dispatch_status = "message"
             return True
 
         try:
             raw_message = connection.recv(self._timeout_seconds)
         except TimeoutError:
+            self._last_dispatch_status = "timeout"
             return False
         except Exception:
+            self._last_dispatch_status = "connection_lost"
             return False
 
         try:
             entries = extract_data_entries(str(raw_message))
         except OperatorSchwabStreamerSessionError:
+            self._last_dispatch_status = "parse_error"
             return True
 
         for entry in entries:
@@ -703,7 +720,11 @@ class OperatorSchwabStreamerSession:
                 # Handler exceptions never propagate to the receive loop;
                 # the caller should observe via the manager's blocking_reasons.
                 continue
+        self._last_dispatch_status = "message"
         return True
+
+    def dispatch_status(self) -> DispatchStatus:
+        return self._last_dispatch_status
 
     def token_status(self) -> dict[str, object]:
         status_func = getattr(self._access_token_provider, "token_status", None)
