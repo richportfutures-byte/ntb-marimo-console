@@ -401,7 +401,8 @@ def test_evidence_and_replay_placeholder_has_explicit_unavailable_reasons() -> N
         "blocking_reasons": ["log_source_not_wired"],
         "source_schema": None,
     }
-    assert len(evidence["unavailable_reasons"]) == 4
+    assert len(evidence["unavailable_reasons"]) == 5
+    assert "Cockpit event replay source not wired in this foundation." in evidence["unavailable_reasons"]
     assert evidence["decision_review_audit_event"]["manual_only_execution"] is True
     assert evidence["decision_review_audit_event"]["preserved_engine_authority"] is True
     assert evidence["decision_review_audit_event"]["trigger_review"]["transition_narrative"]["narrative_available"] is True

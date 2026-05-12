@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Any, Final
+from typing import Final
 
 from ntb_marimo_console.contract_universe import contract_policy_label, is_final_target_contract, normalize_contract_symbol
 from ntb_marimo_console.market_data.stream_events import redact_sensitive_text
@@ -376,6 +376,8 @@ def build_replay_summary(
     for event in normalized_events:
         if event.contract != normalized_contract:
             blocking.append(f"cross_contract_evidence:{event.contract}->{normalized_contract}")
+        if event.synthetic:
+            blocking.append(f"synthetic_evidence_not_replayable:{event.event_id}")
         if event.synthetic and event.source == "live_stream":
             blocking.append(f"synthetic_live_stream_evidence:{event.event_id}")
         parsed_timestamp = _parse_aware_datetime(event.timestamp)
@@ -437,6 +439,7 @@ def build_replay_summary(
             "live_stream_events": sum(1 for event in normalized_events if event.source == "live_stream"),
             "fixture_events": sum(1 for event in normalized_events if event.source == "fixture"),
             "manual_events": sum(1 for event in normalized_events if event.source == "manual"),
+            "synthetic_events": sum(1 for event in normalized_events if event.synthetic),
         },
     )
 

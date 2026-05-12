@@ -55,6 +55,8 @@ class OperatorWorkspaceRequest:
     operator_notes_status: str | None = None
     trigger_transition_log_status: str | None = None
     trigger_transition_log: Mapping[str, Any] | None = None
+    cockpit_event_replay_status: str | None = None
+    cockpit_event_replay: Mapping[str, Any] | None = None
     evidence_unavailable_reasons: tuple[str, ...] = ()
 
 
@@ -253,6 +255,9 @@ class CockpitReplayAvailabilityVM:
     trigger_transition_count: int
     operator_note_status: str
     operator_note_available: bool
+    cockpit_event_replay_status: str
+    cockpit_event_replay_available: bool
+    cockpit_event_count: int
     replay_statement: str
 
     def to_dict(self) -> dict[str, object]:
@@ -266,6 +271,9 @@ class CockpitReplayAvailabilityVM:
             "trigger_transition_count": self.trigger_transition_count,
             "operator_note_status": self.operator_note_status,
             "operator_note_available": self.operator_note_available,
+            "cockpit_event_replay_status": self.cockpit_event_replay_status,
+            "cockpit_event_replay_available": self.cockpit_event_replay_available,
+            "cockpit_event_count": self.cockpit_event_count,
             "replay_statement": self.replay_statement,
         }
 
@@ -608,6 +616,12 @@ def _build_cockpit_replay_availability(evidence: Mapping[str, Any]) -> CockpitRe
         transition_count = count if isinstance(count, int) else 0
     operator_note_status = _safe_status(evidence.get("operator_notes_status") or "unavailable")
     audit_replay_status = _safe_status(evidence.get("audit_replay_status") or "unavailable")
+    cockpit_event_replay = evidence.get("cockpit_event_replay")
+    cockpit_event_replay_status = _safe_status(evidence.get("cockpit_event_replay_status") or "unavailable")
+    cockpit_event_count = 0
+    if isinstance(cockpit_event_replay, Mapping):
+        count = cockpit_event_replay.get("event_count")
+        cockpit_event_count = count if isinstance(count, int) else 0
     return CockpitReplayAvailabilityVM(
         run_history_status=_safe_status(evidence.get("run_history_status") or "unavailable"),
         audit_replay_status=audit_replay_status,
@@ -618,6 +632,9 @@ def _build_cockpit_replay_availability(evidence: Mapping[str, Any]) -> CockpitRe
         trigger_transition_count=transition_count,
         operator_note_status=operator_note_status,
         operator_note_available=operator_note_status == "available",
+        cockpit_event_replay_status=cockpit_event_replay_status,
+        cockpit_event_replay_available=cockpit_event_replay_status == "available",
+        cockpit_event_count=cockpit_event_count,
         replay_statement=_safe_text(evidence.get("replay_statement") or _NO_SYNTHETIC_REPLAY_STATEMENT),
     )
 
@@ -1066,8 +1083,16 @@ def _build_evidence_and_replay(
         contract,
         profile_id=request.profile_id,
     )
+    cockpit_event_replay = _cockpit_event_replay_summary(
+        request.cockpit_event_replay,
+        contract,
+        profile_id=request.profile_id,
+    )
     transition_log_status = _safe_status(
         request.trigger_transition_log_status or transition_log["status"]
+    )
+    cockpit_event_replay_status = _safe_status(
+        request.cockpit_event_replay_status or cockpit_event_replay["status"]
     )
     reasons = tuple(_safe_text(reason) for reason in request.evidence_unavailable_reasons if str(reason).strip())
     if not reasons:
@@ -1078,6 +1103,8 @@ def _build_evidence_and_replay(
         ]
         if request.trigger_transition_log is None:
             default_reasons.append("Trigger transition log source not wired in this foundation.")
+        if request.cockpit_event_replay is None:
+            default_reasons.append("Cockpit event replay source not wired in this foundation.")
         reasons = tuple(default_reasons)
     decision_review_audit_event = build_decision_review_audit_event(
         decision_review=_decision_review_payload_from_last_pipeline_result(
@@ -1099,6 +1126,8 @@ def _build_evidence_and_replay(
         "operator_notes_status": _safe_status(request.operator_notes_status or "unavailable"),
         "trigger_transition_log_status": transition_log_status,
         "trigger_transition_log": transition_log,
+        "cockpit_event_replay_status": cockpit_event_replay_status,
+        "cockpit_event_replay": cockpit_event_replay,
         "unavailable_reasons": list(reasons),
         "decision_review_audit_event": decision_review_audit_event,
         "decision_review_replay": decision_review_replay,
@@ -1176,6 +1205,109 @@ def _trigger_transition_log_summary(
         "blocking_reasons": [],
         "source_schema": safe_source_schema,
     }
+
+
+def _cockpit_event_replay_summary(
+    replay: Mapping[str, Any] | None,
+    contract: str,
+    *,
+    profile_id: str | None = None,
+) -> dict[str, object]:
+    if replay is None:
+        return {
+            "status": "unavailable",
+            "event_count": 0,
+            "contract": contract,
+            "profile_id": _safe_text(profile_id) if profile_id else None,
+            "blocking_reasons": ["cockpit_event_replay_source_not_wired"],
+            "incomplete_reasons": [],
+            "source_schema": None,
+        }
+    source_schema = _string_or_none(replay.get("schema"))
+    safe_source_schema = _safe_text(source_schema) if source_schema else None
+    expected_profile_id = _safe_text(profile_id) if profile_id else None
+    replay_profile_id = _string_or_none(replay.get("profile_id"))
+    safe_replay_profile_id = _safe_text(replay_profile_id) if replay_profile_id else None
+    replay_contract = _safe_text(replay.get("contract") or "").upper()
+    if source_schema != EVIDENCE_REPLAY_SCHEMA:
+        return {
+            "status": "blocked",
+            "event_count": 0,
+            "contract": contract,
+            "profile_id": expected_profile_id,
+            "blocking_reasons": [f"unsupported_cockpit_event_replay_schema:{safe_source_schema or '<missing>'}"],
+            "incomplete_reasons": [],
+            "source_schema": safe_source_schema,
+        }
+    if replay_contract and replay_contract != contract:
+        return {
+            "status": "blocked",
+            "event_count": 0,
+            "contract": contract,
+            "profile_id": expected_profile_id,
+            "blocking_reasons": [f"cross_contract_cockpit_event_replay:{replay_contract}"],
+            "incomplete_reasons": [],
+            "source_schema": safe_source_schema,
+        }
+    if expected_profile_id and safe_replay_profile_id != expected_profile_id:
+        return {
+            "status": "blocked",
+            "event_count": 0,
+            "contract": contract,
+            "profile_id": expected_profile_id,
+            "blocking_reasons": [f"cross_profile_cockpit_event_replay:{safe_replay_profile_id or '<missing>'}"],
+            "incomplete_reasons": [],
+            "source_schema": safe_source_schema,
+        }
+    blocking_reasons = _sequence_text(replay.get("blocking_reasons"))
+    incomplete_reasons = _sequence_text(replay.get("incomplete_reasons"))
+    event_count = _cockpit_replay_event_count(replay)
+    if event_count == 0:
+        return {
+            "status": "unavailable",
+            "event_count": 0,
+            "contract": contract,
+            "profile_id": expected_profile_id,
+            "blocking_reasons": ["cockpit_event_replay_empty"],
+            "incomplete_reasons": list(incomplete_reasons),
+            "source_schema": safe_source_schema,
+        }
+    if blocking_reasons:
+        status = "blocked"
+    elif _safe_status(replay.get("status")) == "complete" and not incomplete_reasons:
+        status = "available"
+    else:
+        status = "blocked"
+    return {
+        "status": status,
+        "event_count": event_count,
+        "contract": contract,
+        "profile_id": expected_profile_id,
+        "blocking_reasons": list(blocking_reasons),
+        "incomplete_reasons": list(incomplete_reasons),
+        "source_schema": safe_source_schema,
+    }
+
+
+def _cockpit_replay_event_count(replay: Mapping[str, Any]) -> int:
+    stream_state = replay.get("stream_state")
+    stream_count = 0
+    if isinstance(stream_state, Mapping):
+        subscription_count = stream_state.get("subscription_count")
+        stream_count += subscription_count if isinstance(subscription_count, int) else 0
+        if stream_state.get("state") in {"connected", "disconnected"}:
+            stream_count += 1
+    collection_keys = (
+        "trigger_transitions",
+        "query_eligibility_events",
+        "pipeline_results",
+        "operator_notes",
+    )
+    return stream_count + sum(
+        len(value)
+        for key in collection_keys
+        if isinstance((value := replay.get(key)), (list, tuple))
+    )
 
 
 def _decision_review_payload_from_last_pipeline_result(
