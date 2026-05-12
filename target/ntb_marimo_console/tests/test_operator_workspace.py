@@ -8,11 +8,15 @@ from ntb_marimo_console.contract_universe import final_target_contracts
 from ntb_marimo_console.evidence_replay import EVIDENCE_REPLAY_SCHEMA, build_replay_summary, create_evidence_event
 from ntb_marimo_console.operator_workspace import (
     OPERATOR_WORKSPACE_SCHEMA,
+    R14_COCKPIT_SCHEMA,
     OperatorWorkspaceRequest,
+    build_r14_cockpit_view_model,
     build_operator_workspace_view_model,
 )
 from ntb_marimo_console.pipeline_query_gate import PipelineQueryGateRequest, evaluate_pipeline_query_gate
+from ntb_marimo_console.runtime_modes import build_es_app_shell_for_mode
 from ntb_marimo_console.trigger_state import TriggerState, TriggerStateResult
+from ntb_marimo_console.viewmodels.models import TriggerStatusVM
 from ntb_marimo_console.trigger_transition_evidence import build_trigger_transition_evidence_events
 
 
@@ -740,6 +744,120 @@ def test_no_fixture_fallback_after_live_failure_behavior_is_weakened() -> None:
     assert "stream_status_blocked:error" in workspace["pipeline_gate"]["blocking_reasons"]
 
 
+def test_r14_cockpit_contract_serializes_deterministically_from_fixture_safe_inputs() -> None:
+    cockpit = ready_cockpit(
+        "MGC",
+        last_pipeline_result={
+            "status": "completed",
+            "contract": "MGC",
+            "termination_stage": "contract_market_read",
+            "stage_termination_reason": "stage_b_no_trade",
+            "final_decision": "NO_TRADE",
+            "sufficiency_gate_status": "READY",
+            "contract_analysis_outcome": "NO_TRADE",
+            "proposed_setup_outcome": None,
+            "risk_authorization_decision": None,
+        },
+    )
+
+    encoded = json.dumps(cockpit, sort_keys=True)
+    decoded = json.loads(encoded)
+
+    assert decoded["schema"] == R14_COCKPIT_SCHEMA
+    assert decoded["identity"] == {
+        "current_profile": "preserved_mgc_phase1",
+        "contract": "MGC",
+        "contract_support_status": "final_supported",
+        "runtime_profile_status": "available",
+    }
+    assert decoded["runtime_status"]["provider_status"] == "connected"
+    assert decoded["premarket"]["active_setup_count"] == 1
+    assert decoded["premarket"]["required_fields"] == ["market.current_price", "market.cumulative_delta"]
+    assert decoded["triggers"][0]["query_ready_provenance"] == "real_trigger_state_result"
+    assert decoded["query_readiness"]["query_ready"] is True
+    assert decoded["query_readiness"]["manual_query_allowed"] is True
+    assert decoded["query_readiness"]["query_disabled_reason"] is None
+    assert decoded["last_pipeline_result"]["status"] == "completed"
+    assert decoded["last_pipeline_result"]["no_trade_summary"] == "Preserved engine returned NO_TRADE."
+    assert decoded["replay_availability"]["audit_replay_available"] is False
+
+
+def test_r14_cockpit_disabled_query_state_carries_plain_text_reason() -> None:
+    cockpit = ready_cockpit(
+        "ES",
+        gate=query_gate("ES", stream_status="stale", event_lockout_active=True),
+    )
+    query = cockpit["query_readiness"]
+
+    assert query["query_ready"] is False
+    assert query["manual_query_allowed"] is False
+    assert query["query_disabled_reason"].startswith("Manual query disabled:")
+    assert "stream_status_blocked:stale" in query["blocking_reasons"]
+    assert "event_lockout_active" in query["blocking_reasons"]
+    assert "QUERY_READY requires real TriggerStateResult provenance" in query["query_disabled_reason"]
+
+
+def test_r14_cockpit_query_readiness_requires_real_trigger_state_result_not_raw_enabled_mapping() -> None:
+    fake_gate = {
+        "enabled": True,
+        "pipeline_query_authorized": True,
+        "status": "ENABLED",
+        "contract": "ES",
+        "profile_id": "preserved_es_phase1",
+        "setup_id": "es_setup_1",
+        "trigger_id": "es_trigger_1",
+        "trigger_state": "QUERY_READY",
+        "trigger_state_from_real_producer": True,
+        "enabled_reasons": ["trigger_state_query_ready"],
+        "disabled_reasons": [],
+        "blocking_reasons": [],
+        "required_conditions": ["trigger_state_query_ready"],
+        "missing_conditions": [],
+        "provider_status": "connected",
+        "stream_status": "connected",
+        "session_valid": True,
+        "event_lockout_active": False,
+    }
+    cockpit = ready_cockpit("ES", gate=fake_gate, trigger_state={"state": "QUERY_READY"})
+    query = cockpit["query_readiness"]
+
+    assert query["pipeline_gate_enabled"] is True
+    assert query["query_ready"] is False
+    assert query["manual_query_allowed"] is False
+    assert query["trigger_state_from_real_producer"] is False
+    assert "cockpit_trigger_state_result_provenance_not_verified" in query["blocking_reasons"]
+    assert query["query_ready_provenance"] == "unavailable_not_inferred_from_display_or_raw_enabled_mapping"
+
+
+def test_r14_cockpit_query_readiness_cannot_be_inferred_from_display_trigger_status_vm() -> None:
+    display_trigger = TriggerStatusVM(
+        trigger_id="display_query_ready",
+        is_valid=True,
+        is_true=True,
+        missing_fields=(),
+        invalid_reasons=(),
+    )
+    gate = query_gate("ES", trigger_state=trigger_result("ES", TriggerState.QUERY_READY))
+    cockpit = ready_cockpit("ES", gate=gate, trigger_state=display_trigger)  # type: ignore[arg-type]
+    query = cockpit["query_readiness"]
+
+    assert gate.enabled is True
+    assert query["pipeline_gate_enabled"] is True
+    assert query["query_ready"] is False
+    assert "cockpit_trigger_state_result_provenance_not_verified" in query["blocking_reasons"]
+
+
+def test_phase1_shell_exposes_r14_cockpit_contract_without_adding_layout_surface() -> None:
+    shell = build_es_app_shell_for_mode(mode="fixture_demo", query_action_requested=False)
+
+    cockpit = shell["r14_cockpit"]
+    assert cockpit["schema"] == R14_COCKPIT_SCHEMA
+    assert cockpit["identity"]["contract"] == "ES"
+    assert cockpit["query_readiness"]["query_ready"] is False
+    assert cockpit["query_readiness"]["manual_query_allowed"] is False
+    assert "r14_cockpit" not in shell["surfaces"]
+
+
 def ready_workspace(
     contract: str,
     *,
@@ -777,6 +895,37 @@ def ready_workspace(
             trigger_transition_log_status=trigger_transition_log_status,
         )
     )
+
+
+def ready_cockpit(
+    contract: str,
+    *,
+    gate: object | None = None,
+    trigger_state: object | None = None,
+    brief: dict[str, object] | None = None,
+    last_pipeline_result: dict[str, object] | None = None,
+) -> dict[str, object]:
+    selected_trigger = trigger_state if trigger_state is not None else trigger_result(contract, TriggerState.QUERY_READY)
+    selected_gate = gate or query_gate(contract, trigger_state=selected_trigger)
+    return build_r14_cockpit_view_model(
+        OperatorWorkspaceRequest(
+            contract=contract,
+            profile_id=f"preserved_{contract.lower()}_phase1",
+            watchman_validator="READY",
+            trigger_state=selected_trigger,  # type: ignore[arg-type]
+            pipeline_query_gate=selected_gate,  # type: ignore[arg-type]
+            premarket_brief=brief or globals()["brief"](contract),
+            live_observable=live_snapshot(contract),
+            provider_status="connected",
+            stream_status="connected",
+            quote_freshness="fresh",
+            bar_freshness="fresh",
+            session_status="valid",
+            event_lockout_status="inactive",
+            evaluated_at="2026-05-06T14:00:00+00:00",
+            last_pipeline_result=last_pipeline_result,
+        )
+    ).to_dict()
 
 
 def query_gate(contract: str, **overrides: object) -> object:

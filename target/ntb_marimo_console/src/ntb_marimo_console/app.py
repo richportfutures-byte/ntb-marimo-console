@@ -18,6 +18,7 @@ from .decision_review_audit import build_decision_review_audit_event
 from .decision_review_replay import build_decision_review_replay_vm
 from .market_data import FuturesQuoteService
 from .adapters.trigger_specs import trigger_specs_from_brief
+from .operator_workspace import OperatorWorkspaceRequest, build_r14_cockpit_view_model
 from .pipeline_query_gate import (
     PipelineQueryGateRequest,
     PipelineQueryGateResult,
@@ -84,6 +85,7 @@ class Phase1BuildArtifacts:
     runtime_status: Phase1RuntimeStatus
     workflow_status: Phase1WorkflowStatus
     watchman_gate: dict[str, object]
+    premarket_brief: Mapping[str, object]
     audit_replay: AuditReplayRecord | None
     run_history_source: str
     trigger_state_results: tuple[TriggerStateResult, ...]
@@ -267,6 +269,7 @@ def build_phase1_payload(
         runtime_status=runtime_status,
         workflow_status=workflow_status,
         watchman_gate=watchman_gate,
+        premarket_brief=premarket.brief,
         audit_replay=audit_replay,
         run_history_source=run_history_source,
         trigger_state_results=trigger_state_results,
@@ -428,6 +431,35 @@ def build_phase1_shell_from_artifacts(
         "audit_replay_ready": artifacts.workflow_status.audit_replay_ready,
         "next_action": artifacts.workflow_status.next_action,
     }
+    shell["r14_cockpit"] = build_r14_cockpit_view_model(
+        OperatorWorkspaceRequest(
+            contract=inputs.selection.session.contract,
+            profile_id=inputs.selection.profile_id,
+            watchman_validator=artifacts.watchman_gate,
+            trigger_state=_select_pipeline_trigger_state_result(
+                contract=inputs.selection.session.contract,
+                trigger_state_results=artifacts.trigger_state_results,
+            ),
+            pipeline_query_gate=artifacts.pipeline_query_gate,
+            premarket_brief=artifacts.premarket_brief,
+            live_observable=inputs.live_snapshot,
+            provider_status=artifacts.pipeline_query_gate.provider_status,
+            stream_status=artifacts.pipeline_query_gate.stream_status,
+            quote_freshness="fresh" if "quote_fresh" in artifacts.pipeline_query_gate.enabled_reasons else "blocked",
+            bar_freshness=(
+                "fresh"
+                if "bars_fresh_and_available" in artifacts.pipeline_query_gate.enabled_reasons
+                else "blocked"
+            ),
+            session_status="valid" if artifacts.pipeline_query_gate.session_valid else "invalid",
+            event_lockout_status="active" if artifacts.pipeline_query_gate.event_lockout_active else "inactive",
+            evaluated_at=artifacts.pipeline_query_gate.evaluated_at,
+            last_pipeline_result=_last_pipeline_result_from_trace(artifacts.payload.pipeline_trace),
+            run_history_status="available" if artifacts.run_history_source else "unavailable",
+            audit_replay_record=artifacts.audit_replay,
+            operator_notes_status="unavailable",
+        )
+    ).to_dict()
     return shell
 
 
@@ -634,3 +666,18 @@ def _audit_replay_message(workflow: Phase1WorkflowStatus) -> str:
     if workflow.decision_review_ready:
         return "Audit / Replay is still blocked for this session."
     return "Audit / Replay becomes available only after a bounded query action completes."
+
+
+def _last_pipeline_result_from_trace(trace: PipelineTraceVM | None) -> dict[str, object] | None:
+    if trace is None:
+        return None
+    return {
+        "status": "completed",
+        "contract": trace.contract,
+        "termination_stage": trace.termination_stage,
+        "final_decision": trace.final_decision,
+        "sufficiency_gate_status": trace.stage_a_status,
+        "contract_analysis_outcome": trace.stage_b_outcome,
+        "proposed_setup_outcome": trace.stage_c_outcome,
+        "risk_authorization_decision": trace.stage_d_decision,
+    }
