@@ -166,6 +166,50 @@ def test_replay_source_filters_events_by_contract_for_workspace_consumption() ->
     }
 
 
+def test_replay_source_keeps_same_contract_profile_chains_separate() -> None:
+    source = TriggerTransitionReplaySource(source="fixture")
+    shared_setup = "shared_setup"
+    shared_trigger = "shared_trigger"
+
+    source.observe(
+        trigger_result("ES", TriggerState.DORMANT, setup_id=shared_setup, trigger_id=shared_trigger),
+        timestamp="2026-05-06T14:00:00+00:00",
+        profile_id="preserved_es_phase1",
+    )
+    cross_profile_first = source.observe(
+        trigger_result("ES", TriggerState.APPROACHING, setup_id=shared_setup, trigger_id=shared_trigger),
+        timestamp="2026-05-06T14:00:01+00:00",
+        profile_id="fixture_es_demo",
+    )
+    preserved_transition = source.observe(
+        trigger_result("ES", TriggerState.APPROACHING, setup_id=shared_setup, trigger_id=shared_trigger),
+        timestamp="2026-05-06T14:00:02+00:00",
+        profile_id="preserved_es_phase1",
+    )
+    fixture_transition = source.observe(
+        trigger_result("ES", TriggerState.TOUCHED, setup_id=shared_setup, trigger_id=shared_trigger),
+        timestamp="2026-05-06T14:00:03+00:00",
+        profile_id="fixture_es_demo",
+    )
+
+    preserved_log = source.trigger_transition_log(contract="ES", profile_id="preserved_es_phase1")
+    fixture_log = source.trigger_transition_log(contract="ES", profile_id="fixture_es_demo")
+    unfiltered_log = source.trigger_transition_log(contract="ES")
+
+    assert cross_profile_first == ()
+    assert len(preserved_transition) == 1
+    assert len(fixture_transition) == 1
+    assert preserved_log is not None
+    assert fixture_log is not None
+    assert unfiltered_log is not None
+    assert [item["event_type"] for item in preserved_log["trigger_transitions"]] == ["trigger_approaching"]
+    assert [item["event_type"] for item in fixture_log["trigger_transitions"]] == ["trigger_touched"]
+    assert [item["event_type"] for item in unfiltered_log["trigger_transitions"]] == [
+        "trigger_approaching",
+        "trigger_touched",
+    ]
+
+
 def test_empty_replay_source_leaves_workspace_transition_log_unavailable() -> None:
     source = TriggerTransitionReplaySource(source="fixture")
 

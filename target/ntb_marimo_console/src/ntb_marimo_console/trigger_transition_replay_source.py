@@ -12,6 +12,7 @@ from ntb_marimo_console.trigger_transition_evidence import build_trigger_transit
 
 class TriggerTransitionObservationKey(NamedTuple):
     contract: str
+    profile_id: str | None
     setup_id: str | None
     trigger_id: str | None
 
@@ -38,7 +39,8 @@ class TriggerTransitionReplaySource:
         premarket_brief_ref: str | None = None,
     ) -> tuple[EvidenceEvent, ...]:
         current_payload = _payload(current)
-        key = _observation_key(current_payload)
+        safe_profile_id = _text_or_none(profile_id)
+        key = _observation_key(current_payload, profile_id=safe_profile_id)
         if key is None:
             return ()
 
@@ -47,7 +49,7 @@ class TriggerTransitionReplaySource:
             previous_payload,
             current_payload,
             timestamp=timestamp,
-            profile_id=profile_id,
+            profile_id=safe_profile_id or "",
             source=self.source,
             live_snapshot_ref=live_snapshot_ref,
             premarket_brief_ref=premarket_brief_ref,
@@ -63,10 +65,16 @@ class TriggerTransitionReplaySource:
         profile_id: str | None = None,
     ) -> ReplaySummary | None:
         contract_key = normalize_contract_symbol(contract)
-        events = tuple(event for event in self._events if event.contract == contract_key)
+        safe_profile_id = _text_or_none(profile_id)
+        events = tuple(
+            event
+            for event in self._events
+            if event.contract == contract_key
+            and (safe_profile_id is None or event.profile_id == safe_profile_id)
+        )
         if not events:
             return None
-        return build_replay_summary(events, contract=contract_key, profile_id=profile_id)
+        return build_replay_summary(events, contract=contract_key, profile_id=safe_profile_id)
 
     def trigger_transition_log(
         self,
@@ -86,12 +94,17 @@ def _payload(value: TriggerStateResult | Mapping[str, Any]) -> dict[str, Any]:
     return dict(value)
 
 
-def _observation_key(payload: Mapping[str, Any]) -> TriggerTransitionObservationKey | None:
+def _observation_key(
+    payload: Mapping[str, Any],
+    *,
+    profile_id: str | None,
+) -> TriggerTransitionObservationKey | None:
     contract = _text_or_none(payload.get("contract"))
     if contract is None:
         return None
     return TriggerTransitionObservationKey(
         contract=normalize_contract_symbol(contract),
+        profile_id=profile_id,
         setup_id=_text_or_none(payload.get("setup_id")),
         trigger_id=_text_or_none(payload.get("trigger_id")),
     )
