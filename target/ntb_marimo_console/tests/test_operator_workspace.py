@@ -233,6 +233,36 @@ def test_pipeline_gate_section_marks_fallback_producer_when_trigger_state_result
     assert "trigger_state_not_query_ready:UNAVAILABLE" in pipeline_gate["blocking_reasons"]
 
 
+def test_pipeline_gate_section_refuses_raw_enabled_mapping_without_query_ready_provenance() -> None:
+    fake_gate = {
+        "enabled": True,
+        "pipeline_query_authorized": True,
+        "contract": "ES",
+        "profile_id": "preserved_es_phase1",
+        "setup_id": "es_setup_1",
+        "trigger_id": "es_trigger_1",
+        "trigger_state": "QUERY_READY",
+        "trigger_state_from_real_producer": False,
+        "enabled_reasons": ["trigger_state_query_ready"],
+        "disabled_reasons": [],
+        "blocking_reasons": [],
+        "required_conditions": ["trigger_state_query_ready"],
+        "missing_conditions": [],
+        "provider_status": "connected",
+        "stream_status": "connected",
+        "session_valid": True,
+        "event_lockout_active": False,
+    }
+
+    pipeline_gate = ready_workspace("ES", gate=fake_gate).to_dict()["pipeline_gate"]
+
+    assert pipeline_gate["gate_enabled"] is False
+    assert pipeline_gate["manual_query_allowed"] is False
+    assert pipeline_gate["trigger_state"] == "QUERY_READY"
+    assert pipeline_gate["trigger_state_from_real_producer"] is False
+    assert "pipeline_gate_provenance_not_verified" in pipeline_gate["blocking_reasons"]
+
+
 def test_query_ready_is_displayed_as_query_readiness_only_not_trade_authorization() -> None:
     monitor = ready_workspace("ES").to_dict()["live_thesis_monitor"]
 
@@ -768,6 +798,7 @@ def query_gate(contract: str, **overrides: object) -> object:
         "session_valid": True,
         "event_lockout_active": False,
         "fixture_mode_accepted": False,
+        "trigger_state_from_real_producer": True,
         "evaluated_at": "2026-05-06T14:00:00+00:00",
     }
     values.update(overrides)

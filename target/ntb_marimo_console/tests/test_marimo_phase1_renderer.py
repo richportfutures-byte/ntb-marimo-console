@@ -581,8 +581,34 @@ class EntrypointSharedRendererTests(unittest.TestCase):
 
         self.assertIn("- Trigger State From Real Producer: `False`", text)
         self.assertIn("Producer Note:", text)
-        self.assertIn("fell back to UNAVAILABLE", text)
+        self.assertIn("gate stays fail-closed", text)
         self.assertIn("trigger_state_result_unavailable", text)
+
+    def test_pipeline_query_gate_subsection_ignores_raw_enabled_without_query_ready_provenance(self) -> None:
+        panel = {
+            "pipeline_query_gate": {
+                "enabled": True,
+                "pipeline_query_authorized": True,
+                "status": "ENABLED",
+                "contract": "ES",
+                "setup_id": "es_setup_1",
+                "trigger_id": "es_trigger_1",
+                "trigger_state": "QUERY_READY",
+                "trigger_state_from_real_producer": False,
+                "enabled_reasons": ["trigger_state_query_ready"],
+                "disabled_reasons": [],
+                "missing_conditions": [],
+            },
+        }
+
+        text = "\n".join(_render_pipeline_query_gate_lines(panel))
+
+        self.assertIn("- Status: `DISABLED`", text)
+        self.assertIn("- Gate Enabled: `False`", text)
+        self.assertIn("- Trigger State: `QUERY_READY`", text)
+        self.assertIn("- Trigger State From Real Producer: `False`", text)
+        self.assertIn("Provenance Guard", text)
+        self.assertIn("raw gate enablement was ignored", text)
 
     def test_pipeline_query_gate_subsection_is_unavailable_when_gate_absent(self) -> None:
         text = "\n".join(_render_pipeline_query_gate_lines({}))

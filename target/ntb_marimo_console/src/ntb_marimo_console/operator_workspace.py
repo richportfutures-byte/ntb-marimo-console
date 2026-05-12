@@ -180,12 +180,15 @@ def _build_live_thesis_monitor(trigger: Mapping[str, Any]) -> dict[str, object]:
 
 
 def _build_pipeline_gate(gate: Mapping[str, Any]) -> dict[str, object]:
-    enabled = gate.get("enabled") is True or gate.get("pipeline_query_authorized") is True
+    enabled = _safe_pipeline_gate_enabled(gate)
     disabled_reasons = _sequence_text(gate.get("disabled_reasons"))
     blocking_reasons = _sequence_text(gate.get("blocking_reasons"))
     if not gate:
         disabled_reasons = ("pipeline_query_gate_result_unavailable",)
         blocking_reasons = disabled_reasons
+    elif _raw_pipeline_gate_enabled(gate) and not enabled:
+        disabled_reasons = _dedupe((*disabled_reasons, "pipeline_gate_provenance_not_verified"))
+        blocking_reasons = _dedupe((*blocking_reasons, "pipeline_gate_provenance_not_verified"))
     return {
         "gate_enabled": enabled,
         "manual_query_allowed": enabled,
@@ -201,6 +204,19 @@ def _build_pipeline_gate(gate: Mapping[str, Any]) -> dict[str, object]:
         "missing_conditions": list(_sequence_text(gate.get("missing_conditions"))),
         "gate_statement": PIPELINE_GATE_STATEMENT,
     }
+
+
+def _raw_pipeline_gate_enabled(gate: Mapping[str, Any]) -> bool:
+    return gate.get("enabled") is True or gate.get("pipeline_query_authorized") is True
+
+
+def _safe_pipeline_gate_enabled(gate: Mapping[str, Any]) -> bool:
+    if not _raw_pipeline_gate_enabled(gate):
+        return False
+    return (
+        _safe_text(_string_or_none(gate.get("trigger_state")) or "UNAVAILABLE").upper() == "QUERY_READY"
+        and gate.get("trigger_state_from_real_producer") is True
+    )
 
 
 def _build_last_pipeline_result(last_pipeline_result: Mapping[str, Any] | None) -> dict[str, object]:

@@ -940,13 +940,14 @@ def _render_pipeline_query_gate_lines(panel: Mapping[str, object]) -> list[str]:
             "- Reason: `pipeline_query_gate_result_unavailable`",
         ]
 
-    enabled = gate.get("enabled") is True or gate.get("pipeline_query_authorized") is True
-    status = _as_str(gate.get("status"), default="DISABLED" if not enabled else "ENABLED")
     contract = _as_str(gate.get("contract"), default="<unavailable>")
     setup_id = _as_str(gate.get("setup_id"), default="<unavailable>")
     trigger_id = _as_str(gate.get("trigger_id"), default="<unavailable>")
     trigger_state = _as_str(gate.get("trigger_state"), default="UNAVAILABLE")
     from_real_producer = gate.get("trigger_state_from_real_producer") is True
+    raw_enabled = gate.get("enabled") is True or gate.get("pipeline_query_authorized") is True
+    enabled = raw_enabled and trigger_state == "QUERY_READY" and from_real_producer
+    status = "ENABLED" if enabled else "DISABLED"
 
     lines = [
         "",
@@ -963,8 +964,12 @@ def _render_pipeline_query_gate_lines(panel: Mapping[str, object]) -> list[str]:
 
     if not from_real_producer:
         lines.append(
-            "- Producer Note: Real trigger state result was not supplied; the gate fell back to UNAVAILABLE and stays fail-closed."
+            "- Producer Note: Real trigger state result was not supplied; the gate stays fail-closed."
         )
+        if raw_enabled:
+            lines.append(
+                "- Provenance Guard: raw gate enablement was ignored because QUERY_READY was not proven by the real producer."
+            )
 
     if enabled:
         lines.append("- Primary Enabled Reasons:")
