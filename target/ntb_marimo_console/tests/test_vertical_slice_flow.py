@@ -125,6 +125,88 @@ class VerticalSliceFlowTests(unittest.TestCase):
             ],
         )
 
+    def test_es_query_ready_path_renders_complete_r14_cockpit_vertical_slice(self) -> None:
+        backend = _FakeBackend(lockout=False, summary=self.summary_no_trade)
+        with patch(
+            "ntb_marimo_console.app.build_trigger_state_results",
+            new=_query_ready_trigger_state_results,
+        ):
+            app = build_phase1_app(backend=backend, inputs=self.base_inputs, dependencies=self.dependencies)
+
+        cockpit = app["r14_cockpit"]
+        identity = cockpit["identity"]
+        runtime = cockpit["runtime_status"]
+        premarket = cockpit["premarket"]
+        trigger = cockpit["triggers"][0]
+        query = cockpit["query_readiness"]
+        last_result = cockpit["last_pipeline_result"]
+        replay = cockpit["replay_availability"]
+        operator_states = {
+            state["category"]: state
+            for state in cockpit["operator_states"]
+        }
+
+        self.assertEqual(identity["contract"], "ES")
+        self.assertEqual(identity["contract_support_status"], "final_supported")
+        self.assertEqual(identity["runtime_profile_status"], "available")
+
+        self.assertEqual(runtime["provider_status"], "fixture")
+        self.assertEqual(runtime["stream_status"], "fixture")
+        self.assertEqual(runtime["quote_freshness"], "fresh")
+        self.assertEqual(runtime["bar_freshness"], "fresh")
+        self.assertEqual(runtime["session_clock_state"], "valid")
+        self.assertEqual(runtime["event_lockout_state"], "inactive")
+
+        self.assertEqual(premarket["premarket_brief_status"], "READY")
+        self.assertEqual(premarket["active_setup_count"], 1)
+        self.assertIn("market.current_price", premarket["required_fields"])
+        self.assertIn("market.cumulative_delta", premarket["required_fields"])
+        self.assertIn("cross_asset.breadth.current_advancers_pct", premarket["required_fields"])
+        self.assertIn("cross_asset.index_cash_tone", premarket["missing_fields"])
+        self.assertEqual(premarket["unavailable_fields"][0]["status"], "unavailable_not_inferred")
+
+        self.assertEqual(trigger["trigger_state"], "QUERY_READY")
+        self.assertEqual(trigger["query_ready_provenance"], "real_trigger_state_result")
+        self.assertEqual(trigger["missing_fields"], [])
+        self.assertEqual(trigger["blocking_reasons"], [])
+        self.assertEqual(trigger["current_values"][0]["field"], "market.current_price")
+        self.assertEqual(trigger["current_values"][0]["status"], "available")
+
+        self.assertTrue(query["query_ready"])
+        self.assertTrue(query["manual_query_allowed"])
+        self.assertTrue(query["trigger_state_from_real_producer"])
+        self.assertEqual(query["query_ready_provenance"], "real_trigger_state_result_and_pipeline_gate")
+        self.assertIn("trigger_state_query_ready", query["enabled_reasons"])
+        self.assertIn("bars_fresh_and_available", query["enabled_reasons"])
+        self.assertEqual(query["disabled_reasons"], [])
+        self.assertEqual(query["missing_conditions"], [])
+
+        self.assertEqual(last_result["status"], "completed")
+        self.assertEqual(last_result["final_decision"], "NO_TRADE")
+        self.assertEqual(last_result["no_trade_summary"], "Preserved engine returned NO_TRADE.")
+        self.assertIsNone(last_result["approved_summary"])
+        self.assertIsNone(last_result["rejected_summary"])
+        self.assertNotIn("alternate", json.dumps(last_result, sort_keys=True).lower())
+
+        self.assertTrue(replay["audit_replay_available"])
+        self.assertEqual(replay["run_history_status"], "available")
+        self.assertEqual(replay["replay_statement"], "No synthetic replay is labeled as real evidence.")
+
+        self.assertIn("fixture_mode", operator_states)
+        self.assertIn("query_ready", operator_states)
+        self.assertEqual(operator_states["query_ready"]["state"], "query_ready")
+        self.assertEqual(cockpit["blocking_reasons"], [])
+
+        self.assertEqual(
+            backend.calls,
+            [
+                "sweep_watchman",
+                "run_pipeline",
+                "summarize_pipeline_result",
+                "narrate_pipeline_result",
+            ],
+        )
+
     def test_ready_path_without_query_request_stays_live_query_eligible(self) -> None:
         backend = _FakeBackend(lockout=False, summary=self.summary_no_trade)
         with patch(
