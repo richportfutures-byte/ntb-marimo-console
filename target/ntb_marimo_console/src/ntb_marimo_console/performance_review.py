@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Final
+from typing import Final
 
 from ntb_marimo_console.contract_universe import contract_policy_label, is_final_target_contract, normalize_contract_symbol
 from ntb_marimo_console.market_data.stream_events import redact_sensitive_text
@@ -28,6 +28,23 @@ FAILURE_TAXONOMY_CATEGORIES: Final[tuple[str, ...]] = (
     "operator_execution_failure",
     "normal_variance",
     "external_event_failure",
+)
+MINIMAL_REVIEW_V1_FAILURE_CATEGORIES: Final[tuple[str, ...]] = (
+    "no_produced_trigger_readiness",
+    "query_blocked_by_gate",
+    "pipeline_no_trade",
+    "pipeline_rejected",
+    "pipeline_approved_but_no_manual_execution_recorded",
+    "manual_execution_recorded_but_outcome_missing",
+    "insufficient_sample",
+)
+MINIMAL_REVIEW_V1_PAUSE_CRITERIA: Final[tuple[str, ...]] = (
+    "high_blocked_query_rate",
+    "repeated_missing_required_fields",
+    "repeated_stale_or_unavailable_data",
+    "repeated_no_trade_outcomes",
+    "insufficient_sample_size",
+    "missing_manual_outcome_data",
 )
 METRIC_IDS: Final[tuple[str, ...]] = (
     "no_trade_rate",
@@ -101,7 +118,7 @@ class SampleSizeAssessment:
             "minimum_required": self.minimum_required,
             "status": self.status.value,
             "conclusion": self.conclusion,
-            "edge_claim_allowed": self.status == MetricStatus.COMPUTED,
+            "edge_claim_allowed": False,
         }
 
 
@@ -298,6 +315,7 @@ class PerformanceReviewSummary:
     metrics: tuple[PerformanceMetric, ...]
     failure_taxonomy: tuple[FailureTaxonomyClassification, ...]
     pause_rules: tuple[PauseRuleResult, ...]
+    minimal_review_v1: dict[str, object]
     blocking_reasons: tuple[str, ...]
     review_scope: str = "post_session_fixture_or_manual_review_only"
     schema: str = PERFORMANCE_REVIEW_SCHEMA
@@ -315,12 +333,13 @@ class PerformanceReviewSummary:
             "metrics": [metric.to_dict() for metric in self.metrics],
             "failure_taxonomy": [classification.to_dict() for classification in self.failure_taxonomy],
             "pause_rules": [rule.to_dict() for rule in self.pause_rules],
+            "minimal_review_v1": self.minimal_review_v1,
             "blocking_reasons": list(self.blocking_reasons),
             "review_scope": self.review_scope,
-            "ui_wiring_status": "deferred_no_app_or_notebook_wiring_in_r16_foundation",
+            "ui_wiring_status": "available_as_review_model_only_not_query_authority",
             "performance_review_can_authorize_trades": False,
             "cannot_authorize_execution": True,
-            "edge_claim_allowed": self.sample_size_assessment.status == MetricStatus.COMPUTED,
+            "edge_claim_allowed": False,
         }
 
 
@@ -504,10 +523,15 @@ def parse_manual_outcome_record(payload: str | Mapping[str, object]) -> ManualOu
 def build_performance_review_summary(review_input: ReviewInput | Mapping[str, object]) -> PerformanceReviewSummary:
     request = _review_input(review_input)
     contract = normalize_contract_symbol(request.contract)
-    system_decisions = _normalize_system_decisions(request.system_decisions)
     manual_outcomes = _normalize_manual_outcomes(request.manual_outcomes)
     replay_summaries = tuple(_safe_mapping(item) for item in request.replay_summaries if isinstance(item, Mapping))
     evidence_events = tuple(_safe_mapping(item) for item in request.evidence_events if isinstance(item, Mapping))
+    supplied_system_decisions = _normalize_system_decisions(request.system_decisions)
+    system_decisions = supplied_system_decisions or _system_decisions_from_evidence_events(
+        contract=contract,
+        profile_id=request.profile_id,
+        evidence_events=evidence_events,
+    )
     blocking: list[str] = []
 
     if not is_final_target_contract(contract):
@@ -537,6 +561,14 @@ def build_performance_review_summary(review_input: ReviewInput | Mapping[str, ob
         no_trade_minimum_rate=request.no_trade_minimum_rate,
         expectancy_threshold_r=request.expectancy_threshold_r,
     )
+    minimal_review = _minimal_review_v1(
+        system_decisions=system_decisions,
+        manual_outcomes=manual_outcomes,
+        replay_summaries=replay_summaries,
+        evidence_events=evidence_events,
+        metrics=metrics,
+        minimum_sample_size=request.minimum_sample_size,
+    )
     status = ReviewStatus.BLOCKED if blocking else ReviewStatus.INCOMPLETE if not system_decisions else ReviewStatus.READY
     return PerformanceReviewSummary(
         contract=contract,
@@ -549,6 +581,7 @@ def build_performance_review_summary(review_input: ReviewInput | Mapping[str, ob
         metrics=metrics,
         failure_taxonomy=taxonomy,
         pause_rules=pause_rules,
+        minimal_review_v1=minimal_review,
         blocking_reasons=_dedupe(blocking),
     )
 
@@ -574,6 +607,189 @@ def _build_metrics(
         _grouped_metric("contract_performance", outcomes, minimum_sample_size, "contract"),
     ]
     return tuple(metrics)
+
+
+def _minimal_review_v1(
+    *,
+    system_decisions: Sequence[SystemDecisionRecord],
+    manual_outcomes: Sequence[ManualOutcomeRecord],
+    replay_summaries: Sequence[Mapping[str, object]],
+    evidence_events: Sequence[Mapping[str, object]],
+    metrics: Sequence[PerformanceMetric],
+    minimum_sample_size: int,
+) -> dict[str, object]:
+    approved_run_ids = {
+        item.pipeline_run_id
+        for item in system_decisions
+        if item.pipeline_run_id and _is_approval(item.final_decision)
+    }
+    executed_run_ids = {item.pipeline_run_id for item in manual_outcomes if item.pipeline_run_id and item.executed}
+    trigger_ready_count = sum(1 for item in system_decisions if item.trigger_query_ready)
+    blocked_query_count = sum(
+        1
+        for item in system_decisions
+        if item.trigger_query_ready and (not item.query_submitted or not item.gate_enabled)
+    )
+    no_trade_count = _count_decision(system_decisions, "NO_TRADE")
+    missing_manual_outcome_count = len(approved_run_ids - executed_run_ids) + sum(
+        1 for item in manual_outcomes if item.executed and item.outcome_r is None
+    )
+    insufficient_sample = len(system_decisions) < minimum_sample_size
+    taxonomy_counts = {
+        "no_produced_trigger_readiness": sum(1 for item in system_decisions if not item.trigger_query_ready),
+        "query_blocked_by_gate": blocked_query_count,
+        "pipeline_no_trade": no_trade_count,
+        "pipeline_rejected": sum(1 for item in system_decisions if _is_rejection(item.final_decision)),
+        "pipeline_approved_but_no_manual_execution_recorded": len(approved_run_ids - executed_run_ids),
+        "manual_execution_recorded_but_outcome_missing": sum(
+            1 for item in manual_outcomes if item.executed and item.outcome_r is None
+        ),
+        "insufficient_sample": 1 if insufficient_sample else 0,
+    }
+    missing_required_count = _reason_count(
+        replay_summaries,
+        evidence_events,
+        ("missing_required", "missing field", "missing_field", "missing_required_field"),
+    )
+    stale_unavailable_count = _reason_count(
+        replay_summaries,
+        evidence_events,
+        ("stale", "unavailable", "missing_bar", "missing_chart_bars"),
+    )
+    blocked_query_rate = blocked_query_count / trigger_ready_count if trigger_ready_count else None
+    pause_criteria = (
+        _minimal_pause_criterion(
+            "high_blocked_query_rate",
+            triggered=blocked_query_rate is not None and blocked_query_rate >= 0.50 and blocked_query_count >= 2,
+            reason="Review repeated gate-blocked query progression before relying on the workflow.",
+            observed_count=blocked_query_count,
+        ),
+        _minimal_pause_criterion(
+            "repeated_missing_required_fields",
+            triggered=missing_required_count >= 2,
+            reason="Review repeated missing required fields in evidence or replay records.",
+            observed_count=missing_required_count,
+        ),
+        _minimal_pause_criterion(
+            "repeated_stale_or_unavailable_data",
+            triggered=stale_unavailable_count >= 2,
+            reason="Review repeated stale or unavailable data before continuing.",
+            observed_count=stale_unavailable_count,
+        ),
+        _minimal_pause_criterion(
+            "repeated_no_trade_outcomes",
+            triggered=no_trade_count >= 2,
+            reason="Review repeated NO_TRADE outcomes as system behavior, not as a trade signal.",
+            observed_count=no_trade_count,
+        ),
+        _minimal_pause_criterion(
+            "insufficient_sample_size",
+            triggered=insufficient_sample,
+            reason="Sample is insufficient for any statistical edge claim.",
+            observed_count=len(system_decisions),
+        ),
+        _minimal_pause_criterion(
+            "missing_manual_outcome_data",
+            triggered=missing_manual_outcome_count > 0,
+            reason="Manual execution/outcome review is incomplete because operator-entered outcome data is missing.",
+            observed_count=missing_manual_outcome_count,
+        ),
+    )
+    return {
+        "schema": "minimal_performance_review_v1",
+        "review_only": True,
+        "can_authorize_query": False,
+        "can_authorize_trade": False,
+        "manual_only_execution": True,
+        "system_decision_quality_statement": (
+            "System decision quality reviews trigger, query, and preserved-pipeline outcomes only."
+        ),
+        "trader_execution_quality_statement": (
+            "Trader execution quality uses optional operator-entered manual outcome records only."
+        ),
+        "metrics": {
+            "no_trade_rate": _metric(metrics, "no_trade_rate").to_dict(),
+            "trigger_to_query_rate": _metric(metrics, "trigger_to_query_rate").to_dict(),
+            "query_to_approval_rate": _metric(metrics, "query_to_approval_rate").to_dict(),
+            "approval_to_manual_execution_rate": _metric(metrics, "approval_to_execution_rate").to_dict(),
+        },
+        "failure_taxonomy": [
+            {
+                "category": category,
+                "count": taxonomy_counts.get(category, 0),
+            }
+            for category in MINIMAL_REVIEW_V1_FAILURE_CATEGORIES
+        ],
+        "pause_criteria": [item for item in pause_criteria],
+        "warnings": _minimal_review_warnings(
+            system_decisions=system_decisions,
+            manual_outcomes=manual_outcomes,
+            minimum_sample_size=minimum_sample_size,
+            missing_manual_outcome_count=missing_manual_outcome_count,
+        ),
+        "statistical_edge_claim": "not_claimed",
+        "production_live_readiness_claim": "not_claimed",
+    }
+
+
+def _system_decisions_from_evidence_events(
+    *,
+    contract: str,
+    profile_id: str | None,
+    evidence_events: Sequence[Mapping[str, object]],
+) -> tuple[SystemDecisionRecord, ...]:
+    if not evidence_events:
+        return ()
+    query_run_ids = {
+        _safe_optional_ref(event.get("pipeline_run_id"))
+        for event in evidence_events
+        if event.get("event_type") == "query_submitted"
+    }
+    query_run_ids.discard(None)
+    trigger_ready = any(event.get("event_type") == "trigger_query_ready" for event in evidence_events)
+    records: list[SystemDecisionRecord] = []
+    for index, event in enumerate(evidence_events, start=1):
+        if event.get("event_type") != "pipeline_result":
+            continue
+        event_contract = normalize_contract_symbol(_string_field(event.get("contract")))
+        if event_contract != contract:
+            continue
+        run_id = _safe_optional_ref(event.get("pipeline_run_id"))
+        summary = _pipeline_summary_from_event(event)
+        records.append(
+            create_system_decision_record(
+                record_id=_safe_ref(event.get("event_id") or f"evidence_pipeline_result_{index}"),
+                timestamp=_string_field(event.get("timestamp")),
+                contract=event_contract,
+                profile_id=_safe_optional_ref(event.get("profile_id")) or _safe_optional_ref(profile_id) or "",
+                pipeline_run_id=run_id,
+                final_decision=_string_field(summary.get("final_decision") or event.get("final_decision") or "UNKNOWN"),
+                trigger_query_ready=trigger_ready,
+                query_submitted=run_id in query_run_ids if run_id else bool(query_run_ids),
+                gate_enabled=run_id in query_run_ids if run_id else bool(query_run_ids),
+                failure_category=_failure_category_from_pipeline_summary(summary),
+            )
+        )
+    return tuple(records)
+
+
+def _pipeline_summary_from_event(event: Mapping[str, object]) -> Mapping[str, object]:
+    data_quality = event.get("data_quality")
+    if isinstance(data_quality, Mapping):
+        summary = data_quality.get("pipeline_summary")
+        if isinstance(summary, Mapping):
+            return _safe_mapping(summary)
+        return _safe_mapping(data_quality)
+    return {}
+
+
+def _failure_category_from_pipeline_summary(summary: Mapping[str, object]) -> str | None:
+    decision = _string_field(summary.get("final_decision")).upper()
+    if decision == "NO_TRADE":
+        return "market_read_failure"
+    if _is_rejection(decision):
+        return "risk_gate_failure"
+    return None
 
 
 def _rate_metric(metric_id: str, numerator: int, denominator: int, minimum_sample_size: int, missing_reason: str) -> PerformanceMetric:
@@ -870,6 +1086,80 @@ def _count_decision(decisions: Sequence[SystemDecisionRecord], decision: str) ->
 
 def _is_approval(decision: str) -> bool:
     return decision.upper() in APPROVAL_DECISIONS
+
+
+def _is_rejection(decision: str) -> bool:
+    normalized = decision.upper()
+    return "REJECT" in normalized or normalized in {"DENIED", "BLOCKED"}
+
+
+def _minimal_pause_criterion(
+    criterion_id: str,
+    *,
+    triggered: bool,
+    reason: str,
+    observed_count: int,
+) -> dict[str, object]:
+    return {
+        "criterion_id": criterion_id,
+        "triggered": triggered,
+        "reason": reason if triggered else f"{criterion_id} not triggered.",
+        "observed_count": observed_count,
+        "review_only": True,
+        "cannot_authorize_query": True,
+        "cannot_authorize_execution": True,
+    }
+
+
+def _minimal_review_warnings(
+    *,
+    system_decisions: Sequence[SystemDecisionRecord],
+    manual_outcomes: Sequence[ManualOutcomeRecord],
+    minimum_sample_size: int,
+    missing_manual_outcome_count: int,
+) -> list[str]:
+    warnings: list[str] = [
+        "review_metrics_are_descriptive_only",
+        "review_metrics_do_not_enable_query_readiness",
+        "manual_outcomes_are_operator_entered_not_verified_fills",
+    ]
+    if len(system_decisions) < minimum_sample_size:
+        warnings.append("insufficient_system_decision_sample")
+    eligible_outcomes = sum(1 for item in manual_outcomes if item.executed and item.outcome_r is not None)
+    if eligible_outcomes < minimum_sample_size:
+        warnings.append("insufficient_manual_outcome_sample")
+    if missing_manual_outcome_count:
+        warnings.append("missing_manual_outcome_data")
+    return warnings
+
+
+def _reason_count(
+    replay_summaries: Sequence[Mapping[str, object]],
+    evidence_events: Sequence[Mapping[str, object]],
+    needles: Sequence[str],
+) -> int:
+    lowered_needles = tuple(needle.lower() for needle in needles)
+    return sum(
+        1
+        for reason in _review_reasons(replay_summaries, evidence_events)
+        if any(needle in reason.lower() for needle in lowered_needles)
+    )
+
+
+def _review_reasons(
+    replay_summaries: Sequence[Mapping[str, object]],
+    evidence_events: Sequence[Mapping[str, object]],
+) -> tuple[str, ...]:
+    reasons: list[str] = []
+    for item in replay_summaries:
+        reasons.extend(_sequence_text(item.get("blocking_reasons")))
+        reasons.extend(_sequence_text(item.get("incomplete_reasons")))
+    for item in evidence_events:
+        quality = item.get("data_quality")
+        if isinstance(quality, Mapping):
+            reasons.extend(_sequence_text(quality.get("blocking_reasons")))
+            reasons.extend(_sequence_text(quality.get("missing_conditions")))
+    return tuple(reasons)
 
 
 def _stale_hidden_ids(

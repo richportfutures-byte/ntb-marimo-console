@@ -8,6 +8,8 @@ from ntb_marimo_console.contract_universe import final_target_contracts
 from ntb_marimo_console.performance_review import (
     FAILURE_TAXONOMY_CATEGORIES,
     METRIC_IDS,
+    MINIMAL_REVIEW_V1_FAILURE_CATEGORIES,
+    MINIMAL_REVIEW_V1_PAUSE_CRITERIA,
     ReviewInput,
     build_performance_review_summary,
     classify_failure_taxonomy,
@@ -16,6 +18,8 @@ from ntb_marimo_console.performance_review import (
     parse_manual_outcome_record,
     serialize_performance_review_summary,
 )
+from ntb_marimo_console.pipeline_query_gate import PipelineQueryGateRequest, evaluate_pipeline_query_gate
+from ntb_marimo_console.trigger_state import TriggerState, TriggerStateResult
 
 
 SENSITIVE_VALUES = (
@@ -49,8 +53,9 @@ def test_builds_review_summary_from_fixture_evidence_and_replay_records() -> Non
     assert summary["contract"] == "ES"
     assert summary["status"] == "ready"
     assert summary["review_scope"] == "post_session_fixture_or_manual_review_only"
-    assert summary["ui_wiring_status"] == "deferred_no_app_or_notebook_wiring_in_r16_foundation"
+    assert summary["ui_wiring_status"] == "available_as_review_model_only_not_query_authority"
     assert summary["data_sufficiency_failures"][0]["failure_category"] == "data_sufficiency_failure"
+    assert summary["minimal_review_v1"]["review_only"] is True
 
 
 def test_distinguishes_system_decision_quality_from_trader_execution_quality() -> None:
@@ -123,6 +128,18 @@ def test_metrics_do_not_claim_edge_before_sufficient_sample_size() -> None:
         assert metric["edge_claim"] == "none"
 
 
+def test_review_does_not_claim_edge_even_with_sufficient_manual_sample() -> None:
+    summary = review_summary(
+        system_decisions=system_decisions(count=20, no_trade_count=10),
+        manual_outcomes=manual_outcomes(20),
+        minimum_sample_size=1,
+    ).to_dict()
+
+    assert summary["edge_claim_allowed"] is False
+    assert summary["sample_size_assessment"]["edge_claim_allowed"] is False
+    assert summary["minimal_review_v1"]["statistical_edge_claim"] == "not_claimed"
+
+
 def test_mfe_mae_rr_slippage_and_hold_time_unavailable_unless_manually_supplied() -> None:
     missing = review_summary(manual_outcomes=(outcome("out-1", mfe_r=None, mae_r=None, realized_rr=None, slippage_ticks=None, hold_minutes=None),)).to_dict()
     supplied = review_summary(manual_outcomes=(outcome("out-1", mfe_r=2, mae_r=-1, realized_rr=1.5, slippage_ticks=1, hold_minutes=12),), minimum_sample_size=1).to_dict()
@@ -140,6 +157,141 @@ def test_failure_taxonomy_accepts_only_known_categories_and_fails_closed() -> No
     assert valid.category in FAILURE_TAXONOMY_CATEGORIES
     assert invalid.valid is False
     assert "unknown_failure_taxonomy:unknown_edge_case" in invalid.reasons
+
+
+def test_minimal_review_v1_from_evidence_records_calculates_required_rates() -> None:
+    summary = build_performance_review_summary(
+        ReviewInput(
+            contract="ES",
+            profile_id="preserved_es_phase1",
+            evidence_events=(
+                evidence_event("evt-trigger", "trigger_query_ready"),
+                evidence_event("evt-query-1", "query_submitted", pipeline_run_id="run-1"),
+                evidence_event("evt-pipeline-1", "pipeline_result", pipeline_run_id="run-1", final_decision="NO_TRADE"),
+                evidence_event("evt-query-2", "query_submitted", pipeline_run_id="run-2"),
+                evidence_event("evt-pipeline-2", "pipeline_result", pipeline_run_id="run-2", final_decision="TRADE_APPROVED"),
+            ),
+            manual_outcomes=(outcome("out-run-2", pipeline_run_id="run-2", executed=True),),
+            minimum_sample_size=1,
+        )
+    ).to_dict()
+    review = summary["minimal_review_v1"]
+    metrics = review["metrics"]
+
+    assert summary["status"] == "ready"
+    assert metrics["no_trade_rate"]["value"] == 0.5
+    assert metrics["trigger_to_query_rate"]["value"] == 1.0
+    assert metrics["query_to_approval_rate"]["value"] == 0.5
+    assert metrics["approval_to_manual_execution_rate"]["value"] == 1.0
+
+
+def test_minimal_review_v1_failure_taxonomy_distinguishes_required_categories() -> None:
+    summary = review_summary(
+        system_decisions=(
+            decision("sys-no-trigger", trigger_query_ready=False, final_decision="UNKNOWN"),
+            decision("sys-blocked", trigger_query_ready=True, query_submitted=False, final_decision="UNKNOWN"),
+            decision("sys-no-trade", trigger_query_ready=True, query_submitted=True, final_decision="NO_TRADE"),
+            decision("sys-rejected", trigger_query_ready=True, query_submitted=True, final_decision="TRADE_REJECTED"),
+            decision("sys-approved", trigger_query_ready=True, query_submitted=True, final_decision="TRADE_APPROVED", pipeline_run_id="run-approved"),
+        ),
+        manual_outcomes=(outcome("out-missing", pipeline_run_id="run-other", executed=True, outcome_r=None),),
+        minimum_sample_size=20,
+    ).to_dict()
+    taxonomy = {
+        item["category"]: item["count"]
+        for item in summary["minimal_review_v1"]["failure_taxonomy"]
+    }
+
+    assert set(taxonomy) == set(MINIMAL_REVIEW_V1_FAILURE_CATEGORIES)
+    assert taxonomy["no_produced_trigger_readiness"] == 1
+    assert taxonomy["query_blocked_by_gate"] >= 1
+    assert taxonomy["pipeline_no_trade"] == 1
+    assert taxonomy["pipeline_rejected"] == 1
+    assert taxonomy["pipeline_approved_but_no_manual_execution_recorded"] == 1
+    assert taxonomy["manual_execution_recorded_but_outcome_missing"] == 1
+    assert taxonomy["insufficient_sample"] == 1
+
+
+def test_minimal_review_v1_pause_criteria_are_descriptive_only() -> None:
+    summary = review_summary(
+        system_decisions=(
+            decision("sys-blocked-1", trigger_query_ready=True, query_submitted=False),
+            decision("sys-blocked-2", trigger_query_ready=True, query_submitted=False),
+            decision("sys-no-trade-1", trigger_query_ready=True, query_submitted=True, final_decision="NO_TRADE"),
+            decision("sys-no-trade-2", trigger_query_ready=True, query_submitted=True, final_decision="NO_TRADE"),
+            decision("sys-approved", trigger_query_ready=True, query_submitted=True, final_decision="TRADE_APPROVED", pipeline_run_id="run-approved"),
+        ),
+        manual_outcomes=(),
+        replay_summaries=(
+            {"blocking_reasons": ["missing_required_field:bid", "missing_required_field:ask"]},
+            {"incomplete_reasons": ["quote_stale", "dependency_unavailable:dxy"]},
+        ),
+        minimum_sample_size=20,
+    ).to_dict()
+    criteria = {
+        item["criterion_id"]: item
+        for item in summary["minimal_review_v1"]["pause_criteria"]
+    }
+
+    assert set(criteria) == set(MINIMAL_REVIEW_V1_PAUSE_CRITERIA)
+    assert criteria["high_blocked_query_rate"]["triggered"] is True
+    assert criteria["repeated_missing_required_fields"]["triggered"] is True
+    assert criteria["repeated_stale_or_unavailable_data"]["triggered"] is True
+    assert criteria["repeated_no_trade_outcomes"]["triggered"] is True
+    assert criteria["insufficient_sample_size"]["triggered"] is True
+    assert criteria["missing_manual_outcome_data"]["triggered"] is True
+    assert all(item["cannot_authorize_query"] is True for item in criteria.values())
+    assert all(item["cannot_authorize_execution"] is True for item in criteria.values())
+
+
+def test_minimal_review_v1_separates_system_decisions_from_trader_execution_quality() -> None:
+    summary = review_summary().to_dict()
+    review = summary["minimal_review_v1"]
+
+    assert "System decision quality" in review["system_decision_quality_statement"]
+    assert "Trader execution quality" in review["trader_execution_quality_statement"]
+    assert "operator-entered manual outcome records only" in review["trader_execution_quality_statement"]
+
+
+def test_review_layer_does_not_enable_query_readiness() -> None:
+    blocked_gate = evaluate_pipeline_query_gate(
+        PipelineQueryGateRequest(
+            contract="ES",
+            profile_id="preserved_es_phase1",
+            profile_exists=True,
+            profile_preflight_passed=True,
+            watchman_validator_status="READY",
+            live_snapshot={"schema": "live_observable_snapshot_v2", "data_quality": {"ready": False}},
+            live_snapshot_fresh=False,
+            quote_fresh=False,
+            bars_available=False,
+            bars_fresh=False,
+            required_trigger_fields_present=False,
+            trigger_state=TriggerStateResult(
+                contract="ES",
+                setup_id="es_setup",
+                trigger_id="es_trigger",
+                state=TriggerState.DORMANT,
+                distance_to_trigger_ticks=None,
+                required_fields=("quote.bid",),
+                missing_fields=("quote.bid",),
+                invalid_reasons=(),
+                blocking_reasons=("missing_required_field:quote.bid",),
+                last_updated="2026-05-06T14:00:00+00:00",
+            ),
+            provider_status="connected",
+            stream_status="connected",
+            session_valid=True,
+            event_lockout_active=False,
+            evaluated_at="2026-05-06T14:00:00+00:00",
+        )
+    )
+    summary = review_summary(system_decisions=(decision("sys-1", final_decision="TRADE_APPROVED"),)).to_dict()
+
+    assert blocked_gate.enabled is False
+    assert blocked_gate.pipeline_query_authorized is False
+    assert summary["minimal_review_v1"]["can_authorize_query"] is False
+    assert summary["performance_review_can_authorize_trades"] is False
 
 
 def test_pause_rule_triggers_for_risk_gate_bypass() -> None:
@@ -482,6 +634,33 @@ def outcome(
         failure_category=failure_category,
         operator_note=operator_note,
     )
+
+
+def evidence_event(
+    event_id: str,
+    event_type: str,
+    *,
+    pipeline_run_id: str | None = None,
+    final_decision: str | None = None,
+    contract: str = "ES",
+    profile_id: str = "preserved_es_phase1",
+) -> dict[str, object]:
+    data_quality: dict[str, object] = {}
+    if final_decision is not None:
+        data_quality["pipeline_summary"] = {
+            "contract": contract,
+            "final_decision": final_decision,
+        }
+    return {
+        "schema": "evidence_event_v1",
+        "event_id": event_id,
+        "timestamp": "2026-05-06T14:00:00+00:00",
+        "contract": contract,
+        "profile_id": profile_id,
+        "event_type": event_type,
+        "pipeline_run_id": pipeline_run_id,
+        "data_quality": data_quality,
+    }
 
 
 def metric_by_id(summary: dict[str, object], metric_id: str) -> dict[str, object]:
