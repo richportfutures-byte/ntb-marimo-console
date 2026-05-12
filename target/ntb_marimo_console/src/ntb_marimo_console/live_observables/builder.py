@@ -19,6 +19,51 @@ from .schema_v2 import (
 )
 
 
+QUOTE_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "bid": ("bid", "bid_price", "bid price", "1"),
+    "ask": ("ask", "ask_price", "ask price", "2"),
+    "last": ("last", "last_price", "last price", "3"),
+    "bid_size": ("bid_size", "bid size", "4"),
+    "ask_size": ("ask_size", "ask size", "5"),
+    "last_size": ("last_size", "last size", "9"),
+    "quote_time": ("quote_time", "quote time", "10"),
+    "trade_time": ("trade_time", "trade time", "11"),
+}
+
+SESSION_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "open": ("open", "open_price", "open price", "18"),
+    "high": ("high", "high_price", "high price", "12"),
+    "low": ("low", "low_price", "low price", "13"),
+    "prior_close": ("prior_close", "close", "close_price", "close price", "14"),
+    "net_change": ("net_change", "net change", "19"),
+    "percent_change": ("percent_change", "future_percent_change", "future percent change", "20"),
+    "volume": ("volume", "total_volume", "total volume", "8"),
+    "security_status": ("security_status", "security status", "22"),
+    "tradable": ("tradable", "future_is_tradable", "future is tradable", "30"),
+    "active": ("active", "future_is_active", "future is active", "32"),
+}
+
+REQUIRED_QUOTE_FIELDS: tuple[str, ...] = (
+    "bid",
+    "ask",
+    "last",
+    "bid_size",
+    "ask_size",
+    "quote_time",
+    "trade_time",
+)
+REQUIRED_SESSION_FIELDS: tuple[str, ...] = (
+    "volume",
+    "open",
+    "high",
+    "low",
+    "prior_close",
+    "tradable",
+    "active",
+    "security_status",
+)
+
+
 class StreamCacheSnapshotLike(Protocol):
     generated_at: str
     provider: str
@@ -126,44 +171,45 @@ def _contract_observable(
             symbol=expected_symbol,
             quality=QualityObservableV2(blocking_reasons=reasons),
             label=_contract_label(contract),
+            sources=_empty_sources(),
         )
 
     fields = _record_fields(record)
     symbol = _record_symbol(record)
-    quote_time = _timestamp_field(fields, "quote_time") or _record_updated_at(record)
-    trade_time = _timestamp_field(fields, "trade_time") or _record_updated_at(record)
+    quote_time = _timestamp_field(fields, *QUOTE_FIELD_ALIASES["quote_time"])
+    trade_time = _timestamp_field(fields, *QUOTE_FIELD_ALIASES["trade_time"])
     quote_age_seconds = _age_seconds(quote_time, generated_at=generated_at)
     trade_age_seconds = _age_seconds(trade_time, generated_at=generated_at)
     quote = QuoteObservableV2(
-        bid=_number_field(fields, "bid", "bid_price"),
-        ask=_number_field(fields, "ask", "ask_price"),
-        last=_number_field(fields, "last", "last_price"),
-        bid_size=_number_field(fields, "bid_size"),
-        ask_size=_number_field(fields, "ask_size"),
-        last_size=_number_field(fields, "last_size"),
+        bid=_number_field(fields, *QUOTE_FIELD_ALIASES["bid"]),
+        ask=_number_field(fields, *QUOTE_FIELD_ALIASES["ask"]),
+        last=_number_field(fields, *QUOTE_FIELD_ALIASES["last"]),
+        bid_size=_number_field(fields, *QUOTE_FIELD_ALIASES["bid_size"]),
+        ask_size=_number_field(fields, *QUOTE_FIELD_ALIASES["ask_size"]),
+        last_size=_number_field(fields, *QUOTE_FIELD_ALIASES["last_size"]),
         quote_time=quote_time,
         trade_time=trade_time,
         quote_age_seconds=quote_age_seconds,
         trade_age_seconds=trade_age_seconds,
     )
     session = SessionObservableV2(
-        open=_number_field(fields, "open"),
-        high=_number_field(fields, "high"),
-        low=_number_field(fields, "low"),
-        prior_close=_number_field(fields, "prior_close", "close", "close_price"),
-        net_change=_number_field(fields, "net_change"),
-        percent_change=_number_field(fields, "percent_change"),
-        volume=_number_field(fields, "volume", "total_volume"),
-        security_status=_string_field(fields, "security_status"),
-        tradable=_bool_field(fields, "tradable", "future_is_tradable"),
-        active=_bool_field(fields, "active", "future_is_active"),
+        open=_number_field(fields, *SESSION_FIELD_ALIASES["open"]),
+        high=_number_field(fields, *SESSION_FIELD_ALIASES["high"]),
+        low=_number_field(fields, *SESSION_FIELD_ALIASES["low"]),
+        prior_close=_number_field(fields, *SESSION_FIELD_ALIASES["prior_close"]),
+        net_change=_number_field(fields, *SESSION_FIELD_ALIASES["net_change"]),
+        percent_change=_number_field(fields, *SESSION_FIELD_ALIASES["percent_change"]),
+        volume=_number_field(fields, *SESSION_FIELD_ALIASES["volume"]),
+        security_status=_string_field(fields, *SESSION_FIELD_ALIASES["security_status"]),
+        tradable=_bool_field(fields, *SESSION_FIELD_ALIASES["tradable"]),
+        active=_bool_field(fields, *SESSION_FIELD_ALIASES["active"]),
     )
     tick_size = contract_tick_size(contract)
     derived = DerivedObservableV2(
         spread_ticks=_spread_ticks(quote.bid, quote.ask, tick_size),
         mid=_mid(quote.bid, quote.ask),
     )
-    required_reasons = _required_field_reasons(contract, quote)
+    required_reasons = _required_field_reasons(contract, quote, session)
     symbol_match = bool(expected_symbol and symbol == expected_symbol)
     symbol_reasons = () if symbol_match else (f"symbol_mismatch:{contract}:{symbol or 'missing'}",)
     fresh = _record_fresh(record) and quote_age_seconds is not None and trade_age_seconds is not None
@@ -192,6 +238,7 @@ def _contract_observable(
             blocking_reasons=reasons,
         ),
         label=_contract_label(contract),
+        sources=_sources_for_observable(quote, session, derived),
     )
 
 
@@ -284,9 +331,14 @@ def _string_field(fields: Mapping[str, object], *names: str) -> str | None:
     return None
 
 
-def _timestamp_field(fields: Mapping[str, object], name: str) -> str | None:
-    value = _string_field(fields, name)
-    return value if value and _parse_timestamp(value) is not None else None
+def _timestamp_field(fields: Mapping[str, object], *names: str) -> str | None:
+    for name in names:
+        if name not in fields:
+            continue
+        timestamp = _timestamp_value(fields[name])
+        if timestamp is not None:
+            return timestamp
+    return None
 
 
 def _bool_field(fields: Mapping[str, object], *names: str) -> bool | None:
@@ -294,16 +346,29 @@ def _bool_field(fields: Mapping[str, object], *names: str) -> bool | None:
         value = fields.get(name)
         if isinstance(value, bool):
             return value
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value in {0, 1}:
+            return bool(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "yes", "y", "1"}:
+                return True
+            if normalized in {"false", "no", "n", "0"}:
+                return False
     return None
 
 
-def _required_field_reasons(contract: str, quote: QuoteObservableV2) -> tuple[str, ...]:
+def _required_field_reasons(
+    contract: str,
+    quote: QuoteObservableV2,
+    session: SessionObservableV2,
+) -> tuple[str, ...]:
     missing: list[str] = []
-    for field_name in ("bid", "ask", "last"):
+    for field_name in REQUIRED_QUOTE_FIELDS:
         if getattr(quote, field_name) is None:
             missing.append(field_name)
-    if quote.quote_time is None and quote.trade_time is None:
-        missing.append("quote_or_trade_timestamp")
+    for field_name in REQUIRED_SESSION_FIELDS:
+        if getattr(session, field_name) is None:
+            missing.append(field_name)
     if missing:
         return (f"missing_required_fields:{contract}:{','.join(missing)}",)
     return ()
@@ -329,6 +394,38 @@ def _age_seconds(value: str | None, *, generated_at: str) -> float | None:
     if parsed_value is None or parsed_generated_at is None:
         return None
     return max(0.0, (parsed_generated_at - parsed_value).total_seconds())
+
+
+def _timestamp_value(value: object) -> str | None:
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        numeric = _numeric_timestamp(text)
+        if numeric is not None:
+            return _isoformat(numeric)
+        parsed = _parse_timestamp(text)
+        return _isoformat(parsed) if parsed is not None else None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        parsed = _numeric_timestamp(value)
+        return _isoformat(parsed) if parsed is not None else None
+    return None
+
+
+def _numeric_timestamp(value: object) -> datetime | None:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if numeric <= 0:
+        return None
+    # Schwab Level One time fields are commonly epoch milliseconds. Accept
+    # epoch seconds as well for deterministic fixtures.
+    seconds = numeric / 1000.0 if numeric > 10_000_000_000 else numeric
+    try:
+        return datetime.fromtimestamp(seconds, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def _parse_timestamp(value: str) -> datetime | None:
@@ -363,3 +460,65 @@ def _contract_label(contract: str) -> str | None:
     if contract == "MGC":
         return "Micro Gold"
     return None
+
+
+def _sources_for_observable(
+    quote: QuoteObservableV2,
+    session: SessionObservableV2,
+    derived: DerivedObservableV2,
+) -> dict[str, object]:
+    return {
+        "quote": {
+            field_name: _observed_source(getattr(quote, field_name))
+            for field_name in QuoteObservableV2().to_dict()
+        },
+        "session": {
+            field_name: _observed_source(getattr(session, field_name))
+            for field_name in SessionObservableV2().to_dict()
+        },
+        "derived": {
+            "mid": _derived_source(derived.mid),
+            "spread_ticks": _derived_source(derived.spread_ticks),
+            "distance_to_primary_trigger_ticks": "unavailable_until_trigger_context",
+            "bar_5m_close": "unavailable_until_chart_futures",
+            "bar_5m_close_count_at_or_beyond_level": "unavailable_until_chart_futures",
+            "range_expansion_state": "unavailable_until_chart_futures",
+            "volume_velocity_state": "unavailable_until_chart_futures",
+        },
+        "quality": {
+            "fresh": "stream_cache_record",
+            "symbol_match": "expected_symbol_comparison",
+            "required_fields_present": "level_one_required_field_check",
+            "blocking_reasons": "builder_fail_closed_contract",
+        },
+    }
+
+
+def _empty_sources() -> dict[str, object]:
+    return {
+        "quote": {field_name: "unavailable" for field_name in QuoteObservableV2().to_dict()},
+        "session": {field_name: "unavailable" for field_name in SessionObservableV2().to_dict()},
+        "derived": {
+            "mid": "unavailable",
+            "spread_ticks": "unavailable",
+            "distance_to_primary_trigger_ticks": "unavailable_until_trigger_context",
+            "bar_5m_close": "unavailable_until_chart_futures",
+            "bar_5m_close_count_at_or_beyond_level": "unavailable_until_chart_futures",
+            "range_expansion_state": "unavailable_until_chart_futures",
+            "volume_velocity_state": "unavailable_until_chart_futures",
+        },
+        "quality": {
+            "fresh": "stream_cache_record_missing",
+            "symbol_match": "expected_symbol_comparison",
+            "required_fields_present": "level_one_required_field_check",
+            "blocking_reasons": "builder_fail_closed_contract",
+        },
+    }
+
+
+def _observed_source(value: object) -> str:
+    return "stream_cache_level_one" if value is not None else "unavailable"
+
+
+def _derived_source(value: object) -> str:
+    return "derived_from_level_one_quote" if value is not None else "unavailable"

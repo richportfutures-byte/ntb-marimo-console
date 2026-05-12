@@ -119,18 +119,19 @@ class ContractObservableV2:
     derived: DerivedObservableV2 = field(default_factory=DerivedObservableV2)
     quality: QualityObservableV2 = field(default_factory=QualityObservableV2)
     label: str | None = None
+    sources: dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         payload = {
             "contract": self.contract,
             "symbol": self.symbol,
+            "label": self.label,
             "quote": self.quote.to_dict(),
             "session": self.session.to_dict(),
             "derived": self.derived.to_dict(),
             "quality": self.quality.to_dict(),
+            "sources": self.sources,
         }
-        if self.label is not None:
-            payload["label"] = self.label
         return payload
 
 

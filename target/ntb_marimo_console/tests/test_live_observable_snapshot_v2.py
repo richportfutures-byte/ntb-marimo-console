@@ -57,15 +57,17 @@ def cache_snapshot(
     *,
     provider_status: str = "active",
     record: StreamCacheRecord | None = None,
+    records: tuple[StreamCacheRecord, ...] | None = None,
     blocking_reasons: tuple[str, ...] = (),
     stale_symbols: tuple[str, ...] = (),
 ) -> StreamCacheSnapshot:
+    resolved_records = records if records is not None else (() if record is None else (record,))
     return StreamCacheSnapshot(
         generated_at=NOW.isoformat(),
         provider="schwab",
         provider_status=provider_status,  # type: ignore[arg-type]
         cache_max_age_seconds=15.0,
-        records=() if record is None else (record,),
+        records=resolved_records,
         blocking_reasons=blocking_reasons,
         stale_symbols=stale_symbols,
     )
@@ -96,6 +98,14 @@ def record(
             ("last_size", 3),
             ("quote_time", "2026-05-06T13:59:58+00:00"),
             ("trade_time", "2026-05-06T13:59:58+00:00"),
+            ("volume", 180432),
+            ("open", 7160.0),
+            ("high", 7188.0),
+            ("low", 7144.25),
+            ("prior_close", 7158.5),
+            ("tradable", True),
+            ("active", True),
+            ("security_status", "Normal"),
         ),
         updated_at=updated_at,
         age_seconds=2.0 if fresh else 120.0,
@@ -112,6 +122,17 @@ def test_snapshot_includes_schema_provider_status_and_generated_at() -> None:
     assert payload["provider"] == "schwab"
     assert payload["provider_status"] == "connected"
     assert payload["generated_at"] == NOW.isoformat()
+    assert tuple(payload.keys()) == (
+        "schema",
+        "generated_at",
+        "provider",
+        "provider_status",
+        "contracts",
+        "cross_asset",
+        "macro_context",
+        "session_context",
+        "data_quality",
+    )
 
 
 def test_primary_contract_map_is_final_target_only() -> None:
@@ -123,6 +144,7 @@ def test_primary_contract_map_is_final_target_only() -> None:
     assert payload["contracts"]["MGC"]["contract"] == "MGC"
     assert payload["contracts"]["MGC"]["label"] == "Micro Gold"
     assert payload["contracts"]["MGC"]["label"] != "GC"
+    assert payload["contracts"]["ES"]["label"] is None
 
 
 def test_missing_cache_default_disabled_input_fails_closed() -> None:
@@ -149,9 +171,69 @@ def test_complete_fixture_quote_sets_required_fields_present_for_contract() -> N
     assert es["quote"]["bid"] == 7175.0
     assert es["quote"]["ask"] == 7175.5
     assert es["quote"]["last"] == 7175.25
+    assert es["quote"]["bid_size"] == 19
+    assert es["quote"]["ask_size"] == 14
+    assert es["session"]["volume"] == 180432
+    assert es["session"]["open"] == 7160.0
+    assert es["session"]["high"] == 7188.0
+    assert es["session"]["low"] == 7144.25
+    assert es["session"]["prior_close"] == 7158.5
+    assert es["session"]["tradable"] is True
+    assert es["session"]["active"] is True
+    assert es["session"]["security_status"] == "Normal"
 
 
-def test_missing_bid_ask_last_blocks_required_fields() -> None:
+def test_numeric_level_one_field_ids_map_to_required_observables() -> None:
+    timestamp_ms = int(datetime(2026, 5, 6, 13, 59, 58, tzinfo=timezone.utc).timestamp() * 1000)
+    payload = build_live_observable_snapshot_v2(
+        cache_snapshot(
+            record=record(
+                fields=(
+                    ("1", 7175.0),
+                    ("2", 7175.5),
+                    ("3", 7175.25),
+                    ("4", 19),
+                    ("5", 14),
+                    ("8", 180432),
+                    ("10", timestamp_ms),
+                    ("11", timestamp_ms),
+                    ("12", 7188.0),
+                    ("13", 7144.25),
+                    ("14", 7158.5),
+                    ("18", 7160.0),
+                    ("22", "Normal"),
+                    ("30", True),
+                    ("32", True),
+                ),
+            )
+        ),
+        expected_symbols={"ES": "/ESM26"},
+    ).to_dict()
+    es = payload["contracts"]["ES"]
+
+    assert es["quality"]["required_fields_present"] is True
+    assert es["quote"]["quote_time"] == "2026-05-06T13:59:58+00:00"
+    assert es["quote"]["trade_time"] == "2026-05-06T13:59:58+00:00"
+    assert es["session"]["volume"] == 180432
+    assert es["session"]["security_status"] == "Normal"
+
+
+def test_contract_observable_includes_source_labels() -> None:
+    payload = build_live_observable_snapshot_v2(
+        cache_snapshot(record=record()),
+        expected_symbols={"ES": "/ESM26"},
+    ).to_dict()
+    es = payload["contracts"]["ES"]
+
+    assert es["sources"]["quote"]["bid"] == "stream_cache_level_one"
+    assert es["sources"]["quote"]["quote_time"] == "stream_cache_level_one"
+    assert es["sources"]["session"]["volume"] == "stream_cache_level_one"
+    assert es["sources"]["derived"]["mid"] == "derived_from_level_one_quote"
+    assert es["sources"]["derived"]["bar_5m_close"] == "unavailable_until_chart_futures"
+    assert es["sources"]["quality"]["required_fields_present"] == "level_one_required_field_check"
+
+
+def test_missing_required_level_one_fields_block_required_fields() -> None:
     payload = build_live_observable_snapshot_v2(
         cache_snapshot(record=record(fields=(("quote_time", NOW.isoformat()),))),
         expected_symbols={"ES": "/ESM26"},
@@ -159,7 +241,57 @@ def test_missing_bid_ask_last_blocks_required_fields() -> None:
     quality = payload["contracts"]["ES"]["quality"]
 
     assert quality["required_fields_present"] is False
-    assert any(reason.startswith("missing_required_fields:ES:") for reason in quality["blocking_reasons"])
+    reason = next(reason for reason in quality["blocking_reasons"] if reason.startswith("missing_required_fields:ES:"))
+    for field_name in (
+        "bid",
+        "ask",
+        "last",
+        "bid_size",
+        "ask_size",
+        "trade_time",
+        "volume",
+        "open",
+        "high",
+        "low",
+        "prior_close",
+        "tradable",
+        "active",
+        "security_status",
+    ):
+        assert field_name in reason
+
+
+def test_quote_and_trade_times_must_be_observed_not_filled_from_record_updated_at() -> None:
+    payload = build_live_observable_snapshot_v2(
+        cache_snapshot(
+            record=record(
+                fields=(
+                    ("bid", 7175.0),
+                    ("ask", 7175.5),
+                    ("last", 7175.25),
+                    ("bid_size", 19),
+                    ("ask_size", 14),
+                    ("volume", 180432),
+                    ("open", 7160.0),
+                    ("high", 7188.0),
+                    ("low", 7144.25),
+                    ("prior_close", 7158.5),
+                    ("tradable", True),
+                    ("active", True),
+                    ("security_status", "Normal"),
+                ),
+                updated_at="2026-05-06T13:59:58+00:00",
+            )
+        ),
+        expected_symbols={"ES": "/ESM26"},
+    ).to_dict()
+    es = payload["contracts"]["ES"]
+
+    assert es["quote"]["quote_time"] is None
+    assert es["quote"]["trade_time"] is None
+    assert es["sources"]["quote"]["quote_time"] == "unavailable"
+    assert es["quality"]["required_fields_present"] is False
+    assert "missing_required_fields:ES:quote_time,trade_time" in es["quality"]["blocking_reasons"]
 
 
 def test_stale_quote_trade_or_cache_timestamps_block_freshness() -> None:
@@ -194,6 +326,7 @@ def test_provider_error_disconnected_and_stale_propagate_blocking_reasons() -> N
     for status, expected in (
         ("error", "provider_error"),
         ("blocked", "provider_disconnected"),
+        ("shutdown", "provider_disconnected"),
         ("stale", "provider_stale"),
     ):
         payload = build_live_observable_snapshot_v2(cache_snapshot(provider_status=status, record=record())).to_dict()
@@ -287,6 +420,47 @@ def test_cross_asset_macro_and_session_contexts_are_unavailable_not_inferred() -
     assert payload["cross_asset"]["es_relative_strength"] == {"source": "unavailable", "value": None}
     assert payload["macro_context"]["event_lockout"] == {"source": "unavailable", "value": None}
     assert payload["session_context"]["session_sequence"] == {"source": "unavailable", "value": None}
+    assert "dxy" not in payload["contracts"]["ES"]["derived"]
+    assert "event_lockout" not in payload["contracts"]["ES"]["quality"]
+
+
+def test_snapshot_ready_requires_all_five_final_targets_complete_and_unblocked() -> None:
+    records = (
+        record(contract="ES", symbol="/ESM26"),
+        record(contract="NQ", symbol="/NQM26"),
+        record(contract="CL", symbol="/CLM26"),
+        record(contract="6E", symbol="/6EM26"),
+        record(contract="MGC", symbol="/MGCM26"),
+    )
+
+    payload = build_live_observable_snapshot_v2(
+        cache_snapshot(records=records),
+        expected_symbols={
+            "ES": "/ESM26",
+            "NQ": "/NQM26",
+            "CL": "/CLM26",
+            "6E": "/6EM26",
+            "MGC": "/MGCM26",
+        },
+    ).to_dict()
+
+    assert payload["data_quality"]["ready"] is True
+    assert payload["data_quality"]["state"] == "ready"
+    assert tuple(payload["data_quality"]["ready_contracts"]) == ("ES", "NQ", "CL", "6E", "MGC")
+    assert payload["data_quality"]["blocking_reasons"] == []
+
+
+def test_partial_es_quote_does_not_make_snapshot_ready() -> None:
+    payload = build_live_observable_snapshot_v2(
+        cache_snapshot(record=record()),
+        expected_symbols={"ES": "/ESM26"},
+    ).to_dict()
+
+    assert payload["contracts"]["ES"]["quality"]["required_fields_present"] is True
+    assert payload["data_quality"]["ready"] is False
+    assert payload["data_quality"]["ready_contracts"] == ["ES"]
+    for missing_contract in ("NQ", "CL", "6E", "MGC"):
+        assert f"{missing_contract}:missing_cache_record:{missing_contract}" in payload["data_quality"]["blocking_reasons"]
 
 
 def test_builder_accepts_stream_cache_snapshot_without_network_side_effects() -> None:
@@ -299,7 +473,23 @@ def test_builder_accepts_stream_cache_snapshot_without_network_side_effects() ->
             symbol="/ESM26",
             contract="ES",
             message_type="quote",
-            fields={"bid": 7175.0, "ask": 7175.5, "last": 7175.25},
+            fields={
+                "bid": 7175.0,
+                "ask": 7175.5,
+                "last": 7175.25,
+                "bid_size": 19,
+                "ask_size": 14,
+                "quote_time": "2026-05-06T13:59:58+00:00",
+                "trade_time": "2026-05-06T13:59:58+00:00",
+                "volume": 180432,
+                "open": 7160.0,
+                "high": 7188.0,
+                "low": 7144.25,
+                "prior_close": 7158.5,
+                "tradable": True,
+                "active": True,
+                "security_status": "Normal",
+            },
             received_at="2026-05-06T13:59:58+00:00",
         )
     )
