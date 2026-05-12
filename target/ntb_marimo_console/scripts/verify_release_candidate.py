@@ -162,6 +162,7 @@ RELEASE_CANDIDATE_GROUPS: tuple[ReleaseCandidateGroup, ...] = (
             "tests/test_run_operator_live_runtime_rehearsal.py",
             "tests/test_five_contract_live_proof_capture.py",
             "tests/test_release_candidate_readiness_audit.py",
+            "tests/test_release_candidate_cut.py",
             "tests/test_non_live_acceptance_harness.py",
         ),
     ),

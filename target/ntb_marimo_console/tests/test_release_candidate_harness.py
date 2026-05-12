@@ -77,6 +77,7 @@ def test_release_candidate_harness_includes_d2_d3_and_redaction_safety_tests() -
     assert "tests/test_run_operator_live_runtime_rehearsal.py" in files
     assert "tests/test_five_contract_live_proof_capture.py" in files
     assert "tests/test_release_candidate_readiness_audit.py" in files
+    assert "tests/test_release_candidate_cut.py" in files
     assert "tests/test_decision_review_replay.py" in files
     assert "tests/test_non_live_acceptance_harness.py" in files
 
