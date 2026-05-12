@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 from __future__ import annotations
 
 import argparse
@@ -341,18 +342,30 @@ def _ingest_levelone_fixture_messages(manager: SchwabStreamManager, *, scenario:
                 "symbol": symbol,
                 "contract": contract,
                 "message_type": "quote",
-                "fields": {
-                    "bid": 100.0 + index,
-                    "ask": 100.25 + index,
-                    "last": 100.125 + index,
-                    "bid_size": 10 + index,
-                    "ask_size": 12 + index,
-                    "quote_time": received_at,
-                    "trade_time": received_at,
-                },
+                "fields": _complete_levelone_fields(index=index, timestamp=received_at),
                 "received_at": received_at,
             }
         )
+
+
+def _complete_levelone_fields(*, index: int, timestamp: str) -> dict[str, object]:
+    return {
+        "bid": 100.0 + index,
+        "ask": 100.25 + index,
+        "last": 100.125 + index,
+        "bid_size": 10 + index,
+        "ask_size": 12 + index,
+        "quote_time": timestamp,
+        "trade_time": timestamp,
+        "volume": 25_000 + index,
+        "open": 99.5 + index,
+        "high": 101.0 + index,
+        "low": 98.75 + index,
+        "prior_close": 99.25 + index,
+        "tradable": True,
+        "active": True,
+        "security_status": "Normal",
+    }
 
 
 def _ingest_chart_fixture_messages(*, scenario: FixtureScenario) -> dict[str, object]:

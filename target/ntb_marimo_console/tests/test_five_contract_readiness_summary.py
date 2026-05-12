@@ -50,6 +50,26 @@ def _engine_src_path() -> str:
     return str(Path("../../source/ntb_engine/src").resolve())
 
 
+def _complete_levelone_fields(index: int = 0) -> tuple[tuple[str, object], ...]:
+    return (
+        ("bid", 100.0 + index),
+        ("ask", 100.25 + index),
+        ("last", 100.125 + index),
+        ("bid_size", 10 + index),
+        ("ask_size", 12 + index),
+        ("quote_time", NOW),
+        ("trade_time", NOW),
+        ("volume", 25_000 + index),
+        ("open", 99.5 + index),
+        ("high", 101.0 + index),
+        ("low", 98.75 + index),
+        ("prior_close", 99.25 + index),
+        ("tradable", True),
+        ("active", True),
+        ("security_status", "Normal"),
+    )
+
+
 def _runtime_record(
     contract: str,
     *,
@@ -63,14 +83,7 @@ def _runtime_record(
         symbol=symbol,
         contract=contract,
         message_type="quote",
-        fields=fields
-        or (
-            ("bid", 100.0),
-            ("ask", 100.25),
-            ("last", 100.125),
-            ("quote_time", NOW),
-            ("trade_time", NOW),
-        ),
+        fields=fields or _complete_levelone_fields(),
         updated_at=NOW,
         age_seconds=0.0 if fresh else 30.0,
         fresh=fresh,
