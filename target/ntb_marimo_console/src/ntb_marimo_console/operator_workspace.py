@@ -57,6 +57,7 @@ class OperatorWorkspaceRequest:
     trigger_transition_log: Mapping[str, Any] | None = None
     cockpit_event_replay_status: str | None = None
     cockpit_event_replay: Mapping[str, Any] | None = None
+    stream_health: Mapping[str, Any] | None = None
     evidence_unavailable_reasons: tuple[str, ...] = ()
 
 
@@ -107,9 +108,10 @@ class CockpitRuntimeStatusVM:
     session_clock_state: str
     event_lockout_state: str
     evaluated_at: str
+    stream_health: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "provider_status": self.provider_status,
             "stream_status": self.stream_status,
             "quote_freshness": self.quote_freshness,
@@ -118,6 +120,9 @@ class CockpitRuntimeStatusVM:
             "event_lockout_state": self.event_lockout_state,
             "evaluated_at": self.evaluated_at,
         }
+        if self.stream_health is not None:
+            payload["stream_health"] = dict(self.stream_health)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -396,6 +401,7 @@ def build_r14_cockpit_view_model(request: OperatorWorkspaceRequest) -> R14Cockpi
         session_clock_state=_safe_status(header["session_status"]),
         event_lockout_state=_safe_status(header["event_lockout_status"]),
         evaluated_at=_safe_text(header["evaluated_at"]),
+        stream_health=_stream_health_payload(request.stream_health),
     )
     premarket = CockpitPremarketVM(
         premarket_brief_status=_premarket_brief_status(request.premarket_brief, premarket_plan),
@@ -470,6 +476,22 @@ def _build_header(
         "session_status": _safe_status(request.session_status or _session_status_from_gate(gate)),
         "event_lockout_status": _safe_status(request.event_lockout_status or _event_lockout_status_from_gate(gate)),
         "evaluated_at": _safe_text(request.evaluated_at or _string_or_none(gate.get("evaluated_at")) or _string_or_none(live.get("generated_at")) or "unavailable"),
+    }
+
+
+def _stream_health_payload(value: Mapping[str, Any] | None) -> dict[str, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    return {
+        "connection_state": _safe_status(value.get("connection_state") or "unavailable"),
+        "token_status": _safe_status(value.get("token_status") or "unavailable"),
+        "token_expires_in_seconds": _optional_int_value(value.get("token_expires_in_seconds")),
+        "reconnect_attempts": _optional_int_value(value.get("reconnect_attempts")) or 0,
+        "reconnect_active": value.get("reconnect_active") is True,
+        "per_contract_status": _safe_status_mapping(value.get("per_contract_status")),
+        "stale_contracts": list(_sequence_text(value.get("stale_contracts"))),
+        "blocking_reasons": list(_sequence_text(value.get("blocking_reasons"))),
+        "overall_health": _safe_status(value.get("overall_health") or "unavailable"),
     }
 
 
@@ -1543,6 +1565,25 @@ def _sequence_fields(value: object) -> tuple[str, ...]:
     if not isinstance(value, Sequence) or isinstance(value, str | bytes):
         return ()
     return tuple(_safe_field(item) for item in value if str(item).strip())
+
+
+def _optional_int_value(value: object) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_status_mapping(value: object) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        _safe_text(contract): _safe_status(status)
+        for contract, status in value.items()
+        if _safe_text(contract)
+    }
 
 
 def _safe_text(value: object) -> str:

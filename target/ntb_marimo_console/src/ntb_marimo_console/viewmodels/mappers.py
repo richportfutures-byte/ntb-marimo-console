@@ -10,6 +10,8 @@ from ..adapters.contracts import (
     WatchmanContextLike,
 )
 from ..market_data.futures_quote_service import FuturesQuoteService, FuturesQuoteServiceResult
+from ..market_data.stream_events import redact_sensitive_text
+from ..market_data.stream_manager import StreamManagerSnapshot
 from .models import (
     EngineReasoningVM,
     KeyLevelsVM,
@@ -23,10 +25,14 @@ from .models import (
     RunHistoryRowVM,
     SessionHeaderVM,
     SizingMathVM,
+    StreamHealthVM,
     TradeThesisVM,
     TriggerStatusVM,
     unavailable_live_observable_market_data_vm,
 )
+
+
+TOKEN_EXPIRING_SOON_SECONDS = 300
 
 
 def session_header_vm(contract: str, session_date: str) -> SessionHeaderVM:
@@ -103,6 +109,91 @@ def live_observable_vm_from_snapshot(
             market_data_symbol=market_data_symbol or contract,
         ),
     )
+
+
+def stream_health_vm_from_snapshot(
+    snapshot: StreamManagerSnapshot,
+    token_status: Mapping[str, object] | None = None,
+) -> StreamHealthVM:
+    per_contract_status = _per_contract_health_status(snapshot)
+    token_state, expires_in = _token_health_status(token_status)
+    reconnect_active = snapshot.state == "reconnecting" or snapshot.current_backoff_delay is not None
+    blocking_reasons = tuple(redact_sensitive_text(reason) for reason in snapshot.blocking_reasons)
+    overall_health = _overall_stream_health(
+        connection_state=str(snapshot.state),
+        token_status=token_state,
+        per_contract_status=per_contract_status,
+        stale_contracts=snapshot.stale_contracts,
+        blocking_reasons=blocking_reasons,
+        reconnect_active=reconnect_active,
+    )
+    return StreamHealthVM(
+        connection_state=str(snapshot.state),
+        token_status=token_state,
+        token_expires_in_seconds=expires_in,
+        reconnect_attempts=int(snapshot.reconnect_attempts),
+        reconnect_active=reconnect_active,
+        per_contract_status=per_contract_status,
+        stale_contracts=tuple(snapshot.stale_contracts),
+        blocking_reasons=blocking_reasons,
+        overall_health=overall_health,
+    )
+
+
+def _per_contract_health_status(snapshot: StreamManagerSnapshot) -> dict[str, str]:
+    raw_status = snapshot.contract_heartbeat_status or {}
+    statuses: dict[str, str] = {}
+    for contract in snapshot.config.contracts_requested:
+        entry = raw_status.get(contract)
+        status = None
+        if isinstance(entry, Mapping):
+            raw_value = entry.get("status")
+            status = str(raw_value).strip().lower() if raw_value is not None else None
+        statuses[contract] = status if status in {"active", "stale", "no_data"} else "not_subscribed"
+    return statuses
+
+
+def _token_health_status(token_status: Mapping[str, object] | None) -> tuple[str, int | None]:
+    if token_status is None:
+        return "unavailable", None
+    expires_in = _optional_int(token_status.get("expires_in_seconds"))
+    valid = token_status.get("valid") is True
+    if expires_in is not None and expires_in <= 0:
+        return "expired", expires_in
+    if valid and expires_in is not None and expires_in <= TOKEN_EXPIRING_SOON_SECONDS:
+        return "expiring_soon", expires_in
+    if valid:
+        return "valid", expires_in
+    return "refresh_failed", expires_in
+
+
+def _overall_stream_health(
+    *,
+    connection_state: str,
+    token_status: str,
+    per_contract_status: Mapping[str, str],
+    stale_contracts: tuple[str, ...],
+    blocking_reasons: tuple[str, ...],
+    reconnect_active: bool,
+) -> str:
+    state = connection_state.strip().lower()
+    if state in {"disabled", "initialized"}:
+        return "unavailable"
+    if state in {"blocked", "error", "shutdown", "disconnected"}:
+        return "blocked"
+    if token_status in {"expired", "refresh_failed"}:
+        return "blocked"
+    contract_values = set(per_contract_status.values())
+    if (
+        state in {"reconnecting", "stale"}
+        or reconnect_active
+        or token_status == "expiring_soon"
+        or bool(stale_contracts)
+        or bool(contract_values & {"stale", "no_data", "not_subscribed"})
+        or bool(blocking_reasons)
+    ):
+        return "degraded"
+    return "healthy"
 
 
 def _market_data_display_vm(

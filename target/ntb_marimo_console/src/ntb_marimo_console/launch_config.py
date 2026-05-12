@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .adapters.contracts import RuntimeMode
 from .market_data import FuturesQuoteServiceConfig, resolve_futures_quote_service_config
+from .market_data.stream_manager import StreamManagerSnapshot
 from .operator_live_runtime import (
     OperatorRuntimeMode,
     OperatorRuntimeSnapshotResult,
@@ -398,7 +399,15 @@ def _attach_operator_live_runtime_metadata(
     operator_runtime: OperatorRuntimeSnapshotResult,
 ) -> None:
     payload = operator_runtime.to_dict()
+    stream_health = _stream_health_payload(operator_runtime)
     shell["operator_live_runtime"] = payload
+    if stream_health is not None:
+        shell["stream_health"] = stream_health
+        cockpit = shell.get("r14_cockpit")
+        if isinstance(cockpit, dict):
+            runtime_status = cockpit.get("runtime_status")
+            if isinstance(runtime_status, dict):
+                runtime_status["stream_health"] = stream_health
     runtime = shell.get("runtime")
     if not isinstance(runtime, dict):
         runtime = {}
@@ -417,6 +426,26 @@ def _attach_operator_live_runtime_metadata(
             "operator_live_runtime_cache_snapshot_ready": operator_runtime.cache_snapshot_ready,
         }
     )
+
+
+def _stream_health_payload(operator_runtime: OperatorRuntimeSnapshotResult) -> dict[str, object] | None:
+    if operator_runtime.mode != "OPERATOR_LIVE_RUNTIME":
+        return None
+    if isinstance(operator_runtime.snapshot, StreamManagerSnapshot):
+        from .viewmodels.mappers import stream_health_vm_from_snapshot
+
+        return stream_health_vm_from_snapshot(operator_runtime.snapshot).to_dict()
+    return {
+        "connection_state": operator_runtime.cache_provider_status or "unavailable",
+        "token_status": "unavailable",
+        "token_expires_in_seconds": None,
+        "reconnect_attempts": 0,
+        "reconnect_active": operator_runtime.status == "LIVE_RUNTIME_UNAVAILABLE",
+        "per_contract_status": {},
+        "stale_contracts": [],
+        "blocking_reasons": list(operator_runtime.blocking_reasons),
+        "overall_health": "unavailable",
+    }
 
 
 def _build_startup_shell(

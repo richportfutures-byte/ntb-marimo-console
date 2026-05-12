@@ -113,6 +113,10 @@ def render_phase1_console(
         _render_console_header(shell, heading=heading, mode_summary=mode_summary),
     ]
 
+    stream_health_panel = render_stream_health_panel(shell)
+    if stream_health_panel is not None:
+        elements.append(stream_health_panel)
+
     cockpit = shell.get("r14_cockpit")
     if operator_ready and isinstance(cockpit, Mapping):
         elements.append(render_r14_cockpit_shell(cockpit))
@@ -494,6 +498,84 @@ def build_session_evidence_markdown(evidence: Mapping[str, object]) -> str:
     else:
         lines.append(f"  - {NO_RECENT_SESSION_EVIDENCE}")
     return "\n".join(lines)
+
+
+def render_stream_health_panel(shell: Mapping[str, object]) -> Any | None:
+    runtime = shell.get("runtime")
+    runtime_map = runtime if isinstance(runtime, Mapping) else {}
+    mode = _as_str(runtime_map.get("operator_live_runtime_mode"), default="SAFE_NON_LIVE")
+    if mode != "OPERATOR_LIVE_RUNTIME":
+        return None
+    health = shell.get("stream_health")
+    if not isinstance(health, Mapping):
+        health = {
+            "connection_state": "unavailable",
+            "token_status": "unavailable",
+            "token_expires_in_seconds": None,
+            "reconnect_attempts": 0,
+            "reconnect_active": False,
+            "per_contract_status": {},
+            "stale_contracts": [],
+            "blocking_reasons": runtime_map.get("operator_live_runtime_blocking_reasons", []),
+            "overall_health": "unavailable",
+        }
+    return _render_markdown_card(build_stream_health_markdown(health))
+
+
+def build_stream_health_markdown(health: Mapping[str, object]) -> str:
+    connection_state = _as_str(health.get("connection_state"), default="unavailable")
+    token_status = _as_str(health.get("token_status"), default="unavailable")
+    expires_in = health.get("token_expires_in_seconds")
+    reconnect_attempts = _as_str(health.get("reconnect_attempts"), default=0)
+    reconnect_active = health.get("reconnect_active") is True
+    overall_health = _as_str(health.get("overall_health"), default="unavailable")
+
+    lines = [
+        "## Live Stream Health",
+        f"- Overall Health: `{overall_health}`",
+        f"- Connection State: `{connection_state}`",
+        f"- Token Status: `{token_status}`",
+        f"- Token Expires In Seconds: `{_as_str(expires_in, default='<unknown>')}`",
+        f"- Reconnect Active: `{reconnect_active}`",
+        f"- Reconnect Attempts: `{reconnect_attempts}`",
+        "",
+        "### Contract Heartbeats",
+        "| Contract | Indicator | Status |",
+        "| --- | --- | --- |",
+    ]
+
+    per_contract = health.get("per_contract_status")
+    if isinstance(per_contract, Mapping) and per_contract:
+        for contract, status in per_contract.items():
+            status_text = _as_str(status, default="not_subscribed")
+            lines.append(
+                f"| `{_as_str(contract)}` | `{_contract_health_indicator(status_text)}` | `{status_text}` |"
+            )
+    else:
+        lines.append("| `<none>` | `gray` | `not_applicable` |")
+
+    stale_contracts = health.get("stale_contracts")
+    if isinstance(stale_contracts, list | tuple) and stale_contracts:
+        lines.append("")
+        lines.append("- Stale Contracts: " + ", ".join(f"`{_as_str(contract)}`" for contract in stale_contracts))
+
+    blocking_reasons = health.get("blocking_reasons")
+    if isinstance(blocking_reasons, list | tuple) and blocking_reasons:
+        lines.append("")
+        lines.append("### Blocking Reasons")
+        for reason in blocking_reasons:
+            lines.append(f"- `{_as_str(reason)}`")
+
+    return "\n".join(lines)
+
+
+def _contract_health_indicator(status: object) -> str:
+    normalized = _as_str(status, default="not_subscribed").strip().lower()
+    if normalized == "active":
+        return "green"
+    if normalized in {"stale", "no_data"}:
+        return "red"
+    return "yellow"
 
 
 def render_r14_cockpit_shell(cockpit: Mapping[str, object]) -> Any:

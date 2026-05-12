@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 
@@ -72,6 +73,32 @@ class LiveObservableVM:
     timestamp_et: str
     snapshot: dict[str, object]
     market_data: LiveObservableMarketDataVM = field(default_factory=unavailable_live_observable_market_data_vm)
+
+
+@dataclass(frozen=True)
+class StreamHealthVM:
+    connection_state: str
+    token_status: str
+    token_expires_in_seconds: int | None
+    reconnect_attempts: int
+    reconnect_active: bool
+    per_contract_status: Mapping[str, str]
+    stale_contracts: tuple[str, ...]
+    blocking_reasons: tuple[str, ...]
+    overall_health: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "connection_state": self.connection_state,
+            "token_status": self.token_status,
+            "token_expires_in_seconds": self.token_expires_in_seconds,
+            "reconnect_attempts": self.reconnect_attempts,
+            "reconnect_active": self.reconnect_active,
+            "per_contract_status": dict(self.per_contract_status),
+            "stale_contracts": list(self.stale_contracts),
+            "blocking_reasons": list(self.blocking_reasons),
+            "overall_health": self.overall_health,
+        }
 
 
 NARRATIVE_UNAVAILABLE_LABEL = "Engine narrative unavailable in this run."
