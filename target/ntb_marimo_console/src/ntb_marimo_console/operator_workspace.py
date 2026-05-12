@@ -458,7 +458,7 @@ def _build_header(
         "provider_status": _safe_status(provider_status or "unavailable"),
         "stream_status": _safe_status(stream_status),
         "quote_freshness": _safe_status(request.quote_freshness or _string_or_none(live.get("quote_freshness")) or "unknown"),
-        "bar_freshness": _safe_status(request.bar_freshness or "unknown"),
+        "bar_freshness": _safe_status(request.bar_freshness or _string_or_none(live.get("bar_freshness")) or "unknown"),
         "session_status": _safe_status(request.session_status or _session_status_from_gate(gate)),
         "event_lockout_status": _safe_status(request.event_lockout_status or _event_lockout_status_from_gate(gate)),
         "evaluated_at": _safe_text(request.evaluated_at or _string_or_none(gate.get("evaluated_at")) or _string_or_none(live.get("generated_at")) or "unavailable"),
@@ -1351,16 +1351,29 @@ def _live_payload(value: LiveObservableSnapshotV2 | Mapping[str, Any] | None, co
     else:
         return {}
     quote_freshness = "unknown"
+    bar_freshness = "unknown"
+    blocking_reasons: tuple[str, ...] = ()
     contracts = payload.get("contracts")
     contract_payload = contracts.get(contract) if isinstance(contracts, Mapping) else None
     if isinstance(contract_payload, Mapping):
         quality = contract_payload.get("quality")
         if isinstance(quality, Mapping):
             quote_freshness = "fresh" if quality.get("fresh") is True else "stale_or_unavailable"
+            blocking_reasons = _sequence_text(quality.get("blocking_reasons"))
+        chart_bar = contract_payload.get("chart_bar")
+        if isinstance(chart_bar, Mapping):
+            if chart_bar.get("available") is True and chart_bar.get("fresh") is True:
+                bar_freshness = "fresh"
+            elif chart_bar.get("state") == "stale" or chart_bar.get("fresh") is False:
+                bar_freshness = "stale"
+            else:
+                bar_freshness = "unavailable"
     return {
         "provider_status": payload.get("provider_status"),
         "generated_at": payload.get("generated_at"),
         "quote_freshness": quote_freshness,
+        "bar_freshness": bar_freshness,
+        "blocking_reasons": list(blocking_reasons),
     }
 
 

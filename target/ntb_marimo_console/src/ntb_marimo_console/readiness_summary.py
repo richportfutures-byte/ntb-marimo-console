@@ -292,7 +292,7 @@ def _build_runtime_context(runtime_snapshot: RuntimeReadinessSnapshot | None) ->
         source_type=source_type,
         provider_status=observable_snapshot.provider_status,
         generated_at=observable_snapshot.generated_at,
-        snapshot_ready=observable_snapshot.ready,
+        snapshot_ready=_observable_quote_cache_ready(observable_snapshot),
         manager_state=manager_state,
         manager_blocking_reasons=manager_blocking_reasons,
         excluded_or_unsupported_contracts=_excluded_or_unsupported_runtime_contracts(cache_snapshot),
@@ -493,6 +493,15 @@ def _runtime_contract_readiness(
         symbol=symbol_text,
         label=label,
     )
+
+
+def _observable_quote_cache_ready(observable_snapshot: LiveObservableSnapshotV2) -> bool:
+    if observable_snapshot.provider_status != "connected":
+        return False
+    quote_ready_contracts = observable_snapshot.data_quality.get("quote_ready_contracts")
+    if isinstance(quote_ready_contracts, list):
+        return set(quote_ready_contracts) == set(final_target_contracts())
+    return observable_snapshot.ready
 
 
 def _summary_runtime_status(

@@ -8,6 +8,8 @@ from .quality import ProviderStatusV2, quality_state_from_reasons
 
 LIVE_OBSERVABLE_SNAPSHOT_V2_SCHEMA = "live_observable_snapshot_v2"
 JsonScalar = str | int | float | bool | None
+DependencyStatusV2 = Literal["available", "unavailable", "lockout", "derived_with_source", "derived_without_source"]
+ChartBarStatusV2 = Literal["available", "building", "stale", "unavailable", "blocked"]
 
 
 @dataclass(frozen=True)
@@ -89,11 +91,79 @@ class DerivedObservableV2:
 
 
 @dataclass(frozen=True)
+class DependencyObservableV2:
+    name: str
+    status: DependencyStatusV2 = "unavailable"
+    required: bool = True
+    source: str = "unavailable"
+    source_status: str = "unavailable"
+    value: JsonScalar = None
+    fields: dict[str, JsonScalar] = field(default_factory=dict)
+    fresh: bool = False
+    blocking_reasons: tuple[str, ...] = ()
+
+    @property
+    def available(self) -> bool:
+        return self.status in {"available", "derived_with_source"} and self.fresh and not self.blocking_reasons
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "status": self.status,
+            "required": self.required,
+            "available": self.available,
+            "source": self.source,
+            "source_status": self.source_status,
+            "value": self.value,
+            "fields": self.fields,
+            "fresh": self.fresh,
+            "blocking_reasons": list(self.blocking_reasons),
+        }
+
+
+@dataclass(frozen=True)
+class ChartBarObservableV2:
+    state: ChartBarStatusV2 = "unavailable"
+    available: bool = False
+    fresh: bool = False
+    source: str = "unavailable"
+    source_status: str = "unavailable"
+    completed_one_minute_available: bool = False
+    completed_five_minute_available: bool = False
+    building: bool = False
+    completed_one_minute_count: int = 0
+    completed_five_minute_count: int = 0
+    latest_completed_one_minute_end_time: str | None = None
+    latest_completed_five_minute_end_time: str | None = None
+    blocking_reasons: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "state": self.state,
+            "available": self.available,
+            "fresh": self.fresh,
+            "source": self.source,
+            "source_status": self.source_status,
+            "completed_one_minute_available": self.completed_one_minute_available,
+            "completed_five_minute_available": self.completed_five_minute_available,
+            "building": self.building,
+            "completed_one_minute_count": self.completed_one_minute_count,
+            "completed_five_minute_count": self.completed_five_minute_count,
+            "latest_completed_one_minute_end_time": self.latest_completed_one_minute_end_time,
+            "latest_completed_five_minute_end_time": self.latest_completed_five_minute_end_time,
+            "blocking_reasons": list(self.blocking_reasons),
+        }
+
+
+@dataclass(frozen=True)
 class QualityObservableV2:
     fresh: bool = False
     delayed: bool | None = None
     symbol_match: bool = False
     required_fields_present: bool = False
+    missing_fields: tuple[str, ...] = ()
+    chart_bars_ready: bool = False
+    dependency_blocking_reasons: tuple[str, ...] = ()
     blocking_reasons: tuple[str, ...] = ()
 
     @property
@@ -106,6 +176,9 @@ class QualityObservableV2:
             "delayed": self.delayed,
             "symbol_match": self.symbol_match,
             "required_fields_present": self.required_fields_present,
+            "missing_fields": list(self.missing_fields),
+            "chart_bars_ready": self.chart_bars_ready,
+            "dependency_blocking_reasons": list(self.dependency_blocking_reasons),
             "blocking_reasons": list(self.blocking_reasons),
         }
 
@@ -117,6 +190,8 @@ class ContractObservableV2:
     quote: QuoteObservableV2 = field(default_factory=QuoteObservableV2)
     session: SessionObservableV2 = field(default_factory=SessionObservableV2)
     derived: DerivedObservableV2 = field(default_factory=DerivedObservableV2)
+    chart_bar: ChartBarObservableV2 = field(default_factory=ChartBarObservableV2)
+    dependencies: dict[str, DependencyObservableV2] = field(default_factory=dict)
     quality: QualityObservableV2 = field(default_factory=QualityObservableV2)
     label: str | None = None
     sources: dict[str, object] = field(default_factory=dict)
@@ -129,6 +204,8 @@ class ContractObservableV2:
             "quote": self.quote.to_dict(),
             "session": self.session.to_dict(),
             "derived": self.derived.to_dict(),
+            "chart_bar": self.chart_bar.to_dict(),
+            "dependencies": {name: dependency.to_dict() for name, dependency in self.dependencies.items()},
             "quality": self.quality.to_dict(),
             "sources": self.sources,
         }

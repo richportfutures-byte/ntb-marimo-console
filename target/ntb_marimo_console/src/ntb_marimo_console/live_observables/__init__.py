@@ -8,14 +8,18 @@ from .quality import (
     quality_state_from_reasons,
 )
 from .schema_v2 import (
+    ChartBarObservableV2,
     LIVE_OBSERVABLE_SNAPSHOT_V2_SCHEMA,
     ContractObservableV2,
+    DependencyObservableV2,
     LiveObservableSnapshotV2,
 )
 
 __all__ = [
+    "ChartBarObservableV2",
     "CONTRACT_TICK_SIZES",
     "ContractObservableV2",
+    "DependencyObservableV2",
     "LIVE_OBSERVABLE_SNAPSHOT_V2_SCHEMA",
     "LiveObservableSnapshotBuilder",
     "LiveObservableSnapshotV2",

@@ -142,7 +142,7 @@ def evaluate_pipeline_query_gate(request: PipelineQueryGateRequest) -> PipelineQ
     _check_profile(request, passed, missing, disabled)
     _check_watchman(request.watchman_validator_status, passed, missing, disabled)
     _check_live_snapshot(request, contract, passed, missing, disabled)
-    _check_bars(request, passed, missing, disabled)
+    _check_bars(request, contract, passed, missing, disabled)
     _check_trigger_fields(request, trigger_missing, passed, missing, disabled)
     _check_trigger_state(trigger_state, trigger_blocking, passed, missing, disabled)
     _check_trigger_state_provenance(request, trigger_state, missing, disabled)
@@ -272,12 +272,17 @@ def _check_live_snapshot(
 
 def _check_bars(
     request: PipelineQueryGateRequest,
+    contract: str,
     passed: list[str],
     missing: list[str],
     disabled: list[str],
 ) -> None:
     if request.bar_readiness is not None:
         _check_bar_readiness(request.bar_readiness, passed, missing, disabled)
+        return
+    snapshot_bar_readiness = _bar_readiness_from_live_snapshot(request.live_snapshot, contract)
+    if snapshot_bar_readiness is not None:
+        _check_serialized_bar_readiness(snapshot_bar_readiness, passed, missing, disabled)
         return
     if not request.bars_available:
         missing.append("bars_fresh_and_available")
@@ -312,6 +317,36 @@ def _check_bar_readiness(
         disabled.extend(reasons)
         return
     if bar_readiness.building or bar_readiness.state != "available":
+        missing.append("bars_fresh_and_available")
+        disabled.append("bars_partial_or_blocked")
+        disabled.extend(reasons)
+        return
+    passed.append("bars_fresh_and_available")
+
+
+def _check_serialized_bar_readiness(
+    bar_readiness: Mapping[str, Any],
+    passed: list[str],
+    missing: list[str],
+    disabled: list[str],
+) -> None:
+    reasons = _string_items(bar_readiness.get("blocking_reasons"))
+    one_minute = bar_readiness.get("completed_one_minute_available") is True
+    five_minute = bar_readiness.get("completed_five_minute_available") is True
+    fresh = bar_readiness.get("fresh") is True
+    available = bar_readiness.get("available") is True
+    state = str(bar_readiness.get("state") or "unavailable").strip().lower()
+    if not one_minute or not five_minute:
+        missing.append("bars_fresh_and_available")
+        disabled.append("bars_missing")
+        disabled.extend(reasons)
+        return
+    if not fresh or state == "stale":
+        missing.append("bars_fresh_and_available")
+        disabled.append("bars_stale")
+        disabled.extend(reasons)
+        return
+    if not available or state != "available":
         missing.append("bars_fresh_and_available")
         disabled.append("bars_partial_or_blocked")
         disabled.extend(reasons)
@@ -450,7 +485,11 @@ def _live_snapshot_quality(
             live_snapshot.ready and observable.quality.fresh,
             observable.quality.fresh,
             observable.quality.required_fields_present,
-            tuple(_safe_reason(reason) for reason in observable.quality.blocking_reasons),
+            tuple(
+                _safe_reason(reason)
+                for reason in observable.quality.blocking_reasons
+                + observable.quality.dependency_blocking_reasons
+            ),
         )
     generated_ready = _bool_or_none(_resolve_path(live_snapshot, "data_quality.ready"))
     contracts = live_snapshot.get("contracts")
@@ -460,7 +499,10 @@ def _live_snapshot_quality(
         quality_mapping = quality if isinstance(quality, Mapping) else {}
         quote_fresh = _bool_or_none(quality_mapping.get("fresh"))
         required_fields = _bool_or_none(quality_mapping.get("required_fields_present"))
-        reasons = _string_items(quality_mapping.get("blocking_reasons"))
+        reasons = _dedupe(
+            _string_items(quality_mapping.get("blocking_reasons"))
+            + _string_items(quality_mapping.get("dependency_blocking_reasons"))
+        )
         return (
             (generated_ready is not False) and quote_fresh is True,
             quote_fresh,
@@ -471,6 +513,25 @@ def _live_snapshot_quality(
         reason = _safe_reason(f"missing_contract_observable:{contract}")
         return generated_ready, False, False, (reason,)
     return True, True, None, ()
+
+
+def _bar_readiness_from_live_snapshot(
+    live_snapshot: Mapping[str, Any] | LiveObservableSnapshotV2 | None,
+    contract: str,
+) -> Mapping[str, Any] | None:
+    if live_snapshot is None:
+        return None
+    if isinstance(live_snapshot, LiveObservableSnapshotV2):
+        observable = live_snapshot.contracts.get(contract)
+        return observable.chart_bar.to_dict() if observable is not None else None
+    if live_snapshot.get("schema") != "live_observable_snapshot_v2":
+        return None
+    contracts = live_snapshot.get("contracts")
+    observable = contracts.get(contract) if isinstance(contracts, Mapping) else None
+    if not isinstance(observable, Mapping):
+        return None
+    chart_bar = observable.get("chart_bar")
+    return chart_bar if isinstance(chart_bar, Mapping) else None
 
 
 def _provider_status(request: PipelineQueryGateRequest, contract: str) -> str:

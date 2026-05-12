@@ -420,6 +420,35 @@ def test_display_bar_readiness_mapping_cannot_enable_query_gate() -> None:
     assert "bar_readiness_provenance_not_verified" in gate.blocking_reasons
 
 
+def test_serialized_live_observable_snapshot_chart_bar_state_blocks_gate() -> None:
+    snapshot = live_snapshot("ES")
+    contracts = snapshot["contracts"]
+    assert isinstance(contracts, dict)
+    es = contracts["ES"]
+    assert isinstance(es, dict)
+    es["chart_bar"] = {
+        "state": "building",
+        "available": False,
+        "fresh": True,
+        "completed_one_minute_available": True,
+        "completed_five_minute_available": False,
+        "blocking_reasons": ["building_five_minute_bar_not_confirmation"],
+    }
+
+    gate = evaluate_pipeline_query_gate(
+        ready_request(
+            "ES",
+            live_snapshot=snapshot,
+            bars_available=True,
+            bars_fresh=True,
+        )
+    )
+
+    assert gate.enabled is False
+    assert "bars_missing" in gate.blocking_reasons
+    assert "building_five_minute_bar_not_confirmation" in gate.blocking_reasons
+
+
 def test_no_fixture_fallback_after_live_failure_semantics_are_not_weakened() -> None:
     live_failure = evaluate_pipeline_query_gate(
         ready_request(

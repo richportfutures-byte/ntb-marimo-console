@@ -677,6 +677,7 @@ def _payload_from_contract_observable(
         "contract": observable.contract,
         "timestamp_et": generated_at,
         "market": market,
+        **_dependency_payload_from_observable(observable.dependencies),
     }
 
 
@@ -700,7 +701,84 @@ def _payload_from_contract_observable_mapping(
         "contract": observable.get("contract"),
         "timestamp_et": generated_at,
         "market": market,
+        **_dependency_payload_from_mapping(observable.get("dependencies")),
     }
+
+
+def _dependency_payload_from_observable(dependencies: Mapping[str, object]) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for name, dependency in dependencies.items():
+        status = str(getattr(dependency, "status", "")).strip().lower()
+        if status not in {"available", "derived_with_source", "lockout"}:
+            continue
+        value = getattr(dependency, "value", None)
+        fields = getattr(dependency, "fields", {})
+        _merge_dependency_value(payload, str(name), status=status, value=value, fields=fields)
+    return payload
+
+
+def _dependency_payload_from_mapping(dependencies: object) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    if not isinstance(dependencies, Mapping):
+        return payload
+    for name, dependency in dependencies.items():
+        if not isinstance(dependency, Mapping):
+            continue
+        status = str(dependency.get("status") or "").strip().lower()
+        if status not in {"available", "derived_with_source", "lockout"}:
+            continue
+        _merge_dependency_value(
+            payload,
+            str(name),
+            status=status,
+            value=dependency.get("value"),
+            fields=dependency.get("fields"),
+        )
+    return payload
+
+
+def _merge_dependency_value(
+    payload: dict[str, Any],
+    name: str,
+    *,
+    status: str,
+    value: object,
+    fields: object,
+) -> None:
+    if name == "relative_strength_vs_es":
+        _set_path(payload, "cross_asset.relative_strength_vs_es", value)
+    elif name == "dxy":
+        _set_path(payload, "cross_asset.dxy", value)
+    elif name == "cash_10y_yield":
+        _set_path(payload, "cross_asset.cash_10y_yield", value)
+    elif name == "fear_catalyst_state":
+        _set_path(payload, "macro_context.fear_catalyst_state", value)
+    elif name == "eia_lockout":
+        _set_path(payload, "macro_context.eia_lockout_active", True if status == "lockout" else value)
+    elif name == "session_sequence" and isinstance(fields, Mapping):
+        for key in ("asia_complete", "london_complete", "ny_pending"):
+            if key in fields:
+                _set_path(payload, f"session_sequence.{key}", fields[key])
+    elif name == "breadth" and isinstance(fields, Mapping):
+        for key, item in fields.items():
+            _set_path(payload, f"cross_asset.breadth.{key}", item)
+    elif name == "cumulative_delta":
+        _set_path(payload, "market.cumulative_delta", value)
+    elif name == "current_volume_vs_average":
+        _set_path(payload, "volatility_context.current_volume_vs_average", value)
+
+
+def _set_path(payload: dict[str, Any], path: str, value: object) -> None:
+    if value is None:
+        return
+    current: dict[str, Any] = payload
+    parts = path.split(".")
+    for part in parts[:-1]:
+        next_value = current.setdefault(part, {})
+        if not isinstance(next_value, dict):
+            return
+        current = next_value
+    current[parts[-1]] = value
 
 
 def _payload_with_completed_bar_facts(

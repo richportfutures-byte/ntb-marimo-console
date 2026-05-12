@@ -24,6 +24,13 @@ from ntb_marimo_console.market_data.stream_manager import (
 
 
 NOW = datetime(2026, 5, 6, 14, 0, 0, tzinfo=timezone.utc)
+EXPECTED_SYMBOLS = {
+    "ES": "/ESM26",
+    "NQ": "/NQM26",
+    "CL": "/CLM26",
+    "6E": "/6EM26",
+    "MGC": "/MGCM26",
+}
 
 
 @dataclass
@@ -157,6 +164,8 @@ def test_missing_cache_default_disabled_input_fails_closed() -> None:
     assert "cache_snapshot_missing" in payload["data_quality"]["blocking_reasons"]
     assert payload["contracts"]["ES"]["quality"]["fresh"] is False
     assert payload["contracts"]["ES"]["quality"]["required_fields_present"] is False
+    assert payload["contracts"]["ES"]["chart_bar"]["available"] is False
+    assert "chart_bars_missing:ES" in payload["contracts"]["ES"]["chart_bar"]["blocking_reasons"]
 
 
 def test_complete_fixture_quote_sets_required_fields_present_for_contract() -> None:
@@ -182,6 +191,7 @@ def test_complete_fixture_quote_sets_required_fields_present_for_contract() -> N
     assert es["session"]["tradable"] is True
     assert es["session"]["active"] is True
     assert es["session"]["security_status"] == "Normal"
+    assert es["quality"]["missing_fields"] == []
 
 
 def test_numeric_level_one_field_ids_map_to_required_observables() -> None:
@@ -231,6 +241,7 @@ def test_contract_observable_includes_source_labels() -> None:
     assert es["sources"]["session"]["volume"] == "stream_cache_level_one"
     assert es["sources"]["derived"]["mid"] == "derived_from_level_one_quote"
     assert es["sources"]["derived"]["bar_5m_close"] == "unavailable_until_chart_futures"
+    assert es["sources"]["derived_source_status"]["bar_5m_close"] == "unavailable"
     assert es["sources"]["quality"]["required_fields_present"] == "level_one_required_field_check"
 
 
@@ -242,6 +253,7 @@ def test_missing_required_level_one_fields_block_required_fields() -> None:
     quality = payload["contracts"]["ES"]["quality"]
 
     assert quality["required_fields_present"] is False
+    assert "bid" in quality["missing_fields"]
     reason = next(reason for reason in quality["blocking_reasons"] if reason.startswith("missing_required_fields:ES:"))
     for field_name in (
         "bid",
@@ -372,6 +384,41 @@ def test_r04_bar_and_trigger_derived_fields_remain_null() -> None:
     assert derived["volume_velocity_state"] is None
 
 
+def test_missing_chart_bars_block_contract_and_snapshot_readiness() -> None:
+    payload = build_live_observable_snapshot_v2(
+        cache_snapshot(record=record()),
+        expected_symbols={"ES": "/ESM26"},
+        dependency_states=complete_dependency_states(),
+    ).to_dict()
+    es = payload["contracts"]["ES"]
+
+    assert es["chart_bar"]["state"] == "unavailable"
+    assert es["chart_bar"]["available"] is False
+    assert "chart_bars_missing:ES" in es["chart_bar"]["blocking_reasons"]
+    assert "ES:chart_bars_missing:ES" in payload["data_quality"]["blocking_reasons"]
+    assert payload["data_quality"]["ready"] is False
+
+
+def test_partial_chart_bars_do_not_satisfy_completed_bar_readiness() -> None:
+    builder = ChartFuturesBarBuilder(expected_symbols=EXPECTED_SYMBOLS)
+    for minute in range(4):
+        builder.ingest(bar_message("ES", minute=minute))
+    builder.ingest(bar_message("ES", minute=4, completed=False))
+
+    payload = build_live_observable_snapshot_v2(
+        cache_snapshot(record=record()),
+        expected_symbols={"ES": "/ESM26"},
+        bar_states={"ES": builder.state("ES")},
+        dependency_states=complete_dependency_states(),
+    ).to_dict()
+    es = payload["contracts"]["ES"]
+
+    assert es["chart_bar"]["state"] == "building"
+    assert es["chart_bar"]["available"] is False
+    assert "building_five_minute_bar_not_confirmation" in es["chart_bar"]["blocking_reasons"]
+    assert payload["data_quality"]["ready"] is False
+
+
 def test_chart_futures_bar_state_can_surface_completed_close_as_derived_metadata_only() -> None:
     builder = ChartFuturesBarBuilder(expected_symbols={"ES": "/ESM26"})
     for minute in range(5):
@@ -395,11 +442,13 @@ def test_chart_futures_bar_state_can_surface_completed_close_as_derived_metadata
         cache_snapshot(record=record()),
         expected_symbols={"ES": "/ESM26"},
         bar_states={"ES": builder.state("ES")},
+        dependency_states=complete_dependency_states(),
     ).to_dict()
     es = payload["contracts"]["ES"]
 
     assert es["derived"]["bar_5m_close"] == 104.5
     assert es["sources"]["derived"]["bar_5m_close"] == "chart_futures_bar_contract"
+    assert es["sources"]["derived_source_status"]["bar_5m_close"] == "derived_with_source"
     assert es["derived"]["bar_5m_close_count_at_or_beyond_level"] is None
     assert payload["data_quality"]["ready"] is False
 
@@ -457,30 +506,88 @@ def test_cross_asset_macro_and_session_contexts_are_unavailable_not_inferred() -
     assert "event_lockout" not in payload["contracts"]["ES"]["quality"]
 
 
-def test_snapshot_ready_requires_all_five_final_targets_complete_and_unblocked() -> None:
-    records = (
-        record(contract="ES", symbol="/ESM26"),
-        record(contract="NQ", symbol="/NQM26"),
-        record(contract="CL", symbol="/CLM26"),
-        record(contract="6E", symbol="/6EM26"),
-        record(contract="MGC", symbol="/MGCM26"),
-    )
+def test_contract_dependencies_are_explicitly_unavailable_by_default() -> None:
+    payload = build_live_observable_snapshot_v2(cache_snapshot(records=complete_records())).to_dict()
+
+    assert payload["contracts"]["NQ"]["dependencies"]["relative_strength_vs_es"]["status"] == "unavailable"
+    assert "dependency_unavailable:NQ:relative_strength_vs_es" in payload["contracts"]["NQ"]["quality"]["dependency_blocking_reasons"]
+    assert payload["contracts"]["CL"]["dependencies"]["eia_lockout"]["status"] == "unavailable"
+    assert "dependency_unavailable:CL:eia_lockout" in payload["contracts"]["CL"]["quality"]["dependency_blocking_reasons"]
+    assert payload["contracts"]["6E"]["dependencies"]["dxy"]["status"] == "unavailable"
+    assert "dependency_unavailable:6E:dxy" in payload["contracts"]["6E"]["quality"]["dependency_blocking_reasons"]
+    assert payload["contracts"]["MGC"]["dependencies"]["cash_10y_yield"]["status"] == "unavailable"
+    assert "dependency_unavailable:MGC:cash_10y_yield" in payload["contracts"]["MGC"]["quality"]["dependency_blocking_reasons"]
+    assert payload["data_quality"]["ready"] is False
+
+
+def test_eia_lockout_active_is_explicit_and_blocks_cl() -> None:
+    dependencies = complete_dependency_states()
+    dependencies["CL"] = {
+        **dependencies["CL"],
+        "eia_lockout": {"status": "lockout", "value": True, "source": "operator_fixture"},
+    }
 
     payload = build_live_observable_snapshot_v2(
-        cache_snapshot(records=records),
-        expected_symbols={
-            "ES": "/ESM26",
-            "NQ": "/NQM26",
-            "CL": "/CLM26",
-            "6E": "/6EM26",
-            "MGC": "/MGCM26",
-        },
+        cache_snapshot(records=complete_records()),
+        expected_symbols=EXPECTED_SYMBOLS,
+        bar_states=complete_bar_states(),
+        dependency_states=dependencies,
+    ).to_dict()
+
+    assert payload["contracts"]["CL"]["dependencies"]["eia_lockout"]["status"] == "lockout"
+    assert "dependency_lockout:CL:eia_lockout" in payload["contracts"]["CL"]["quality"]["dependency_blocking_reasons"]
+    assert payload["data_quality"]["ready"] is False
+
+
+def test_derived_dependency_without_source_blocks_readiness() -> None:
+    dependencies = complete_dependency_states()
+    dependencies["MGC"] = {
+        **dependencies["MGC"],
+        "dxy": {"status": "derived_without_source", "value": 102.0, "source": "display_row"},
+    }
+
+    payload = build_live_observable_snapshot_v2(
+        cache_snapshot(records=complete_records()),
+        expected_symbols=EXPECTED_SYMBOLS,
+        bar_states=complete_bar_states(),
+        dependency_states=dependencies,
+    ).to_dict()
+
+    assert payload["contracts"]["MGC"]["dependencies"]["dxy"]["status"] == "derived_without_source"
+    assert "derived_without_source:MGC:dxy" in payload["contracts"]["MGC"]["quality"]["dependency_blocking_reasons"]
+    assert payload["data_quality"]["ready"] is False
+
+
+def test_snapshot_ready_requires_all_five_final_targets_complete_and_unblocked() -> None:
+    payload = build_live_observable_snapshot_v2(
+        cache_snapshot(records=complete_records()),
+        expected_symbols=EXPECTED_SYMBOLS,
+        bar_states=complete_bar_states(),
+        dependency_states=complete_dependency_states(),
     ).to_dict()
 
     assert payload["data_quality"]["ready"] is True
     assert payload["data_quality"]["state"] == "ready"
     assert tuple(payload["data_quality"]["ready_contracts"]) == ("ES", "NQ", "CL", "6E", "MGC")
     assert payload["data_quality"]["blocking_reasons"] == []
+
+
+def test_five_contract_complete_snapshot_serializes_cleanly() -> None:
+    payload = build_live_observable_snapshot_v2(
+        cache_snapshot(records=complete_records()),
+        expected_symbols=EXPECTED_SYMBOLS,
+        bar_states=complete_bar_states(),
+        dependency_states=complete_dependency_states(),
+    ).to_dict()
+
+    decoded = json.loads(json.dumps(payload))
+
+    assert tuple(decoded["contracts"].keys()) == ("ES", "NQ", "CL", "6E", "MGC")
+    assert decoded["contracts"]["MGC"]["label"] == "Micro Gold"
+    assert "GC" not in decoded["contracts"]
+    for contract in ("ES", "NQ", "CL", "6E", "MGC"):
+        assert decoded["contracts"][contract]["quality"]["fresh"] is True
+        assert decoded["contracts"][contract]["chart_bar"]["available"] is True
 
 
 def test_partial_es_quote_does_not_make_snapshot_ready() -> None:
@@ -491,7 +598,9 @@ def test_partial_es_quote_does_not_make_snapshot_ready() -> None:
 
     assert payload["contracts"]["ES"]["quality"]["required_fields_present"] is True
     assert payload["data_quality"]["ready"] is False
-    assert payload["data_quality"]["ready_contracts"] == ["ES"]
+    assert payload["data_quality"]["ready_contracts"] == []
+    assert payload["data_quality"]["quote_ready_contracts"] == ["ES"]
+    assert "ES:chart_bars_missing:ES" in payload["data_quality"]["blocking_reasons"]
     for missing_contract in ("NQ", "CL", "6E", "MGC"):
         assert f"{missing_contract}:missing_cache_record:{missing_contract}" in payload["data_quality"]["blocking_reasons"]
 
@@ -531,3 +640,95 @@ def test_builder_accepts_stream_cache_snapshot_without_network_side_effects() ->
 
     assert payload["contracts"]["ES"]["quality"]["required_fields_present"] is True
     assert payload["contracts"]["ES"]["quality"]["fresh"] is True
+
+
+def complete_records() -> tuple[StreamCacheRecord, ...]:
+    return (
+        record(contract="ES", symbol="/ESM26"),
+        record(contract="NQ", symbol="/NQM26"),
+        record(contract="CL", symbol="/CLM26"),
+        record(contract="6E", symbol="/6EM26"),
+        record(contract="MGC", symbol="/MGCM26"),
+    )
+
+
+def complete_bar_states() -> dict[str, object]:
+    return {contract: completed_bar_state(contract) for contract in EXPECTED_SYMBOLS}
+
+
+def completed_bar_state(contract: str):
+    builder = ChartFuturesBarBuilder(expected_symbols=EXPECTED_SYMBOLS)
+    for minute in range(5):
+        builder.ingest(bar_message(contract, minute=minute))
+    return builder.state(contract)
+
+
+def bar_message(contract: str, *, minute: int, completed: bool = True) -> dict[str, object]:
+    start = NOW + timedelta(minutes=minute)
+    return {
+        "service": "CHART_FUTURES",
+        "contract": contract,
+        "symbol": EXPECTED_SYMBOLS[contract],
+        "start_time": start.isoformat(),
+        "end_time": (start + timedelta(minutes=1)).isoformat(),
+        "open": 100.0 + minute,
+        "high": 100.75 + minute,
+        "low": 99.75 + minute,
+        "close": 100.5 + minute,
+        "volume": 100 + minute,
+        "completed": completed,
+    }
+
+
+def complete_dependency_states() -> dict[str, dict[str, object]]:
+    return {
+        "ES": {
+            "cumulative_delta": {"status": "available", "value": 1200.0, "source": "fixture"},
+            "breadth": {
+                "status": "available",
+                "source": "fixture",
+                "fields": {"current_advancers_pct": 0.61},
+            },
+        },
+        "NQ": {
+            "relative_strength_vs_es": {
+                "status": "derived_with_source",
+                "value": 0.002,
+                "source": "fixture_level_one_nq_es",
+                "source_status": "derived_with_source",
+            },
+        },
+        "CL": {
+            "eia_lockout": {"status": "available", "value": False, "source": "fixture_calendar"},
+            "cumulative_delta": {"status": "available", "value": 820.0, "source": "fixture"},
+            "current_volume_vs_average": {"status": "available", "value": 1.12, "source": "fixture"},
+        },
+        "6E": {
+            "dxy": {
+                "status": "derived_with_source",
+                "value": 102.0,
+                "source": "fixture_dxy_proxy",
+                "source_status": "derived_with_source",
+            },
+            "session_sequence": {
+                "status": "available",
+                "source": "fixture_session_clock",
+                "fields": {"asia_complete": True, "london_complete": True, "ny_pending": True},
+            },
+        },
+        "MGC": {
+            "dxy": {
+                "status": "derived_with_source",
+                "value": 102.0,
+                "source": "fixture_dxy_proxy",
+                "source_status": "derived_with_source",
+            },
+            "cash_10y_yield": {
+                "status": "derived_with_source",
+                "value": 4.1,
+                "source": "fixture_yield_proxy",
+                "source_status": "derived_with_source",
+            },
+            "fear_catalyst_state": {"status": "available", "value": "none", "source": "fixture_macro"},
+        },
+    }
