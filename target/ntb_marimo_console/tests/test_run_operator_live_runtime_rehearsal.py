@@ -376,6 +376,111 @@ class RehearsalCliBlockingTests(unittest.TestCase):
                 msg="default test run must not require SCHWAB_* env vars",
             )
 
+    def test_dry_run_is_fixture_safe_and_does_not_require_env_or_credentials(self) -> None:
+        stdout = io.StringIO()
+
+        with patch.dict(os.environ, {"SCHWAB_APP_KEY": SECRET_MARKER}, clear=True):
+            with redirect_stdout(stdout):
+                exit_code = rehearsal.run(["--dry-run", "--json"])
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["mode"], "dry_run")
+        self.assertEqual(payload["status"], "review_only_non_live")
+        self.assertEqual(payload["live_behavior_attempted"], "no")
+        self.assertEqual(payload["runtime_start_attempted"], "no")
+        self.assertEqual(payload["login_attempted"], "no")
+        self.assertEqual(payload["subscribe_attempted"], "no")
+        self.assertEqual(payload["provider_connection_attempted"], "no")
+        self.assertEqual(payload["credentials_required_for_dry_run"], "no")
+        self.assertEqual(payload["secrets_or_token_files_read"], "no")
+        self.assertNotIn(SECRET_MARKER, stdout.getvalue())
+
+    def test_dry_run_final_plan_is_exact_five_contract_services_only(self) -> None:
+        report = rehearsal.build_dry_run_report()
+        payload = report.to_dict()
+        rows = payload["contract_plan"]
+
+        self.assertEqual([row["contract"] for row in rows], ["ES", "NQ", "CL", "6E", "MGC"])
+        self.assertEqual(payload["services"], ["LEVELONE_FUTURES", "CHART_FUTURES"])
+        for row in rows:
+            self.assertEqual(row["services"], ["LEVELONE_FUTURES", "CHART_FUTURES"])
+            self.assertEqual(row["final_target_supported"], "yes")
+        self.assertNotIn("ZN", [row["contract"] for row in rows])
+        self.assertNotIn("GC", [row["contract"] for row in rows])
+
+    def test_dry_run_rejects_excluded_and_unsupported_candidates_without_promoting_them(self) -> None:
+        report = rehearsal.build_dry_run_report(candidate_contracts=("ZN", "GC", "YM", "MGC"))
+        payload = report.to_dict()
+
+        self.assertEqual(payload["contract_plan"][-1]["contract"], "MGC")
+        self.assertEqual(
+            payload["rejected_contracts"],
+            [
+                {"contract": "ZN", "policy": "excluded", "included_in_final_plan": "no"},
+                {"contract": "GC", "policy": "never_supported_excluded", "included_in_final_plan": "no"},
+                {"contract": "YM", "policy": "unsupported", "included_in_final_plan": "no"},
+            ],
+        )
+
+    def test_dry_run_labels_mgc_as_micro_gold_and_never_uses_gc_as_substitute(self) -> None:
+        report = rehearsal.build_dry_run_report()
+        rows = {row["contract"]: row for row in report.to_dict()["contract_plan"]}
+        rendered_mgc = json.dumps(rows["MGC"], sort_keys=True)
+
+        self.assertEqual(rows["MGC"]["display_name"], "Micro Gold")
+        self.assertEqual(rows["MGC"]["symbol"], "/MGCM26")
+        self.assertNotIn("/GCM26", rendered_mgc)
+        self.assertNotIn('"GC"', rendered_mgc)
+
+    def test_dry_run_redacts_provider_diagnostics_and_states_live_readiness_unproven(self) -> None:
+        report = rehearsal.build_dry_run_report(
+            provider_diagnostics=(
+                "Authorization: Bearer BEARER_VALUE_PRIVATE_12345678901234567890 "
+                "access_token=ACCESS_VALUE_PRIVATE refresh_token=REFRESH_VALUE_PRIVATE "
+                "customerId=CUSTOMER_VALUE_PRIVATE correlId=CORREL_VALUE_PRIVATE "
+                "accountNumber=ACCOUNT_VALUE_PRIVATE wss://stream-redaction.invalid/ws token.json",
+            ),
+        )
+        rendered = rehearsal.render_dry_run_json(report)
+
+        for fragment in (
+            "BEARER_VALUE_PRIVATE",
+            "ACCESS_VALUE_PRIVATE",
+            "REFRESH_VALUE_PRIVATE",
+            "CUSTOMER_VALUE_PRIVATE",
+            "CORREL_VALUE_PRIVATE",
+            "ACCOUNT_VALUE_PRIVATE",
+            "stream-redaction",
+            "wss://",
+            "token.json",
+        ):
+            self.assertNotIn(fragment, rendered)
+        self.assertIn("[REDACTED]", rendered)
+        self.assertIn("schwab_live_readiness_unproven_until_authorized_manual_rehearsal", rendered)
+
+    def test_dry_run_output_is_text_deterministic_and_review_only(self) -> None:
+        first = rehearsal.render_dry_run_text(
+            rehearsal.build_dry_run_report(candidate_contracts=("GC", "ZN"))
+        )
+        second = rehearsal.render_dry_run_text(
+            rehearsal.build_dry_run_report(candidate_contracts=("GC", "ZN"))
+        )
+
+        self.assertEqual(first, second)
+        self.assertIn("plan_contract=MGC|Micro Gold|/MGCM26|LEVELONE_FUTURES,CHART_FUTURES", first)
+        self.assertIn("rejected_contract=GC|never_supported_excluded|included=no", first)
+        self.assertIn("review_preflight_only_not_subscription_or_login", first)
+
+    def test_dry_run_path_does_not_call_live_dependency_seam(self) -> None:
+        with patch.object(rehearsal, "run_with_dependencies", side_effect=AssertionError("live seam called")):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = rehearsal.run(["--dry-run"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("mode=dry_run", stdout.getvalue())
+
     def test_no_live_flag_blocks_before_env_or_token_access(self) -> None:
         sentinel_open = unittest.mock.MagicMock(side_effect=AssertionError("open_must_not_be_called"))
         with patch("builtins.open", new=sentinel_open):

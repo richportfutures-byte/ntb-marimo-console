@@ -39,9 +39,11 @@ from ntb_marimo_console.contract_universe import (
     normalize_contract_symbol,
 )
 from ntb_marimo_console.market_data.stream_manager import (
+    MIN_STREAM_REFRESH_FLOOR_SECONDS,
     SchwabStreamManagerConfig,
     StreamManagerSnapshot,
 )
+from ntb_marimo_console.market_data.stream_events import redact_sensitive_text
 from ntb_marimo_console.operator_live_launcher import (
     OperatorLiveLaunchResult,
     OperatorLiveRuntimeFactoryError,
@@ -106,6 +108,14 @@ DEFAULT_FRONT_MONTH_SYMBOLS: dict[str, str] = {
     "6E": "/6EM26",
     "MGC": "/MGCM26",
 }
+DRY_RUN_SERVICES: tuple[str, ...] = ("LEVELONE_FUTURES", "CHART_FUTURES")
+CONTRACT_DISPLAY_NAMES: dict[str, str] = {
+    "ES": "E-mini S&P 500",
+    "NQ": "E-mini Nasdaq-100",
+    "CL": "Crude Oil",
+    "6E": "Euro FX",
+    "MGC": "Micro Gold",
+}
 
 
 _FORBIDDEN_FRAGMENT_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -134,6 +144,82 @@ class RehearsalCheck:
     name: str
     status: str  # "ok" | "blocked" | "info" | "error"
     detail: str = ""
+
+
+@dataclass(frozen=True)
+class DryRunContractPlan:
+    contract: str
+    display_name: str
+    symbol: str
+    services: tuple[str, ...]
+    final_target_supported: bool = True
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "contract": self.contract,
+            "display_name": self.display_name,
+            "symbol": self.symbol,
+            "services": list(self.services),
+            "final_target_supported": _yes_no(self.final_target_supported),
+        }
+
+
+@dataclass(frozen=True)
+class DryRunRejectedContract:
+    contract: str
+    policy: str
+    included_in_final_plan: bool = False
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "contract": self.contract,
+            "policy": self.policy,
+            "included_in_final_plan": _yes_no(self.included_in_final_plan),
+        }
+
+
+@dataclass(frozen=True)
+class RehearsalDryRunReport:
+    mode: str
+    status: str
+    live_behavior_attempted: bool
+    runtime_start_attempted: bool
+    login_attempted: bool
+    subscribe_attempted: bool
+    provider_connection_attempted: bool
+    explicit_live_opt_in_required: bool
+    operator_runtime_mode_required: str
+    secrets_or_token_files_read: bool
+    credentials_required_for_dry_run: bool
+    services: tuple[str, ...]
+    contract_plan: tuple[DryRunContractPlan, ...]
+    rejected_contracts: tuple[DryRunRejectedContract, ...]
+    provider_diagnostics: tuple[str, ...]
+    refresh_floor_seconds: float
+    limitations: tuple[str, ...]
+    values_printed: str = "no"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "mode": self.mode,
+            "status": self.status,
+            "live_behavior_attempted": _yes_no(self.live_behavior_attempted),
+            "runtime_start_attempted": _yes_no(self.runtime_start_attempted),
+            "login_attempted": _yes_no(self.login_attempted),
+            "subscribe_attempted": _yes_no(self.subscribe_attempted),
+            "provider_connection_attempted": _yes_no(self.provider_connection_attempted),
+            "explicit_live_opt_in_required": _yes_no(self.explicit_live_opt_in_required),
+            "operator_runtime_mode_required": self.operator_runtime_mode_required,
+            "secrets_or_token_files_read": _yes_no(self.secrets_or_token_files_read),
+            "credentials_required_for_dry_run": _yes_no(self.credentials_required_for_dry_run),
+            "services": list(self.services),
+            "contract_plan": [item.to_dict() for item in self.contract_plan],
+            "rejected_contracts": [item.to_dict() for item in self.rejected_contracts],
+            "provider_diagnostics": list(self.provider_diagnostics),
+            "refresh_floor_seconds": self.refresh_floor_seconds,
+            "limitations": list(self.limitations),
+            "values_printed": self.values_printed,
+        }
 
 
 @dataclass
@@ -208,7 +294,7 @@ def _yes_no(value: bool) -> str:
 
 
 def _sanitize_text(value: str) -> str:
-    sanitized = value
+    sanitized = redact_sensitive_text(value)
     for pattern in _FORBIDDEN_FRAGMENT_PATTERNS:
         sanitized = pattern.sub("[REDACTED]", sanitized)
     return sanitized
@@ -266,6 +352,49 @@ def render_json(report: RehearsalReport) -> str:
     return json.dumps(payload, sort_keys=True)
 
 
+def render_dry_run_json(report: RehearsalDryRunReport) -> str:
+    payload = _sanitize_payload(report.to_dict())
+    return json.dumps(payload, sort_keys=True)
+
+
+def render_dry_run_text(report: RehearsalDryRunReport) -> str:
+    payload = _sanitize_payload(report.to_dict())
+    assert isinstance(payload, dict)
+    lines = [
+        f"mode={payload['mode']}",
+        f"status={payload['status']}",
+        f"live_behavior_attempted={payload['live_behavior_attempted']}",
+        f"runtime_start_attempted={payload['runtime_start_attempted']}",
+        f"login_attempted={payload['login_attempted']}",
+        f"subscribe_attempted={payload['subscribe_attempted']}",
+        f"provider_connection_attempted={payload['provider_connection_attempted']}",
+        f"explicit_live_opt_in_required={payload['explicit_live_opt_in_required']}",
+        f"operator_runtime_mode_required={payload['operator_runtime_mode_required']}",
+        f"secrets_or_token_files_read={payload['secrets_or_token_files_read']}",
+        f"credentials_required_for_dry_run={payload['credentials_required_for_dry_run']}",
+        "services=" + ",".join(str(item) for item in payload["services"]),
+        f"refresh_floor_seconds={payload['refresh_floor_seconds']}",
+        f"values_printed={payload['values_printed']}",
+    ]
+    for item in payload["contract_plan"]:
+        assert isinstance(item, dict)
+        lines.append(
+            "plan_contract="
+            f"{item['contract']}|{item['display_name']}|{item['symbol']}|"
+            + ",".join(str(service) for service in item["services"])
+        )
+    for item in payload["rejected_contracts"]:
+        assert isinstance(item, dict)
+        lines.append(
+            f"rejected_contract={item['contract']}|{item['policy']}|included={item['included_in_final_plan']}"
+        )
+    for diagnostic in payload["provider_diagnostics"]:
+        lines.append(f"provider_diagnostic={diagnostic}")
+    for limitation in payload["limitations"]:
+        lines.append(f"limitation={limitation}")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -310,6 +439,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Required for any live behavior. Without --live the command exits without touching env, tokens, or network.",
     )
     parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Render the deterministic five-contract live rehearsal plan without reading env, opening files, logging in, or subscribing.",
+    )
+    parser.add_argument(
         "--duration",
         type=int,
         default=DEFAULT_DURATION_SECONDS,
@@ -324,6 +458,19 @@ def build_parser() -> argparse.ArgumentParser:
         default={},
         metavar="ROOT=KEY",
         help="Override an active front-month symbol for one final target contract (e.g. ES=/ESH26). May be repeated. ZN and GC are rejected.",
+    )
+    parser.add_argument(
+        "--dry-run-contract",
+        action="append",
+        default=[],
+        metavar="ROOT",
+        help="Dry-run-only candidate contract to classify if it appears in future rehearsal config. Does not add it to the final plan.",
+    )
+    parser.add_argument(
+        "--provider-diagnostic",
+        action="append",
+        default=[],
+        help="Dry-run-only provider diagnostic text to sanitize before rendering. No live provider call is made.",
     )
     parser.add_argument(
         "--json",
@@ -376,6 +523,77 @@ def _build_stream_config(
         explicit_live_opt_in=True,
         contracts_requested=contracts,
     )
+
+
+def build_dry_run_report(
+    *,
+    symbol_overrides: Mapping[str, str] | None = None,
+    candidate_contracts: Sequence[str] = (),
+    provider_diagnostics: Sequence[str] = (),
+) -> RehearsalDryRunReport:
+    symbol_map = resolve_symbol_map(symbol_overrides)
+    plan = tuple(
+        DryRunContractPlan(
+            contract=contract,
+            display_name=CONTRACT_DISPLAY_NAMES[contract],
+            symbol=symbol_map[contract],
+            services=DRY_RUN_SERVICES,
+        )
+        for contract in final_target_contracts()
+    )
+    rejected = tuple(_rejected_contracts(candidate_contracts))
+    safe_diagnostics = tuple(
+        _sanitize_text(item).strip()
+        for item in provider_diagnostics
+        if str(item).strip()
+    )
+    diagnostics = safe_diagnostics or (
+        "provider_status_not_checked",
+        "live_delivery_unproven_until_manual_rehearsal",
+    )
+    return RehearsalDryRunReport(
+        mode="dry_run",
+        status="review_only_non_live",
+        live_behavior_attempted=False,
+        runtime_start_attempted=False,
+        login_attempted=False,
+        subscribe_attempted=False,
+        provider_connection_attempted=False,
+        explicit_live_opt_in_required=True,
+        operator_runtime_mode_required=OPERATOR_LIVE_RUNTIME,
+        secrets_or_token_files_read=False,
+        credentials_required_for_dry_run=False,
+        services=DRY_RUN_SERVICES,
+        contract_plan=plan,
+        rejected_contracts=rejected,
+        provider_diagnostics=diagnostics,
+        refresh_floor_seconds=MIN_STREAM_REFRESH_FLOOR_SECONDS,
+        limitations=(
+            "review_preflight_only_not_subscription_or_login",
+            "schwab_live_readiness_unproven_until_authorized_manual_rehearsal",
+            "levelone_futures_and_chart_futures_delivery_not_assumed",
+            "mgc_micro_gold_not_gc_substitute",
+            "default_app_launch_remains_non_live",
+        ),
+    )
+
+
+def _rejected_contracts(candidate_contracts: Sequence[str]) -> tuple[DryRunRejectedContract, ...]:
+    rejected: list[DryRunRejectedContract] = []
+    seen: set[str] = set()
+    for contract in candidate_contracts:
+        normalized = normalize_contract_symbol(str(contract))
+        if not normalized or normalized in seen or is_final_target_contract(normalized):
+            continue
+        seen.add(normalized)
+        if is_never_supported_contract(normalized):
+            policy = "never_supported_excluded"
+        elif is_excluded_final_target_contract(normalized):
+            policy = "excluded"
+        else:
+            policy = "unsupported"
+        rejected.append(DryRunRejectedContract(contract=normalized, policy=policy))
+    return tuple(rejected)
 
 
 # ---------------------------------------------------------------------------
@@ -857,9 +1075,24 @@ def _print_report(report: RehearsalReport, *, as_json: bool) -> None:
         print(render_text(report))
 
 
+def _print_dry_run_report(report: RehearsalDryRunReport, *, as_json: bool) -> None:
+    if as_json:
+        print(render_dry_run_json(report))
+    else:
+        print(render_dry_run_text(report))
+
+
 def run(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    if getattr(args, "dry_run", False):
+        report = build_dry_run_report(
+            symbol_overrides=getattr(args, "symbol", None) or {},
+            candidate_contracts=tuple(getattr(args, "dry_run_contract", ()) or ()),
+            provider_diagnostics=tuple(getattr(args, "provider_diagnostic", ()) or ()),
+        )
+        _print_dry_run_report(report, as_json=getattr(args, "json", False))
+        return 0
     report = run_with_dependencies(
         args=args,
         env=dict(os.environ),
