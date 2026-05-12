@@ -46,6 +46,26 @@ RUNTIME_SYMBOL_BY_CONTRACT = {
 }
 
 
+def complete_levelone_fields(index: int = 0) -> tuple[tuple[str, object], ...]:
+    return (
+        ("bid", 100.0 + index),
+        ("ask", 100.25 + index),
+        ("last", 100.125 + index),
+        ("bid_size", 10 + index),
+        ("ask_size", 12 + index),
+        ("quote_time", NOW),
+        ("trade_time", NOW),
+        ("volume", 25_000 + index),
+        ("open", 99.5 + index),
+        ("high", 101.0 + index),
+        ("low", 98.75 + index),
+        ("prior_close", 99.25 + index),
+        ("tradable", True),
+        ("active", True),
+        ("security_status", "Normal"),
+    )
+
+
 def runtime_record(contract: str) -> StreamCacheRecord:
     return StreamCacheRecord(
         provider="schwab",
@@ -53,13 +73,7 @@ def runtime_record(contract: str) -> StreamCacheRecord:
         symbol=RUNTIME_SYMBOL_BY_CONTRACT[contract],
         contract=contract,
         message_type="quote",
-        fields=(
-            ("bid", 100.0),
-            ("ask", 100.25),
-            ("last", 100.125),
-            ("quote_time", NOW),
-            ("trade_time", NOW),
-        ),
+        fields=complete_levelone_fields(),
         updated_at=NOW,
         age_seconds=0.0,
         fresh=True,
