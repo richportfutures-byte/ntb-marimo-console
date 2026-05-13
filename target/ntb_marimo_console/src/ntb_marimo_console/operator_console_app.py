@@ -30,6 +30,7 @@ def __():
     get_active_trade_registry, set_active_trade_registry = mo.state(None)
     get_anchor_input_registry, set_anchor_input_registry = mo.state(None)
     get_operator_notes_registry, set_operator_notes_registry = mo.state(None)
+    get_premarket_manual_sections, set_premarket_manual_sections = mo.state({})
     runtime_snapshot_producer = get_runtime_snapshot_producer()
     if runtime_snapshot_producer is None:
         runtime_snapshot_producer = build_operator_runtime_snapshot_producer_from_env()
@@ -73,6 +74,8 @@ def __():
         set_anchor_input_registry,
         operator_notes_registry,
         set_operator_notes_registry,
+        get_premarket_manual_sections,
+        set_premarket_manual_sections,
         get_pending_profile_id,
         set_pending_profile_id,
         clear_retained_evidence,
@@ -90,6 +93,7 @@ def __(
     anchor_input_registry,
     lifecycle,
     mo,
+    get_premarket_manual_sections,
     get_pending_profile_id,
     set_pending_profile_id,
 ):
@@ -388,6 +392,47 @@ def __(
         show_clear_button=True,
         label="Operator Notes",
     )
+    premarket_manual_sections = get_premarket_manual_sections() or {}
+    if not isinstance(premarket_manual_sections, _Mapping):
+        premarket_manual_sections = {}
+    premarket_brief_form = mo.ui.form(
+        mo.ui.dictionary(
+            {
+                "prior_session": mo.ui.text_area(
+                    label="Prior Session",
+                    value=str(premarket_manual_sections.get("prior_session") or ""),
+                    placeholder="prior day high/low, settlement, value area, notable levels",
+                    rows=3,
+                    full_width=True,
+                ),
+                "overnight_range": mo.ui.text_area(
+                    label="Overnight Range",
+                    value=str(premarket_manual_sections.get("overnight_range") or ""),
+                    placeholder="overnight high/low, acceptance/rejection, inventory tone",
+                    rows=3,
+                    full_width=True,
+                ),
+                "economic_calendar": mo.ui.text_area(
+                    label="Economic Calendar",
+                    value=str(premarket_manual_sections.get("economic_calendar") or ""),
+                    placeholder="scheduled releases, speaker risk, settlement/time windows",
+                    rows=3,
+                    full_width=True,
+                ),
+                "correlation_context": mo.ui.text_area(
+                    label="Correlation Context",
+                    value=str(premarket_manual_sections.get("correlation_context") or ""),
+                    placeholder="ES/DXY/yields/crude/euro context relevant to the session",
+                    rows=3,
+                    full_width=True,
+                ),
+            }
+        ),
+        submit_button_label="Save Premarket Brief Inputs",
+        clear_on_submit=False,
+        show_clear_button=False,
+        label="Premarket Brief Inputs",
+    )
 
     profile_controls = mo.vstack(
         [
@@ -466,6 +511,21 @@ def __(
         ],
         gap=0.5,
     )
+    premarket_brief_controls = mo.vstack(
+        [
+            mo.md(
+                "\n".join(
+                    [
+                        "## Premarket Brief Controls",
+                        "- Adds session-planning context only.",
+                        "- Missing entries remain placeholders and do not block readiness.",
+                    ]
+                )
+            ),
+            premarket_brief_form,
+        ],
+        gap=0.5,
+    )
 
     lifecycle_controls = mo.vstack(
         [
@@ -499,6 +559,8 @@ def __(
         active_trade_controls,
         anchor_input_form,
         anchor_input_controls,
+        premarket_brief_form,
+        premarket_brief_controls,
         operator_notes_form,
         operator_notes_controls,
     )
@@ -518,10 +580,12 @@ def __(
     controls_shell,
     controls_startup_panel,
     evidence_controls,
+    get_premarket_manual_sections,
     lifecycle,
     lifecycle_controls,
     operator_notes_form,
     operator_notes_registry,
+    premarket_brief_form,
     profile_controls,
     profile_selector,
     query_available,
@@ -539,6 +603,7 @@ def __(
     set_active_trade_registry,
     set_anchor_input_registry,
     set_operator_notes_registry,
+    set_premarket_manual_sections,
     set_lifecycle,
     set_pending_profile_id,
     switch_available,
@@ -557,6 +622,7 @@ def __(
     from ntb_marimo_console.market_data.stream_cache import StreamCacheSnapshot
     from ntb_marimo_console.market_data.stream_manager import StreamManagerSnapshot
     from ntb_marimo_console.operator_notes import parse_tags_text
+    from ntb_marimo_console.premarket_brief import build_premarket_brief
     from ntb_marimo_console.viewmodels.mappers import active_trade_vms_from_registry, timeline_events_from_session
 
     current_lifecycle = lifecycle
@@ -608,6 +674,18 @@ def __(
 
     operator_notes_status = "ready"
     operator_notes_message = "Session journal entries are operator annotations only."
+    premarket_manual_sections = get_premarket_manual_sections() or {}
+    if not isinstance(premarket_manual_sections, _Mapping):
+        premarket_manual_sections = {}
+    submitted_premarket_brief = premarket_brief_form.value
+    if isinstance(submitted_premarket_brief, _Mapping):
+        premarket_manual_sections = {
+            key: str(submitted_premarket_brief.get(key) or "").strip()
+            for key in ("prior_session", "overnight_range", "economic_calendar", "correlation_context")
+            if str(submitted_premarket_brief.get(key) or "").strip()
+        }
+        set_premarket_manual_sections(premarket_manual_sections)
+
     submitted_note = operator_notes_form.value
     if isinstance(submitted_note, _Mapping):
         note_content = str(submitted_note.get("content") or "").strip()
@@ -699,8 +777,18 @@ def __(
         "message": operator_notes_message,
         "export_json": operator_notes_registry.export_json(),
     }
+    premarket_brief = build_premarket_brief(
+        session_date=str(controls_startup_panel.get("session_date", "unknown")),
+        anchor_inputs=anchor_input_registry,
+        operator_notes=operator_notes_registry,
+        manual_sections=premarket_manual_sections,
+    )
+    shell["premarket_brief_enrichment"] = premarket_brief.to_dict()
     surfaces = shell.get("surfaces")
     if isinstance(surfaces, dict):
+        premarket_panel = surfaces.get("pre_market_brief")
+        if isinstance(premarket_panel, dict):
+            premarket_panel["enrichment"] = premarket_brief.to_dict()
         audit_panel = surfaces.get("audit_replay")
         if isinstance(audit_panel, dict):
             existing_rows = audit_panel.get("timeline_events")
@@ -816,6 +904,7 @@ def __(
     active_trade_controls,
     anchor_input_controls,
     operator_notes_controls,
+    premarket_brief_controls,
     query_button,
 ):
     from ntb_marimo_console.ui.marimo_phase1_renderer import (
@@ -851,6 +940,7 @@ def __(
         active_trade_control_panel=active_trade_controls,
         anchor_input_control_panel=anchor_input_controls,
         operator_notes_control_panel=operator_notes_controls,
+        premarket_brief_control_panel=premarket_brief_controls,
     )
     mo.stop(stop_output is not None, stop_output)
 
@@ -883,6 +973,7 @@ def __(
         active_trade_control_panel=active_trade_controls,
         anchor_input_control_panel=anchor_input_controls,
         operator_notes_control_panel=operator_notes_controls,
+        premarket_brief_control_panel=premarket_brief_controls,
     )
     rendered
     return (rendered,)

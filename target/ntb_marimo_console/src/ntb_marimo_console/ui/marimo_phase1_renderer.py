@@ -105,6 +105,7 @@ def render_phase1_console(
     active_trade_control_panel: Any | None = None,
     anchor_input_control_panel: Any | None = None,
     operator_notes_control_panel: Any | None = None,
+    premarket_brief_control_panel: Any | None = None,
 ) -> Any:
     plan = build_phase1_render_plan(shell)
     startup = shell.get("startup")
@@ -115,6 +116,7 @@ def render_phase1_console(
     elements: list[Any] = [
         _render_console_header(shell, heading=heading, mode_summary=mode_summary),
     ]
+    elements.append(render_premarket_brief_panel(shell, control_panel=premarket_brief_control_panel))
 
     stream_health_panel = render_stream_health_panel(shell)
     if stream_health_panel is not None:
@@ -163,6 +165,8 @@ def render_phase1_console(
 
         for section in plan["sections"]:
             key = _as_str(section.get("key"), default="unknown")
+            if key == "pre_market_brief":
+                continue
             panel_raw = section.get("panel")
             panel = panel_raw if isinstance(panel_raw, Mapping) else {"warning": "unavailable"}
             elements.append(_render_surface_section(key, panel, query_action_control=query_action_control))
@@ -194,6 +198,7 @@ def render_watchman_gate_stop_output(
     active_trade_control_panel: Any | None = None,
     anchor_input_control_panel: Any | None = None,
     operator_notes_control_panel: Any | None = None,
+    premarket_brief_control_panel: Any | None = None,
 ) -> Any | None:
     if not watchman_gate_requires_stop(shell):
         return None
@@ -201,6 +206,7 @@ def render_watchman_gate_stop_output(
     elements: list[Any] = [
         _render_console_header(shell, heading=heading, mode_summary=mode_summary),
     ]
+    elements.append(render_premarket_brief_panel(shell, control_panel=premarket_brief_control_panel))
 
     startup = shell.get("startup")
     if isinstance(startup, Mapping):
@@ -609,6 +615,21 @@ def render_operator_notes_panel(
     return _render_surface_card(mo.vstack(content, gap=0.65))
 
 
+def render_premarket_brief_panel(
+    shell: Mapping[str, object],
+    *,
+    control_panel: Any | None = None,
+) -> Any:
+    content: list[Any] = []
+    surfaces = shell.get("surfaces")
+    premarket_panel = surfaces.get("pre_market_brief") if isinstance(surfaces, Mapping) else None
+    panel = premarket_panel if isinstance(premarket_panel, Mapping) else {}
+    content.append(mo.md(build_premarket_brief_markdown(panel)))
+    if control_panel is not None:
+        content.append(control_panel)
+    return _render_surface_card(mo.vstack(content, gap=0.65))
+
+
 def render_audit_timeline_panel(shell: Mapping[str, object]) -> Any:
     surfaces = shell.get("surfaces")
     panel: Mapping[str, object] = {}
@@ -686,6 +707,82 @@ def build_anchor_inputs_markdown(panel: Mapping[str, object]) -> str:
             + f"{_table_value(row.get('operator_note'))} |"
         )
     return "\n".join(lines)
+
+
+def build_premarket_brief_markdown(panel: Mapping[str, object]) -> str:
+    enrichment = panel.get("enrichment")
+    lines = [
+        "## Premarket Brief",
+        f"- Contract: `{_as_str(panel.get('contract'), default='<unavailable>')}`",
+        f"- Session Date: `{_as_str(panel.get('session_date'), default='<unavailable>')}`",
+        f"- Watchman Status: `{_as_str(panel.get('status'), default='<unavailable>')}`",
+        "- Boundary: session-planning context only; missing enrichment does not block readiness.",
+        "",
+    ]
+
+    if isinstance(enrichment, Mapping):
+        lines.append(f"- Enrichment Generated At: `{_as_str(enrichment.get('generated_at'), default='<unknown>')}`")
+        lines.append("")
+        sections = enrichment.get("sections")
+        if isinstance(sections, list) and sections:
+            for section in sections:
+                if not isinstance(section, Mapping):
+                    continue
+                lines.extend(_premarket_brief_section_lines(section))
+            return "\n".join(lines)
+
+    setup_lines = _bullet_lines(panel.get("setup_summaries"))
+    warning_lines = _bullet_lines(panel.get("warnings"))
+    lines.extend(
+        [
+            "### Watchman Setup Summaries",
+            setup_lines,
+            "### Watchman Warnings",
+            warning_lines,
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _premarket_brief_section_lines(section: Mapping[str, object]) -> list[str]:
+    section_type = _as_str(section.get("section_type"), default="unknown")
+    contract = _as_str(section.get("contract"), default="session")
+    source = _as_str(section.get("source"), default="placeholder")
+    updated_at = _as_str(section.get("updated_at"), default="<unknown>")
+    title = section_type.replace("_", " ").title()
+    if contract != "session":
+        title = f"{title} - {contract}"
+    lines = [
+        f"### {title}",
+        f"- Source: `{source}`",
+        f"- Updated: `{updated_at}`",
+    ]
+    content = section.get("content")
+    if isinstance(content, Mapping):
+        lines.extend(_premarket_content_lines(content))
+    else:
+        lines.append(f"- Content: {_as_str(content, default='<empty>')}")
+    lines.append("")
+    return lines
+
+
+def _premarket_content_lines(content: Mapping[str, object]) -> list[str]:
+    lines: list[str] = []
+    for key, value in content.items():
+        label = str(key).replace("_", " ").title()
+        if isinstance(value, list):
+            if not value:
+                lines.append(f"- {label}: `<none>`")
+                continue
+            lines.append(f"- {label}:")
+            for item in value:
+                if isinstance(item, Mapping):
+                    lines.append("  - " + _inline_mapping(item))
+                else:
+                    lines.append(f"  - {_as_str(item)}")
+        else:
+            lines.append(f"- {label}: `{_table_value(value)}`")
+    return lines
 
 
 def build_audit_timeline_markdown(panel: Mapping[str, object]) -> str:
@@ -1083,24 +1180,7 @@ def _render_surface_section(
         return _render_surface_card(mo.md(f"## Session Header\n- Contract: `{contract}`\n- Session Date: `{session_date}`"))
 
     if key == "pre_market_brief":
-        setup_lines = _bullet_lines(panel.get("setup_summaries"))
-        warning_lines = _bullet_lines(panel.get("warnings"))
-        return _render_surface_card(
-            mo.md(
-                "\n".join(
-                    [
-                        "## Pre-Market Brief",
-                        f"- Contract: `{_as_str(panel.get('contract'))}`",
-                        f"- Session Date: `{_as_str(panel.get('session_date'))}`",
-                        f"- Status: `{_as_str(panel.get('status'))}`",
-                        "- Setup Summaries:",
-                        setup_lines,
-                        "- Warnings:",
-                        warning_lines,
-                    ]
-                )
-            )
-        )
+        return _render_surface_card(mo.md(build_premarket_brief_markdown(panel)))
 
     if key == "readiness_matrix":
         rows = panel.get("rows")
@@ -1458,6 +1538,10 @@ def _inline_value(value: object) -> str:
     if isinstance(value, (dict, list)):
         return json.dumps(value, separators=(",", ":"))
     return _as_str(value)
+
+
+def _inline_mapping(mapping: Mapping[object, object]) -> str:
+    return "; ".join(f"{_table_value(key)}={_table_value(value)}" for key, value in mapping.items())
 
 
 def _flatten_mapping_lines(

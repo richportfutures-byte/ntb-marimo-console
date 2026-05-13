@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ..viewmodels.models import (
@@ -35,6 +36,7 @@ class AppShellPayload:
     pipeline_trace: PipelineTraceVM | None
     run_history_rows: tuple[RunHistoryRowVM, ...]
     timeline_events: tuple[TimelineEventVM, ...] = ()
+    premarket_enrichment: Mapping[str, object] | None = None
 
 
 def build_app_shell(payload: AppShellPayload) -> dict[str, object]:
@@ -47,7 +49,10 @@ def build_app_shell(payload: AppShellPayload) -> dict[str, object]:
         "title": "NTB Marimo Console (Phase 1 Scaffold)",
         "surfaces": {
             "session_header": render_session_header_panel(payload.session_header),
-            "pre_market_brief": render_premarket_brief_panel(payload.premarket_brief),
+            "pre_market_brief": render_premarket_brief_panel(
+                payload.premarket_brief,
+                payload.premarket_enrichment,
+            ),
             "readiness_matrix": render_readiness_matrix_panel(payload.readiness_cards),
             "trigger_table": render_trigger_table_panel(payload.trigger_rows),
             "live_observables": render_live_observables_panel(payload.live_observable),

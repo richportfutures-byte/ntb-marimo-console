@@ -24,6 +24,7 @@ from .pipeline_query_gate import (
     PipelineQueryGateResult,
     evaluate_pipeline_query_gate,
 )
+from .premarket_brief import build_premarket_brief
 from .state.session_state import OperatorSessionMachine, SessionState
 from .trigger_state import TriggerState, TriggerStateResult
 from .trigger_state_result_producer import (
@@ -254,6 +255,10 @@ def build_phase1_payload(
             pipeline_traces=() if pipeline_vm is None else (pipeline_vm,),
             session_timestamp=inputs.pipeline_query.evaluation_timestamp_iso,
         ),
+        premarket_enrichment=build_premarket_brief(
+            session_date=session_target.session_date,
+            generated_at=inputs.pipeline_query.evaluation_timestamp_iso,
+        ).to_dict(),
     )
     runtime_status = Phase1RuntimeStatus(
         state=session.state,
