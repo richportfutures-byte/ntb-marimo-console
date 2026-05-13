@@ -332,14 +332,14 @@ def _subs_ack(code: int = 0) -> str:
     )
 
 
-def _data_frame(*, symbol: str = "/ESM26", bid: float = 1.0) -> str:
+def _data_frame(*, symbol: str = "/ESM26", bid: float = 1.0, timestamp: object = NOW) -> str:
     return json.dumps(
         {
             "data": [
                 {
                     "service": LEVELONE_FUTURES_SERVICE,
                     "command": SUBS_COMMAND,
-                    "timestamp": NOW,
+                    "timestamp": timestamp,
                     "content": [
                         {
                             "key": symbol,
@@ -684,6 +684,19 @@ class OperatorSchwabStreamerSessionSubscribeTests(unittest.TestCase):
         fields = captured[0]["fields"]
         assert isinstance(fields, dict)
         self.assertEqual(fields["1"], 4321.5)
+
+    def test_data_frame_numeric_epoch_millis_timestamp_is_normalized_to_iso_received_at(self) -> None:
+        observed_at = "2026-05-09T14:00:00+00:00"
+        epoch_millis = 1_778_335_200_000
+
+        entries = schwab_streamer_session_module.extract_data_entries(
+            _data_frame(symbol="/ESM26", bid=4321.5, timestamp=epoch_millis)
+        )
+
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["symbol"], "/ESM26")
+        self.assertEqual(entries[0]["contract"], "ES")
+        self.assertEqual(entries[0]["received_at"], observed_at)
 
     def test_subscribe_blocks_zn_and_returns_redacted_failure_without_send(self) -> None:
         session, _, _, wf = _build_session()

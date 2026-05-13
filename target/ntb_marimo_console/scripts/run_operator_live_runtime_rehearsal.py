@@ -290,6 +290,7 @@ class RehearsalReport:
     subscribed_contracts_count: int = 0
     market_data_received: bool = False
     received_contracts_count: int = 0
+    market_data_diagnostic: str = "not_evaluated"
     repeated_login_on_refresh: bool = False
     cleanup_status: str = "skipped"  # "ok" | "skipped" | "error"
     duration_seconds: float = 0.0
@@ -318,6 +319,7 @@ class RehearsalReport:
             "subscribed_contracts_count": int(self.subscribed_contracts_count),
             "market_data_received": _yes_no(self.market_data_received),
             "received_contracts_count": int(self.received_contracts_count),
+            "market_data_diagnostic": self.market_data_diagnostic,
             "repeated_login_on_refresh": "no",
             "cleanup_status": self.cleanup_status,
             "duration_seconds": float(self.duration_seconds),
@@ -435,6 +437,7 @@ def render_text(report: RehearsalReport) -> str:
         "subscribed_contracts_count",
         "market_data_received",
         "received_contracts_count",
+        "market_data_diagnostic",
         "repeated_login_on_refresh",
         "cleanup_status",
         "duration_seconds",
@@ -1178,6 +1181,15 @@ def run_with_dependencies(
         )
 
         post_receive_snapshot = launch.manager.snapshot()
+        if received:
+            report.market_data_diagnostic = "levelone_futures_updates_received"
+        elif (
+            isinstance(post_receive_snapshot, StreamManagerSnapshot)
+            and post_receive_snapshot.blocking_reasons
+        ):
+            report.market_data_diagnostic = "stream_blocked_after_subscription"
+        else:
+            report.market_data_diagnostic = "no_levelone_futures_updates_received_during_bounded_window"
         if isinstance(post_receive_snapshot, StreamManagerSnapshot) and post_receive_snapshot.state in {
             "blocked",
             "disconnected",

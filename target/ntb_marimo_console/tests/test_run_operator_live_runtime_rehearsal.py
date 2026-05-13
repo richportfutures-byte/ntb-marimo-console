@@ -11,6 +11,7 @@ import unittest
 from collections import deque
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -26,6 +27,7 @@ _spec.loader.exec_module(rehearsal)
 
 from ntb_marimo_console.market_data.stream_cache import StreamCacheRecord, StreamCacheSnapshot  # noqa: E402
 from ntb_marimo_console.market_data.stream_manager import (  # noqa: E402
+    SchwabStreamManager,
     SchwabStreamManagerConfig,
     StreamManagerSnapshot,
     StreamSubscriptionRequest,
@@ -283,14 +285,14 @@ def _subs_ack(code: int = 0) -> str:
     )
 
 
-def _data_frame(symbol: str = "/ESM26", bid: float = 1.0) -> str:
+def _data_frame(symbol: str = "/ESM26", bid: float = 1.0, *, timestamp: object = NOW) -> str:
     return json.dumps(
         {
             "data": [
                 {
                     "service": "LEVELONE_FUTURES",
                     "command": "SUBS",
-                    "timestamp": NOW,
+                    "timestamp": timestamp,
                     "content": [
                         {"key": symbol, "1": bid, "2": bid + 0.25, "3": bid + 0.125}
                     ],
@@ -551,6 +553,7 @@ class RehearsalCliBlockingTests(unittest.TestCase):
             subscribed_contracts_count=5,
             market_data_received=False,
             received_contracts_count=0,
+            market_data_diagnostic="no_levelone_futures_updates_received_during_bounded_window",
             repeated_login_on_refresh=False,
             cleanup_status="ok",
             duration_seconds=15.0,
@@ -858,6 +861,10 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
         self.assertTrue(report.live_login_succeeded)
         self.assertTrue(report.live_subscribe_succeeded)
         self.assertEqual(report.subscribed_contracts_count, 5)
+        self.assertEqual(
+            report.market_data_diagnostic,
+            "no_levelone_futures_updates_received_during_bounded_window",
+        )
         self.assertEqual(credentials_provider.call_count, 1)
         self.assertEqual(websocket_factory.call_count, 1)
         self.assertEqual(len(managers), 1)
@@ -892,6 +899,7 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
         self.assertEqual(report.mode, "live")
         self.assertTrue(report.market_data_received)
         self.assertGreaterEqual(report.received_contracts_count, 3)
+        self.assertEqual(report.market_data_diagnostic, "levelone_futures_updates_received")
 
         text_output = rehearsal.render_text(report)
         json_output = rehearsal.render_json(report)
@@ -913,6 +921,37 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
         # Sanity: prices not present in output (we never emit field values).
         self.assertNotIn("4321.5", text_output)
         self.assertNotIn("4321.5", json_output)
+
+    def test_dispatch_counts_numeric_schwab_epoch_millis_timestamps_with_real_manager(self) -> None:
+        token_provider = FakeTokenProvider()
+        credentials_provider = FakeCredentialsProvider()
+        websocket_factory = FakeWebsocketFactory()
+        observed_at = datetime(2026, 5, 9, 14, 0, 0, tzinfo=timezone.utc)
+        epoch_millis = int(observed_at.timestamp() * 1000)
+        websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_data_frame("/ESM26", 4321.5, timestamp=epoch_millis))
+        websocket_factory.connection.recv_queue.append(_data_frame("/NQM26", 17890.25, timestamp=epoch_millis))
+        websocket_factory.connection.recv_queue.append(_data_frame("/MGCM26", 2110.0, timestamp=epoch_millis))
+
+        deps = rehearsal.RehearsalDependencies(
+            token_provider=token_provider,
+            credentials_provider=credentials_provider,
+            websocket_factory=websocket_factory,
+            manager_builder=lambda cfg, c: SchwabStreamManager(cfg, client=c, clock=lambda: observed_at),
+            clock=_make_clock(),
+        )
+        report = rehearsal.run_with_dependencies(
+            args=_make_args(live=True, duration=2),
+            env=_full_env(self.target_root),
+            target_root=self.target_root,
+            deps=deps,
+        )
+
+        self.assertEqual(report.mode, "live")
+        self.assertTrue(report.market_data_received)
+        self.assertGreaterEqual(report.received_contracts_count, 3)
+        self.assertEqual(report.market_data_diagnostic, "levelone_futures_updates_received")
 
     def test_repeated_dispatch_does_not_repeat_login_subscribe_or_start(self) -> None:
         token_provider = FakeTokenProvider()

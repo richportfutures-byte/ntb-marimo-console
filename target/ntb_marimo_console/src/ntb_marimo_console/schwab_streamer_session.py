@@ -58,6 +58,7 @@ import re
 from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
@@ -272,7 +273,7 @@ def extract_data_entries(
         if not isinstance(contents, list):
             raise OperatorSchwabStreamerSessionError("malformed_data_content")
         timestamp = item.get("timestamp")
-        received_at = str(timestamp) if timestamp is not None else ""
+        received_at = _received_at_from_timestamp(timestamp)
         for content in contents:
             if not isinstance(content, dict):
                 raise OperatorSchwabStreamerSessionError("malformed_data_entry")
@@ -307,6 +308,32 @@ def _contract_from_symbol(symbol: str) -> str | None:
     if match is None:
         return None
     return match.group("root")
+
+
+def _received_at_from_timestamp(timestamp: object) -> str:
+    if timestamp is None or isinstance(timestamp, bool):
+        return ""
+    if isinstance(timestamp, int | float):
+        return _epoch_timestamp_to_iso(timestamp)
+    text = str(timestamp).strip()
+    if not text:
+        return ""
+    if re.fullmatch(r"\d+(?:\.\d+)?", text):
+        try:
+            return _epoch_timestamp_to_iso(float(text))
+        except (OverflowError, OSError, ValueError):
+            return ""
+    return text
+
+
+def _epoch_timestamp_to_iso(timestamp: int | float) -> str:
+    seconds = float(timestamp)
+    if abs(seconds) >= 1_000_000_000_000:
+        seconds = seconds / 1000.0
+    try:
+        return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat()
+    except (OverflowError, OSError, ValueError):
+        return ""
 
 
 def validate_subscription_contracts(contracts: tuple[str, ...]) -> tuple[str, ...]:
