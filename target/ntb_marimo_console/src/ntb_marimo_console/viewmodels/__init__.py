@@ -1,4 +1,5 @@
 from .mappers import (
+    active_trade_vms_from_registry,
     live_observable_vm_from_snapshot,
     pipeline_trace_vm_from_summary,
     premarket_brief_vm_from_brief,
@@ -8,6 +9,7 @@ from .mappers import (
     trigger_status_vm_from_eval,
 )
 from .models import (
+    ActiveTradeVM,
     LiveObservableVM,
     PipelineTraceVM,
     PreMarketBriefVM,
@@ -18,6 +20,7 @@ from .models import (
 )
 
 __all__ = [
+    "ActiveTradeVM",
     "LiveObservableVM",
     "PipelineTraceVM",
     "PreMarketBriefVM",
@@ -25,6 +28,7 @@ __all__ = [
     "RunHistoryRowVM",
     "SessionHeaderVM",
     "TriggerStatusVM",
+    "active_trade_vms_from_registry",
     "live_observable_vm_from_snapshot",
     "pipeline_trace_vm_from_summary",
     "premarket_brief_vm_from_brief",

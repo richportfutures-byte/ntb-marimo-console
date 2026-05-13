@@ -56,6 +56,23 @@ def test_registry_adds_manual_active_trade_with_thesis_reference() -> None:
     assert registry.list(status="open", contract="ES") == (trade,)
 
 
+def test_registry_allows_operator_trade_without_thesis_reference() -> None:
+    registry = ActiveTradeRegistry(clock=FakeClock())
+
+    trade = registry.add(
+        trade_id="trade-es-no-thesis",
+        contract="ES",
+        direction="long",
+        entry_price=5325.25,
+        stop_loss=5317.25,
+        target=5344.25,
+    )
+    restored = ActiveTradeRegistry.from_payload(registry.to_payload(), clock=FakeClock())
+
+    assert trade.thesis_reference is None
+    assert restored.get("trade-es-no-thesis").thesis_reference is None
+
+
 def test_current_pnl_state_is_read_only_live_price_calculation() -> None:
     registry = ActiveTradeRegistry(clock=FakeClock())
     long_trade = registry.add(

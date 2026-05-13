@@ -101,6 +101,44 @@ class StreamHealthVM:
         }
 
 
+@dataclass(frozen=True)
+class ActiveTradeVM:
+    trade_id: str
+    contract: str
+    direction: str
+    entry_price: float
+    entry_time: str
+    stop_loss: float | None
+    target: float | None
+    status: str
+    current_price: float | None
+    unrealized_pnl: float | None
+    thesis_health: str
+    thesis_health_reasons: tuple[str, ...]
+    distance_from_stop: float | None
+    distance_from_target: float | None
+    operator_notes: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "trade_id": self.trade_id,
+            "contract": self.contract,
+            "direction": self.direction,
+            "entry_price": self.entry_price,
+            "entry_time": self.entry_time,
+            "stop_loss": self.stop_loss,
+            "target": self.target,
+            "status": self.status,
+            "current_price": self.current_price,
+            "unrealized_pnl": self.unrealized_pnl,
+            "thesis_health": self.thesis_health,
+            "thesis_health_reasons": list(self.thesis_health_reasons),
+            "distance_from_stop": self.distance_from_stop,
+            "distance_from_target": self.distance_from_target,
+            "operator_notes": self.operator_notes,
+        }
+
+
 NARRATIVE_UNAVAILABLE_LABEL = "Engine narrative unavailable in this run."
 
 

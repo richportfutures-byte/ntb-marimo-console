@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+from ntb_marimo_console.active_trade import ActiveTradeRegistry, ThesisReference
 from ntb_marimo_console.market_data.futures_quote_service import (
     FixtureFuturesQuoteProvider,
     FuturesQuote,
@@ -17,14 +18,26 @@ from ntb_marimo_console.market_data.stream_manager import (
     StreamSubscriptionRequest,
 )
 from ntb_marimo_console.operator_workspace import OperatorWorkspaceRequest, build_r14_cockpit_view_model
-from ntb_marimo_console.ui.marimo_phase1_renderer import build_stream_health_markdown, render_stream_health_panel
+from ntb_marimo_console.ui.marimo_phase1_renderer import (
+    build_active_trades_markdown,
+    build_stream_health_markdown,
+    render_active_trades_panel,
+    render_stream_health_panel,
+)
 from ntb_marimo_console.viewmodels.mappers import (
+    active_trade_vms_from_registry,
     live_observable_vm_from_snapshot,
     premarket_brief_vm_from_brief,
     readiness_card_vm_from_context,
     stream_health_vm_from_snapshot,
 )
-from ntb_marimo_console.viewmodels.models import LiveObservableVM, PreMarketBriefVM, ReadinessCardVM, StreamHealthVM
+from ntb_marimo_console.viewmodels.models import (
+    ActiveTradeVM,
+    LiveObservableVM,
+    PreMarketBriefVM,
+    ReadinessCardVM,
+    StreamHealthVM,
+)
 
 
 @dataclass
@@ -341,6 +354,116 @@ class ViewModelBoundaryEnforcementTests(unittest.TestCase):
         stream_health = cockpit["runtime_status"]["stream_health"]  # type: ignore[index]
         self.assertEqual(stream_health["per_contract_status"], {"ES": "active"})
         self.assertEqual(stream_health["overall_health"], "healthy")
+
+    def test_active_trade_vm_maps_open_trades_from_registry_and_cache(self) -> None:
+        registry = ActiveTradeRegistry(clock=FakeClock())
+        trade = registry.add(
+            trade_id="trade-es-fixture-001",
+            contract="ES",
+            direction="long",
+            entry_price=5325.0,
+            thesis_reference=ThesisReference(
+                pipeline_result_id="pipeline-result-fixture-001",
+                trigger_name="fixture-trigger",
+                trigger_state="QUERY_READY",
+            ),
+            stop_loss=5315.0,
+            target=5345.0,
+            operator_notes="Operator-entered fixture annotation.",
+        )
+        manager = SchwabStreamManager(live_config(), client=FakeStreamClient(), clock=FakeClock())
+        manager.start()
+        manager.ingest_message(
+            {
+                **quote_message(contract="ES", symbol="ES_TEST", received_at="2026-05-12T14:00:00+00:00"),
+                "fields": {"bid": 5334.75, "ask": 5335.25, "last": 5335.0},
+            }
+        )
+
+        rows = active_trade_vms_from_registry(registry, manager.snapshot().cache)
+
+        self.assertEqual(len(rows), 1)
+        self.assertIsInstance(rows[0], ActiveTradeVM)
+        self.assertEqual(rows[0].trade_id, trade.trade_id)
+        self.assertEqual(rows[0].current_price, 5335.0)
+        self.assertEqual(rows[0].unrealized_pnl, 10.0)
+        self.assertEqual(rows[0].thesis_health, "healthy")
+        self.assertEqual(rows[0].distance_from_stop, 20.0)
+        self.assertEqual(rows[0].distance_from_target, 10.0)
+
+    def test_active_trade_vm_excludes_closed_trades(self) -> None:
+        registry = ActiveTradeRegistry(clock=FakeClock())
+        open_trade = registry.add(
+            trade_id="trade-es-open",
+            contract="ES",
+            direction="long",
+            entry_price=5325.0,
+            stop_loss=5315.0,
+            target=5345.0,
+        )
+        closed_trade = registry.add(
+            trade_id="trade-es-closed",
+            contract="ES",
+            direction="long",
+            entry_price=5320.0,
+            stop_loss=5310.0,
+            target=5340.0,
+        )
+        registry.close(closed_trade.trade_id, status="closed", close_reason="fixture_closed")
+        manager = SchwabStreamManager(live_config(), client=FakeStreamClient(), clock=FakeClock())
+        manager.start()
+        manager.ingest_message(
+            {
+                **quote_message(contract="ES", symbol="ES_TEST", received_at="2026-05-12T14:00:00+00:00"),
+                "fields": {"last": 5330.0},
+            }
+        )
+
+        rows = active_trade_vms_from_registry(registry, manager.snapshot().cache)
+
+        self.assertEqual(tuple(row.trade_id for row in rows), (open_trade.trade_id,))
+
+    def test_active_trade_markdown_is_display_only_and_does_not_enable_query_or_execution(self) -> None:
+        markdown = build_active_trades_markdown(
+            {
+                "status": "ready",
+                "message": "Operator-recorded annotations only; P&L is a display calculation and execution remains manual.",
+                "rows": [
+                    {
+                        "trade_id": "trade-es-fixture-001",
+                        "contract": "ES",
+                        "direction": "long",
+                        "entry_price": 5325.0,
+                        "entry_time": "2026-05-12T14:00:00+00:00",
+                        "stop_loss": 5315.0,
+                        "target": 5345.0,
+                        "status": "open",
+                        "current_price": 5335.0,
+                        "unrealized_pnl": 10.0,
+                        "thesis_health": "healthy",
+                        "thesis_health_reasons": ["thesis_holding"],
+                        "distance_from_stop": 20.0,
+                        "distance_from_target": 10.0,
+                        "operator_notes": "fixture annotation",
+                    }
+                ],
+            }
+        )
+
+        self.assertIn("## Active Trades", markdown)
+        self.assertIn("green healthy", markdown)
+        self.assertIn("green 10", markdown)
+        self.assertIn("execution remains manual", markdown)
+        self.assertNotIn("Query Enabled: `True`", markdown)
+        self.assertNotIn("submit order", markdown.lower())
+        self.assertNotIn("broker", markdown.lower())
+
+    def test_fixture_non_live_mode_has_no_primary_active_trade_panel(self) -> None:
+        rendered = render_active_trades_panel(
+            {"runtime": {"operator_live_runtime_mode": "SAFE_NON_LIVE"}}
+        )
+
+        self.assertIsNone(rendered)
 
 
 if __name__ == "__main__":

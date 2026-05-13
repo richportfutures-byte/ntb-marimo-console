@@ -102,6 +102,7 @@ def render_phase1_console(
     lifecycle_control_panel: Any | None = None,
     profile_control_panel: Any | None = None,
     evidence_control_panel: Any | None = None,
+    active_trade_control_panel: Any | None = None,
 ) -> Any:
     plan = build_phase1_render_plan(shell)
     startup = shell.get("startup")
@@ -116,6 +117,10 @@ def render_phase1_console(
     stream_health_panel = render_stream_health_panel(shell)
     if stream_health_panel is not None:
         elements.append(stream_health_panel)
+
+    active_trades_panel = render_active_trades_panel(shell, control_panel=active_trade_control_panel)
+    if active_trades_panel is not None:
+        elements.append(active_trades_panel)
 
     cockpit = shell.get("r14_cockpit")
     if operator_ready and isinstance(cockpit, Mapping):
@@ -522,6 +527,81 @@ def render_stream_health_panel(shell: Mapping[str, object]) -> Any | None:
     return _render_markdown_card(build_stream_health_markdown(health))
 
 
+def render_active_trades_panel(
+    shell: Mapping[str, object],
+    *,
+    control_panel: Any | None = None,
+) -> Any | None:
+    runtime = shell.get("runtime")
+    runtime_map = runtime if isinstance(runtime, Mapping) else {}
+    mode = _as_str(runtime_map.get("operator_live_runtime_mode"), default="SAFE_NON_LIVE")
+    if mode != "OPERATOR_LIVE_RUNTIME":
+        return None
+
+    content: list[Any] = []
+    active_trades = shell.get("active_trades")
+    if isinstance(active_trades, Mapping):
+        content.append(mo.md(build_active_trades_markdown(active_trades)))
+    else:
+        content.append(
+            mo.md(
+                build_active_trades_markdown(
+                    {
+                        "status": "unavailable",
+                        "rows": [],
+                        "message": "Active-trade registry is unavailable for this app session.",
+                    }
+                )
+            )
+        )
+    if control_panel is not None:
+        content.append(control_panel)
+    return _render_surface_card(mo.vstack(content, gap=0.65))
+
+
+def build_active_trades_markdown(panel: Mapping[str, object]) -> str:
+    rows = panel.get("rows")
+    status = _as_str(panel.get("status"), default="unavailable")
+    message = _as_str(
+        panel.get("message"),
+        default="Operator-recorded trades only. The console does not submit orders or close positions.",
+    )
+    lines = [
+        "## Active Trades",
+        f"- Status: `{status}`",
+        f"- Boundary: {message}",
+        "",
+        (
+            "| Contract | Direction | Entry | Current | Unrealized P&L | Stop Distance | "
+            "Target Distance | Thesis Health | Status | Notes |"
+        ),
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
+    ]
+    if not isinstance(rows, list) or not rows:
+        lines.append("| `<none>` |  |  |  |  |  |  | `gray` no open trades |  |  |")
+        return "\n".join(lines)
+
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        health = _as_str(row.get("thesis_health"), default="unknown")
+        pnl = _optional_float(row.get("unrealized_pnl"))
+        lines.append(
+            "| "
+            + f"`{_table_value(row.get('contract'))}` | "
+            + f"`{_table_value(row.get('direction'))}` | "
+            + f"`{_number_text(row.get('entry_price'))}` | "
+            + f"`{_number_text(row.get('current_price'))}` | "
+            + f"`{_pnl_indicator(pnl)} {_number_text(pnl)}` | "
+            + f"`{_number_text(row.get('distance_from_stop'))}` | "
+            + f"`{_number_text(row.get('distance_from_target'))}` | "
+            + f"`{_thesis_health_badge(health)}` | "
+            + f"`{_table_value(row.get('status'))}` | "
+            + f"{_table_value(row.get('operator_notes'))} |"
+        )
+    return "\n".join(lines)
+
+
 def build_stream_health_markdown(health: Mapping[str, object]) -> str:
     connection_state = _as_str(health.get("connection_state"), default="unavailable")
     token_status = _as_str(health.get("token_status"), default="unavailable")
@@ -576,6 +656,41 @@ def _contract_health_indicator(status: object) -> str:
     if normalized in {"stale", "no_data"}:
         return "red"
     return "yellow"
+
+
+def _thesis_health_badge(status: object) -> str:
+    normalized = _as_str(status, default="unknown").strip().lower()
+    color = {
+        "healthy": "green",
+        "degraded": "yellow",
+        "invalidated": "red",
+        "unknown": "gray",
+        "no_thesis": "gray",
+    }.get(normalized, "gray")
+    return f"{color} {normalized}"
+
+
+def _pnl_indicator(value: float | None) -> str:
+    if value is None or value == 0:
+        return "gray"
+    if value > 0:
+        return "green"
+    return "red"
+
+
+def _number_text(value: object) -> str:
+    number = _optional_float(value)
+    if number is None:
+        return "N/A"
+    return f"{number:.4f}".rstrip("0").rstrip(".")
+
+
+def _optional_float(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    return None
 
 
 def render_r14_cockpit_shell(cockpit: Mapping[str, object]) -> Any:

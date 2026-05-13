@@ -9,10 +9,14 @@ from ..adapters.contracts import (
     TriggerEvaluation,
     WatchmanContextLike,
 )
+from ..active_trade import ActiveTradeRegistry
 from ..market_data.futures_quote_service import FuturesQuoteService, FuturesQuoteServiceResult
+from ..market_data.stream_cache import StreamCacheSnapshot
 from ..market_data.stream_events import redact_sensitive_text
 from ..market_data.stream_manager import StreamManagerSnapshot
+from ..thesis_health import ThesisHealthAssessment, assess_all_open_trades
 from .models import (
+    ActiveTradeVM,
     EngineReasoningVM,
     KeyLevelsVM,
     LiveObservableVM,
@@ -138,6 +142,47 @@ def stream_health_vm_from_snapshot(
         blocking_reasons=blocking_reasons,
         overall_health=overall_health,
     )
+
+
+def active_trade_vms_from_registry(
+    registry: ActiveTradeRegistry,
+    cache_snapshot: StreamCacheSnapshot,
+    thesis_health_assessments: Mapping[str, ThesisHealthAssessment] | None = None,
+) -> tuple[ActiveTradeVM, ...]:
+    assessments = dict(thesis_health_assessments or assess_all_open_trades(registry, cache_snapshot))
+    rows: list[ActiveTradeVM] = []
+    for trade in registry.list(status="open"):
+        assessment = assessments.get(trade.trade_id)
+        current_price = assessment.live_price if assessment is not None else None
+        rows.append(
+            ActiveTradeVM(
+                trade_id=trade.trade_id,
+                contract=trade.contract,
+                direction=trade.direction,
+                entry_price=trade.entry_price,
+                entry_time=trade.entry_time_utc,
+                stop_loss=trade.stop_loss,
+                target=trade.target,
+                status=trade.status,
+                current_price=current_price,
+                unrealized_pnl=_display_unrealized_pnl(
+                    entry_price=trade.entry_price,
+                    current_price=current_price,
+                ),
+                thesis_health=assessment.status if assessment is not None else "unknown",
+                thesis_health_reasons=assessment.reasons if assessment is not None else ("assessment_unavailable",),
+                distance_from_stop=assessment.distance_from_stop if assessment is not None else None,
+                distance_from_target=assessment.distance_from_target if assessment is not None else None,
+                operator_notes=trade.operator_notes,
+            )
+        )
+    return tuple(rows)
+
+
+def _display_unrealized_pnl(*, entry_price: float, current_price: float | None) -> float | None:
+    if current_price is None:
+        return None
+    return current_price - entry_price
 
 
 def _per_contract_health_status(snapshot: StreamManagerSnapshot) -> dict[str, str]:

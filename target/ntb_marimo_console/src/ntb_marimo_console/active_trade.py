@@ -116,7 +116,7 @@ class ActiveTrade:
     direction: TradeDirection
     entry_price: float
     entry_time_utc: str
-    thesis_reference: ThesisReference
+    thesis_reference: ThesisReference | None = None
     stop_loss: float | None = None
     target: float | None = None
     status: TradeStatus = "open"
@@ -175,7 +175,9 @@ class ActiveTrade:
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
-        payload["thesis_reference"] = self.thesis_reference.to_dict()
+        payload["thesis_reference"] = (
+            None if self.thesis_reference is None else self.thesis_reference.to_dict()
+        )
         return payload
 
     @classmethod
@@ -190,7 +192,11 @@ class ActiveTrade:
             direction=_required_string(payload, "direction"),  # type: ignore[arg-type]
             entry_price=_required_float(payload, "entry_price"),
             entry_time_utc=_required_string(payload, "entry_time_utc"),
-            thesis_reference=ThesisReference.from_payload(payload.get("thesis_reference")),
+            thesis_reference=(
+                None
+                if payload.get("thesis_reference") is None
+                else ThesisReference.from_payload(payload.get("thesis_reference"))
+            ),
             stop_loss=_optional_float(payload, "stop_loss"),
             target=_optional_float(payload, "target"),
             status=_required_string(payload, "status"),  # type: ignore[arg-type]
@@ -220,7 +226,7 @@ class ActiveTradeRegistry:
         contract: str,
         direction: TradeDirection,
         entry_price: float,
-        thesis_reference: ThesisReference,
+        thesis_reference: ThesisReference | None = None,
         entry_time_utc: str | None = None,
         stop_loss: float | None = None,
         target: float | None = None,
