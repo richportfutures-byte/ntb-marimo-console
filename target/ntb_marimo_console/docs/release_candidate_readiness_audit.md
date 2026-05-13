@@ -78,7 +78,8 @@ The following live-data foundations are present and exercised by the non-live ha
 
 - Persistent Schwab stream manager foundation: present (`market_data/stream_manager.py`).
 - LEVELONE_FUTURES handling: present and exercised through fixture ingestion.
-- CHART_FUTURES bar-builder handling: present (`market_data/bar_builder.py`, `chart_bars.py`).
+- CHART_FUTURES bar-builder handling: present for normalized bar records (`market_data/bar_builder.py`, `chart_bars.py`).
+- Direct live CHART_FUTURES subscription/parsing through the concrete Schwab streamer session: not implemented at this checkpoint.
 - Live observable snapshot v2: present (`live_observables/builder.py`, `schema_v2.py`, `quality.py`).
 - Quote freshness and fail-closed blocking: enforced; stale, missing, and mismatched data fail closed.
 - One-connection discipline by design and test: verified by the R18 fixture rehearsal `one_stream_connection_discipline` check.
@@ -128,6 +129,7 @@ Release blockers and proof gaps are reported using exact language and explicit c
    - The post-fix explicit operator-run result then recorded `market_data_received=yes`, `received_contracts_count=5`, and `market_data_diagnostic=levelone_futures_updates_received`.
    - Successful live login and successful live subscription remain insufficient without real market data for the final target universe.
    - R19 now records the bounded LEVELONE_FUTURES result, but it does not claim that CHART_FUTURES proof, full live-session usability, or production live readiness has passed.
+   - The current operator live runtime rehearsal cannot directly produce CHART_FUTURES proof because the concrete streamer path subscribes to LEVELONE_FUTURES and does not parse live chart frames into the bar builder.
 
 2. Production live readiness remains blocked by unproven live delivery and usability evidence.
    - Bounded real LEVELONE_FUTURES market data has been recorded for `ES`, `NQ`, `CL`, `6E`, and `MGC` in the exact reported run only.

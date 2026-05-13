@@ -707,6 +707,7 @@ def build_dry_run_report(
             "review_preflight_only_not_subscription_or_login",
             "schwab_live_readiness_unproven_until_authorized_manual_rehearsal",
             "levelone_futures_and_chart_futures_delivery_not_assumed",
+            "live_runtime_rehearsal_subscribes_levelone_only_chart_futures_requires_implementation",
             "mgc_micro_gold_not_gc_substitute",
             "default_app_launch_remains_non_live",
         ),

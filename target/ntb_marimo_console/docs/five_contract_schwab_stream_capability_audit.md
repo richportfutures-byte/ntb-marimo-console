@@ -2,6 +2,8 @@
 
 Starting checkpoint: `e29387b Surface operator blocked-state reasons`
 
+Latest reviewed checkpoint: `a57b0fa Record five-contract LEVELONE live result`
+
 This B1 audit documents what is currently implemented versus assumed for live Schwab market data across the final target contracts `ES`, `NQ`, `CL`, `6E`, and `MGC`.
 
 No live Schwab rehearsal was performed. No live credentials, token contents, auth headers, streamer URLs, customer IDs, correl IDs, account IDs, or authorization payloads were required or inspected. This audit does not add stream behavior, market logic, execution behavior, broker/order/account behavior, or a second decision authority.
@@ -16,9 +18,9 @@ No live Schwab rehearsal was performed. No live credentials, token contents, aut
 
 ## Current Verdict
 
-The repository has a fail-closed, explicit-opt-in Schwab stream foundation and a tested cache/readiness path for normalized `LEVELONE_FUTURES` quote messages. It does not currently prove real Schwab live delivery across all five final contracts. It also does not implement live `CHART_FUTURES` subscription/parsing in the production streamer session.
+The repository has a fail-closed, explicit-opt-in Schwab stream foundation and a tested cache/readiness path for normalized `LEVELONE_FUTURES` quote messages. A sanitized bounded five-contract `LEVELONE_FUTURES` live result is now recorded for `ES`, `NQ`, `CL`, `6E`, and `MGC`.
 
-B2 is justified as a design/contract step for `CHART_FUTURES` delivery semantics, but any roadmap step that assumes real five-contract live Schwab proof would be premature until a sanitized operator-run live artifact exists.
+The repository still does not implement live `CHART_FUTURES` subscription/parsing in the production streamer session. Any roadmap step that assumes direct five-contract `CHART_FUTURES` live proof is premature until implementation work exists and a sanitized operator-run chart artifact is recorded.
 
 ## Capability Matrix
 
@@ -28,7 +30,7 @@ B2 is justified as a design/contract step for `CHART_FUTURES` delivery semantics
 | Runtime profiles | Implemented | `runtime_profiles.py` contains preserved profiles for all five final contracts. | Profiles are not live stream symbol configuration. |
 | Stream manager startup | Implemented | `market_data/stream_manager.py` requires explicit live opt-in, provider, services, symbols, fields, contracts, and a client before login. | Real Schwab behavior remains unproven-live. |
 | Stream cache | Implemented | `StreamCache` stores normalized records by contract and symbol, marks stale data, and redacts fields/reasons. | Cache readiness can be partial unless downstream five-contract readiness enforces all contracts. |
-| `LEVELONE_FUTURES` normalized quote path | Implemented | `schwab_streamer_session.py` builds a `LEVELONE_FUTURES` subscription and extracts quote entries; `stream_manager.py` accepts normalized quote messages into the cache. | Live five-contract Schwab delivery and entitlements are unproven-live. |
+| `LEVELONE_FUTURES` normalized quote path | Implemented and bounded live result recorded | `schwab_streamer_session.py` builds a `LEVELONE_FUTURES` subscription and extracts quote entries; `stream_manager.py` accepts normalized quote messages into the cache; `docs/live_proof/five_contract_levelone_live_market_data_result_2026-05-13.md` records counted five-contract live receipt. | Entitlement and rollover robustness beyond the exact recorded run remain unproven. |
 | One-shot futures quote adapter | Implemented, single-symbol | `adapters/schwab_futures_market_data.py` supports a bounded `LEVELONE_FUTURES` fetch path. | Default symbol is ES-oriented and does not establish five-contract streaming. |
 | `CHART_FUTURES` normalized bar handling | Fixture-only | `bar_builder.py` accepts normalized `CHART_FUTURES`-style mappings and fixture/manual rehearsal bars. | No production Schwab `CHART_FUTURES` subscription or raw message parser is wired. |
 | Per-contract stream symbols | Fixture-only | Manual/rehearsal tooling has static symbols `/ESM26`, `/NQM26`, `/CLM26`, `/6EM26`, `/MGCM26` and allows overrides. | No src-level dynamic symbol resolver or rollover service exists. |
@@ -44,11 +46,11 @@ B2 is justified as a design/contract step for `CHART_FUTURES` delivery semantics
 
 | Contract | Runtime profile | Static rehearsal symbol | `LEVELONE_FUTURES` stream assumption | `CHART_FUTURES` state | Live proof |
 | --- | --- | --- | --- | --- | --- |
-| ES | `preserved_es_phase1` | `/ESM26` | Implemented foundation, unproven-live | Fixture-only normalized bars | Pending |
-| NQ | `preserved_nq_phase1` | `/NQM26` | Implemented foundation, unproven-live | Fixture-only normalized bars | Pending |
-| CL | `preserved_cl_phase1` | `/CLM26` | Implemented foundation, unproven-live | Fixture-only normalized bars | Pending |
-| 6E | `preserved_6e_phase1` | `/6EM26` | Implemented foundation, unproven-live | Fixture-only normalized bars | Pending |
-| MGC | `preserved_mgc_phase1` | `/MGCM26` | Implemented foundation, unproven-live | Fixture-only normalized bars | Pending |
+| ES | `preserved_es_phase1` | `/ESM26` | Bounded live result recorded for exact run | Fixture-only normalized bars | LEVELONE recorded; CHART pending |
+| NQ | `preserved_nq_phase1` | `/NQM26` | Bounded live result recorded for exact run | Fixture-only normalized bars | LEVELONE recorded; CHART pending |
+| CL | `preserved_cl_phase1` | `/CLM26` | Bounded live result recorded for exact run | Fixture-only normalized bars | LEVELONE recorded; CHART pending |
+| 6E | `preserved_6e_phase1` | `/6EM26` | Bounded live result recorded for exact run | Fixture-only normalized bars | LEVELONE recorded; CHART pending |
+| MGC | `preserved_mgc_phase1` | `/MGCM26` | Bounded live result recorded for exact run | Fixture-only normalized bars | LEVELONE recorded; CHART pending |
 
 `MGC` is treated as its own final target contract. It is not `GC`, is not mapped to `GC`, and does not re-enable `GC`.
 
@@ -66,7 +68,7 @@ The production streamer session builds `ADMIN LOGIN`, `LEVELONE_FUTURES SUBS`, a
 
 The one-shot Schwab futures market-data adapter also normalizes `LEVELONE_FUTURES` field ids into quote snapshots. That adapter remains single-symbol and does not prove persistent five-contract streaming.
 
-Live `LEVELONE_FUTURES` behavior for all five final contracts is therefore implemented as a foundation but unproven-live.
+Live `LEVELONE_FUTURES` behavior for all five final contracts is implemented as a foundation and has bounded proof for the exact recorded run. That proof does not establish `CHART_FUTURES`, full live-session Marimo usability, or entitlement and rollover robustness beyond the exact run.
 
 ## CHART_FUTURES State
 
@@ -112,7 +114,7 @@ However, the cockpit does not yet receive a complete per-contract live stream ca
 4. Add contract-specific entitlement failure classification after observing sanitized Schwab failure shapes.
 5. Add a managed receive loop, reconnect/backoff, and watchdog without allowing Marimo refresh to create repeated logins.
 6. Pass truthful per-contract stream capability metadata into the cockpit without allowing display objects to enable query readiness.
-7. Record a sanitized operator-run five-contract live proof artifact before any roadmap step claims live Schwab readiness.
+7. Record a sanitized operator-run five-contract `CHART_FUTURES` live proof artifact before any roadmap step claims live chart delivery.
 
 ## B1 Boundary
 

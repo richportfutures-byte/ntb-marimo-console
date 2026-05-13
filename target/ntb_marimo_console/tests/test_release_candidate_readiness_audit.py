@@ -164,6 +164,8 @@ def test_audit_includes_release_blockers_or_proof_gaps(audit_text: str) -> None:
     assert "Successful live login and successful live subscription remain insufficient" in audit_text
     assert "Bounded real LEVELONE_FUTURES market data has been recorded" in audit_text
     assert "Real CHART_FUTURES delivery has not been recorded" in audit_text
+    assert "Direct live CHART_FUTURES subscription/parsing" in audit_text
+    assert "concrete streamer path subscribes to LEVELONE_FUTURES" in audit_text
     assert "Symbol entitlement and rollover proof beyond the exact reported run has not been recorded" in audit_text
     assert "Full live-session Marimo usability has not been proven" in audit_text
 

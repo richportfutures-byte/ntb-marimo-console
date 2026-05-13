@@ -423,6 +423,13 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertNotIn("ZN", [row["contract"] for row in rows])
         self.assertNotIn("GC", [row["contract"] for row in rows])
 
+    def test_live_runtime_stream_config_subscribes_levelone_only_until_chart_implementation_exists(self) -> None:
+        config = rehearsal._build_stream_config(symbol_overrides={})
+
+        self.assertEqual(config.services_requested, ("LEVELONE_FUTURES",))
+        self.assertNotIn("CHART_FUTURES", config.services_requested)
+        self.assertEqual(config.contracts_requested, ("ES", "NQ", "CL", "6E", "MGC"))
+
     def test_dry_run_rejects_excluded_and_unsupported_candidates_without_promoting_them(self) -> None:
         report = rehearsal.build_dry_run_report(candidate_contracts=("ZN", "GC", "YM", "MGC"))
         payload = report.to_dict()
@@ -495,6 +502,10 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertIn(
             "production_readiness_blocker="
             "production_release_remains_premature_until_non_levelone_predicates_are_satisfied",
+            first,
+        )
+        self.assertIn(
+            "limitation=live_runtime_rehearsal_subscribes_levelone_only_chart_futures_requires_implementation",
             first,
         )
         self.assertIn("review_preflight_only_not_subscription_or_login", first)

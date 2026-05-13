@@ -660,6 +660,26 @@ class OperatorSchwabStreamerSessionSubscribeTests(unittest.TestCase):
         self.assertNotIn("/GCM", keys_field)
         self.assertIn("/MGCM26", keys_field)
 
+    def test_chart_futures_request_is_not_direct_chart_subscription_with_current_session(self) -> None:
+        session, _, _, wf = _build_session()
+        self._login(session, wf)
+        wf.connection.recv_queue.append(_subs_ack(code=0))
+        request = StreamSubscriptionRequest(
+            provider="schwab",
+            services=("CHART_FUTURES",),
+            symbols=("/ESM26", "/NQM26", "/CLM26", "/6EM26", "/MGCM26"),
+            fields=(0, 1, 2, 3, 4, 5),
+            contracts=("ES", "NQ", "CL", "6E", "MGC"),
+        )
+
+        result = session.subscribe(request)
+
+        self.assertTrue(result.succeeded)
+        sent_payload = json.loads(wf.connection.sent[0])
+        sent_request = sent_payload["requests"][0]
+        self.assertEqual(sent_request["service"], LEVELONE_FUTURES_SERVICE)
+        self.assertNotEqual(sent_request["service"], "CHART_FUTURES")
+
     def test_subscribe_preserves_data_frame_received_before_ack_for_dispatch(self) -> None:
         session, _, _, wf = _build_session()
         self._login(session, wf)
@@ -697,6 +717,31 @@ class OperatorSchwabStreamerSessionSubscribeTests(unittest.TestCase):
         self.assertEqual(entries[0]["symbol"], "/ESM26")
         self.assertEqual(entries[0]["contract"], "ES")
         self.assertEqual(entries[0]["received_at"], observed_at)
+
+    def test_chart_futures_data_entry_is_not_normalized_as_bar_message_by_current_parser(self) -> None:
+        raw_message = json.dumps(
+            {
+                "data": [
+                    {
+                        "service": "CHART_FUTURES",
+                        "timestamp": NOW,
+                        "content": [{"key": "/ESM26", "1": 100.0, "2": 101.0}],
+                    }
+                ]
+            }
+        )
+
+        entries = schwab_streamer_session_module.extract_data_entries(
+            raw_message,
+            service="CHART_FUTURES",
+        )
+
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["service"], "CHART_FUTURES")
+        self.assertEqual(entries[0]["message_type"], "quote")
+        self.assertNotIn("start_time", entries[0])
+        self.assertNotIn("end_time", entries[0])
+        self.assertNotIn("completed", entries[0])
 
     def test_subscribe_blocks_zn_and_returns_redacted_failure_without_send(self) -> None:
         session, _, _, wf = _build_session()
