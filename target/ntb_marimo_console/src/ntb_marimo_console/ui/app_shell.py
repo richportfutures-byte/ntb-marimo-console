@@ -9,6 +9,7 @@ from ..viewmodels.models import (
     ReadinessCardVM,
     RunHistoryRowVM,
     SessionHeaderVM,
+    TimelineEventVM,
     TriggerStatusVM,
 )
 from .surfaces.audit_replay import render_audit_replay_panel
@@ -33,6 +34,7 @@ class AppShellPayload:
     trigger_rows: tuple[TriggerStatusVM, ...]
     pipeline_trace: PipelineTraceVM | None
     run_history_rows: tuple[RunHistoryRowVM, ...]
+    timeline_events: tuple[TimelineEventVM, ...] = ()
 
 
 def build_app_shell(payload: AppShellPayload) -> dict[str, object]:
@@ -54,7 +56,7 @@ def build_app_shell(payload: AppShellPayload) -> dict[str, object]:
                 readiness_cards=payload.readiness_cards,
             ),
             "decision_review": render_decision_review_panel(payload.pipeline_trace),
-            "audit_replay": render_audit_replay_panel(payload.pipeline_trace),
+            "audit_replay": render_audit_replay_panel(payload.pipeline_trace, payload.timeline_events),
             "run_history": render_run_history_panel(payload.run_history_rows),
         },
     }

@@ -609,6 +609,51 @@ def render_operator_notes_panel(
     return _render_surface_card(mo.vstack(content, gap=0.65))
 
 
+def render_audit_timeline_panel(shell: Mapping[str, object]) -> Any:
+    surfaces = shell.get("surfaces")
+    panel: Mapping[str, object] = {}
+    audit_panel = surfaces.get("audit_replay") if isinstance(surfaces, Mapping) else None
+    if isinstance(audit_panel, Mapping):
+        panel = audit_panel
+    return _render_surface_card(_render_audit_timeline_content(panel))
+
+
+def _render_audit_timeline_content(panel: Mapping[str, object]) -> Any:
+    rows = panel.get("timeline_events")
+    row_list = [dict(row) for row in rows if isinstance(row, Mapping)] if isinstance(rows, list) else []
+    event_types = sorted({_as_str(row.get("event_type")) for row in row_list if row.get("event_type") is not None})
+    contracts = sorted({_as_str(row.get("contract")) for row in row_list if row.get("contract") is not None})
+    event_type_filter = mo.ui.dropdown(
+        options=["all", *event_types],
+        value="all",
+        label="Event Type",
+        full_width=True,
+    )
+    contract_filter = mo.ui.dropdown(
+        options=["all", *contracts],
+        value="all",
+        label="Contract",
+        full_width=True,
+    )
+    selected_event_type = _as_str(event_type_filter.value, default="all")
+    selected_contract = _as_str(contract_filter.value, default="all")
+    filtered_rows = [
+        row
+        for row in row_list
+        if (selected_event_type == "all" or _as_str(row.get("event_type")) == selected_event_type)
+        and (selected_contract == "all" or _as_str(row.get("contract")) == selected_contract)
+    ]
+    filtered_panel = dict(panel)
+    filtered_panel["timeline_events"] = filtered_rows
+    return mo.vstack(
+        [
+            mo.hstack([event_type_filter, contract_filter], gap=0.5),
+            mo.md(build_audit_timeline_markdown(filtered_panel)),
+        ],
+        gap=0.5,
+    )
+
+
 def build_anchor_inputs_markdown(panel: Mapping[str, object]) -> str:
     rows = panel.get("rows")
     lines = [
@@ -639,6 +684,49 @@ def build_anchor_inputs_markdown(panel: Mapping[str, object]) -> str:
             + f"`{_table_value(row.get('correlation_anchor'))}` | "
             + f"`{_table_value(row.get('updated_at'))}` | "
             + f"{_table_value(row.get('operator_note'))} |"
+        )
+    return "\n".join(lines)
+
+
+def build_audit_timeline_markdown(panel: Mapping[str, object]) -> str:
+    rows = panel.get("timeline_events")
+    filters = panel.get("timeline_filters")
+    event_filters = "<none>"
+    contract_filters = "<none>"
+    if isinstance(filters, Mapping):
+        event_types = filters.get("event_types")
+        contracts = filters.get("contracts")
+        if isinstance(event_types, list | tuple) and event_types:
+            event_filters = ", ".join(f"`{_table_value(item)}`" for item in event_types)
+        if isinstance(contracts, list | tuple) and contracts:
+            contract_filters = ", ".join(f"`{_table_value(item)}`" for item in contracts)
+
+    lines = [
+        "## Audit / Replay Timeline",
+        f"- Status: `{_as_str(panel.get('timeline_status'), default='empty')}`",
+        "- Boundary: read-only audit context; preserved engine remains the sole decision authority and execution remains manual.",
+        f"- Event Type Filters: {event_filters}",
+        f"- Contract Filters: {contract_filters}",
+        "",
+        "| Time | Type | Contract | Status | Summary | Detail |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    if not isinstance(rows, list) or not rows:
+        lines.append("| `<none>` |  |  |  |  |  |")
+        return "\n".join(lines)
+
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        contract = row.get("contract") or "session"
+        lines.append(
+            "| "
+            + f"`{_table_value(row.get('timestamp'))}` | "
+            + f"`{_table_value(row.get('event_type'))}` | "
+            + f"`{_table_value(contract)}` | "
+            + f"`{_table_value(row.get('status_badge'))}` | "
+            + f"{_table_value(row.get('summary'))} | "
+            + f"{_table_value(row.get('detail'))} |"
         )
     return "\n".join(lines)
 
@@ -1240,7 +1328,15 @@ def _render_surface_section(
         else:
             lines.append("- Trace Summary: `<unavailable>`")
         lines.extend(_render_decision_review_replay(panel.get("narrative_audit_replay")))
-        return _render_surface_card(mo.md("\n".join(lines)))
+        return _render_surface_card(
+            mo.vstack(
+                [
+                    mo.md("\n".join(lines)),
+                    _render_audit_timeline_content(panel),
+                ],
+                gap=0.65,
+            )
+        )
 
     return _render_surface_card(mo.md(f"## {key}\n- unavailable"))
 

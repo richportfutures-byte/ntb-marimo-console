@@ -557,7 +557,7 @@ def __(
     from ntb_marimo_console.market_data.stream_cache import StreamCacheSnapshot
     from ntb_marimo_console.market_data.stream_manager import StreamManagerSnapshot
     from ntb_marimo_console.operator_notes import parse_tags_text
-    from ntb_marimo_console.viewmodels.mappers import active_trade_vms_from_registry
+    from ntb_marimo_console.viewmodels.mappers import active_trade_vms_from_registry, timeline_events_from_session
 
     current_lifecycle = lifecycle
     switch_target = profile_selector.value
@@ -699,6 +699,40 @@ def __(
         "message": operator_notes_message,
         "export_json": operator_notes_registry.export_json(),
     }
+    surfaces = shell.get("surfaces")
+    if isinstance(surfaces, dict):
+        audit_panel = surfaces.get("audit_replay")
+        if isinstance(audit_panel, dict):
+            existing_rows = audit_panel.get("timeline_events")
+            existing_timeline_rows = existing_rows if isinstance(existing_rows, list) else []
+            timeline_events = timeline_events_from_session(
+                active_trade_registry=active_trade_registry,
+                operator_notes_registry=operator_notes_registry,
+                anchor_input_registry=anchor_input_registry,
+                session_timestamp=str(controls_startup_panel.get("session_date", "unknown")),
+            )
+            combined_timeline_rows = [
+                *(row for row in existing_timeline_rows if isinstance(row, dict)),
+                *(event.to_dict() for event in timeline_events),
+            ]
+            audit_panel["timeline_status"] = "ready" if combined_timeline_rows else "empty"
+            audit_panel["timeline_events"] = combined_timeline_rows
+            audit_panel["timeline_filters"] = {
+                "event_types": sorted(
+                    {
+                        str(row.get("event_type"))
+                        for row in combined_timeline_rows
+                        if row.get("event_type") is not None
+                    }
+                ),
+                "contracts": sorted(
+                    {
+                        str(row.get("contract"))
+                        for row in combined_timeline_rows
+                        if row.get("contract") is not None
+                    }
+                ),
+            }
     workflow = shell.get("workflow")
     if isinstance(workflow, dict):
         workflow["operator_anchor_inputs_status"] = (

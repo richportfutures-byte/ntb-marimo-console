@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import Literal
 
 
 MARKET_DATA_INFORMATIONAL_DISCLAIMER = (
@@ -241,6 +242,38 @@ class PipelineTraceVM:
     trade_thesis: TradeThesisVM | None = None
     risk_authorization: RiskAuthorizationVM | None = None
     narrative_available: bool = False
+
+
+TimelineEventType = Literal[
+    "trigger_transition",
+    "pipeline_result",
+    "trade_entry",
+    "trade_close",
+    "note",
+    "anchor_update",
+]
+
+
+@dataclass(frozen=True)
+class TimelineEventVM:
+    event_id: str
+    timestamp: str
+    event_type: TimelineEventType
+    contract: str | None
+    summary: str
+    detail: str
+    status_badge: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "event_id": self.event_id,
+            "timestamp": self.timestamp,
+            "event_type": self.event_type,
+            "contract": self.contract,
+            "summary": self.summary,
+            "detail": self.detail,
+            "status_badge": self.status_badge,
+        }
 
 
 @dataclass(frozen=True)

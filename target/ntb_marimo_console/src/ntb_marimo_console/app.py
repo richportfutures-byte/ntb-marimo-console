@@ -38,6 +38,7 @@ from .viewmodels.mappers import (
     readiness_card_vm_from_context,
     run_history_row_vm_from_row,
     session_header_vm,
+    timeline_events_from_session,
     trigger_status_vm_from_eval,
 )
 from .viewmodels.models import PipelineTraceVM
@@ -248,6 +249,11 @@ def build_phase1_payload(
         trigger_rows=trigger_vms,
         pipeline_trace=pipeline_vm,
         run_history_rows=tuple(run_history_row_vm_from_row(item) for item in history_rows),
+        timeline_events=timeline_events_from_session(
+            trigger_transitions=trigger_state_results,
+            pipeline_traces=() if pipeline_vm is None else (pipeline_vm,),
+            session_timestamp=inputs.pipeline_query.evaluation_timestamp_iso,
+        ),
     )
     runtime_status = Phase1RuntimeStatus(
         state=session.state,

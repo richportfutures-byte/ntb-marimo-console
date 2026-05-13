@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from ntb_marimo_console.active_trade import ActiveTradeRegistry, ThesisReference
+from ntb_marimo_console.anchor_inputs import AnchorInputRegistry
 from ntb_marimo_console.market_data.futures_quote_service import (
     FixtureFuturesQuoteProvider,
     FuturesQuote,
@@ -18,7 +19,9 @@ from ntb_marimo_console.market_data.stream_manager import (
     StreamSubscriptionRequest,
 )
 from ntb_marimo_console.operator_workspace import OperatorWorkspaceRequest, build_r14_cockpit_view_model
+from ntb_marimo_console.operator_notes import OperatorNotesRegistry
 from ntb_marimo_console.ui.marimo_phase1_renderer import (
+    build_audit_timeline_markdown,
     build_anchor_inputs_markdown,
     build_active_trades_markdown,
     build_operator_notes_markdown,
@@ -34,13 +37,16 @@ from ntb_marimo_console.viewmodels.mappers import (
     premarket_brief_vm_from_brief,
     readiness_card_vm_from_context,
     stream_health_vm_from_snapshot,
+    timeline_events_from_session,
 )
 from ntb_marimo_console.viewmodels.models import (
     ActiveTradeVM,
     LiveObservableVM,
+    PipelineTraceVM,
     PreMarketBriefVM,
     ReadinessCardVM,
     StreamHealthVM,
+    TimelineEventVM,
 )
 
 
@@ -535,6 +541,103 @@ class ViewModelBoundaryEnforcementTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(rendered)
+
+    def test_timeline_events_aggregate_session_artifacts_chronologically(self) -> None:
+        clock = FakeClock()
+        trade_registry = ActiveTradeRegistry(clock=clock)
+        trade = trade_registry.add(
+            trade_id="trade-es-timeline",
+            contract="ES",
+            direction="long",
+            entry_price=5325.0,
+            stop_loss=5315.0,
+            target=5345.0,
+        )
+        clock.advance(60)
+        trade_registry.close(trade.trade_id, status="closed", close_reason="fixture_close")
+        notes = OperatorNotesRegistry()
+        notes.add(
+            note_id="note-es-timeline",
+            timestamp="2026-05-12T13:30:00+00:00",
+            category="intraday",
+            contract="ES",
+            content="Fixture timeline note.",
+            tags=("audit",),
+        )
+        anchors = AnchorInputRegistry()
+        anchors.set(
+            contract="NQ",
+            key_levels=(18650.0,),
+            updated_at="2026-05-12T13:45:00+00:00",
+            operator_note="Fixture anchor update.",
+        )
+        trace = PipelineTraceVM(
+            contract="ES",
+            termination_stage="risk_authorization",
+            final_decision="NO_TRADE",
+            stage_a_status="READY",
+            stage_b_outcome="SETUP_PROPOSED",
+            stage_c_outcome="SETUP_PROPOSED",
+            stage_d_decision="REJECTED",
+        )
+
+        events = timeline_events_from_session(
+            trigger_transitions=(
+                {
+                    "contract": "ES",
+                    "trigger_id": "fixture-trigger",
+                    "state": "QUERY_READY",
+                    "last_updated": "2026-05-12T13:00:00+00:00",
+                    "missing_fields": [],
+                    "blocking_reasons": [],
+                    "invalid_reasons": [],
+                    "required_fields": [],
+                },
+            ),
+            pipeline_traces=(trace,),
+            active_trade_registry=trade_registry,
+            operator_notes_registry=notes,
+            anchor_input_registry=anchors,
+            session_timestamp="2026-05-12T13:05:00+00:00",
+        )
+
+        self.assertTrue(all(isinstance(event, TimelineEventVM) for event in events))
+        self.assertEqual(
+            tuple(event.event_type for event in events),
+            ("trigger_transition", "pipeline_result", "note", "anchor_update", "trade_entry", "trade_close"),
+        )
+        self.assertEqual(events[0].status_badge, "green QUERY_READY")
+        self.assertIn("preserved pipeline must still decide", events[0].detail)
+
+    def test_audit_timeline_markdown_is_read_only_and_filterable(self) -> None:
+        markdown = build_audit_timeline_markdown(
+            {
+                "timeline_status": "ready",
+                "timeline_filters": {
+                    "event_types": ["pipeline_result", "note"],
+                    "contracts": ["ES"],
+                },
+                "timeline_events": [
+                    {
+                        "event_id": "event-1",
+                        "timestamp": "2026-05-12T13:05:00+00:00",
+                        "event_type": "pipeline_result",
+                        "contract": "ES",
+                        "summary": "Pipeline result: NO_TRADE",
+                        "detail": "termination_stage=risk_authorization",
+                        "status_badge": "gray NO_TRADE",
+                    }
+                ],
+            }
+        )
+
+        self.assertIn("## Audit / Replay Timeline", markdown)
+        self.assertIn("Event Type Filters: `pipeline_result`, `note`", markdown)
+        self.assertIn("Contract Filters: `ES`", markdown)
+        self.assertIn("read-only audit context", markdown)
+        self.assertIn("Pipeline result: NO_TRADE", markdown)
+        self.assertNotIn("Query Enabled: `True`", markdown)
+        self.assertNotIn("trade_authorized", markdown)
 
 
 if __name__ == "__main__":

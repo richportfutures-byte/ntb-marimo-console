@@ -10,11 +10,15 @@ from ..adapters.contracts import (
     WatchmanContextLike,
 )
 from ..active_trade import ActiveTradeRegistry
+from ..anchor_inputs import AnchorInputRegistry
 from ..market_data.futures_quote_service import FuturesQuoteService, FuturesQuoteServiceResult
 from ..market_data.stream_cache import StreamCacheSnapshot
 from ..market_data.stream_events import redact_sensitive_text
 from ..market_data.stream_manager import StreamManagerSnapshot
+from ..operator_notes import OperatorNotesRegistry
 from ..thesis_health import ThesisHealthAssessment, assess_all_open_trades
+from ..trigger_state import TriggerStateResult
+from ..trigger_transition_narrative import narrate_trigger_transition
 from .models import (
     ActiveTradeVM,
     EngineReasoningVM,
@@ -30,6 +34,7 @@ from .models import (
     SessionHeaderVM,
     SizingMathVM,
     StreamHealthVM,
+    TimelineEventVM,
     TradeThesisVM,
     TriggerStatusVM,
     unavailable_live_observable_market_data_vm,
@@ -177,6 +182,120 @@ def active_trade_vms_from_registry(
             )
         )
     return tuple(rows)
+
+
+def timeline_events_from_session(
+    *,
+    trigger_transitions: tuple[TriggerStateResult | Mapping[str, object], ...] = (),
+    pipeline_traces: tuple[PipelineTraceVM, ...] = (),
+    active_trade_registry: ActiveTradeRegistry | None = None,
+    operator_notes_registry: OperatorNotesRegistry | None = None,
+    anchor_input_registry: AnchorInputRegistry | None = None,
+    session_timestamp: str | None = None,
+) -> tuple[TimelineEventVM, ...]:
+    """Aggregate read-only session evidence into a chronological audit timeline."""
+
+    fallback_timestamp = session_timestamp or "unknown"
+    events: list[TimelineEventVM] = []
+
+    for index, transition in enumerate(trigger_transitions, start=1):
+        payload = transition.to_dict() if isinstance(transition, TriggerStateResult) else dict(transition)
+        timestamp = _optional_str(payload.get("last_updated")) or fallback_timestamp
+        state = _optional_str(payload.get("state") or payload.get("trigger_state")) or "UNAVAILABLE"
+        contract = _optional_str(payload.get("contract"))
+        trigger_id = _optional_str(payload.get("trigger_id")) or "trigger"
+        narrative = narrate_trigger_transition(payload)
+        events.append(
+            TimelineEventVM(
+                event_id=_event_id("trigger_transition", contract, trigger_id, timestamp, index),
+                timestamp=timestamp,
+                event_type="trigger_transition",
+                contract=contract,
+                summary=f"{trigger_id} moved to {state}",
+                detail=f"{narrative.transition_summary} {narrative.readiness_explanation}",
+                status_badge=_trigger_state_badge(state),
+            )
+        )
+
+    for index, trace in enumerate(pipeline_traces, start=1):
+        events.append(
+            TimelineEventVM(
+                event_id=_event_id("pipeline_result", trace.contract, trace.final_decision, fallback_timestamp, index),
+                timestamp=fallback_timestamp,
+                event_type="pipeline_result",
+                contract=trace.contract,
+                summary=f"Pipeline result: {trace.final_decision}",
+                detail=(
+                    f"termination_stage={trace.termination_stage}; "
+                    f"stage_a={trace.stage_a_status}; stage_b={trace.stage_b_outcome}; "
+                    f"stage_c={trace.stage_c_outcome}; stage_d={trace.stage_d_decision}"
+                ),
+                status_badge=_pipeline_badge(trace.final_decision),
+            )
+        )
+
+    if active_trade_registry is not None:
+        for index, trade in enumerate(active_trade_registry.list(), start=1):
+            events.append(
+                TimelineEventVM(
+                    event_id=_event_id("trade_entry", trade.contract, trade.trade_id, trade.entry_time_utc, index),
+                    timestamp=trade.entry_time_utc,
+                    event_type="trade_entry",
+                    contract=trade.contract,
+                    summary=f"Operator recorded {trade.direction} trade entry",
+                    detail=(
+                        f"trade_id={trade.trade_id}; entry_price={trade.entry_price}; "
+                        f"stop_loss={trade.stop_loss}; target={trade.target}; notes={trade.operator_notes}"
+                    ),
+                    status_badge="blue operator_annotation",
+                )
+            )
+            if trade.closed_at_utc is not None:
+                events.append(
+                    TimelineEventVM(
+                        event_id=_event_id("trade_close", trade.contract, trade.trade_id, trade.closed_at_utc, index),
+                        timestamp=trade.closed_at_utc,
+                        event_type="trade_close",
+                        contract=trade.contract,
+                        summary=f"Operator marked trade {trade.status}",
+                        detail=f"trade_id={trade.trade_id}; close_reason={trade.close_reason}",
+                        status_badge="gray operator_annotation",
+                    )
+                )
+
+    if operator_notes_registry is not None:
+        for index, note in enumerate(operator_notes_registry.list(), start=1):
+            events.append(
+                TimelineEventVM(
+                    event_id=_event_id("note", note.contract, note.note_id, note.timestamp, index),
+                    timestamp=note.timestamp,
+                    event_type="note",
+                    contract=note.contract,
+                    summary=f"Operator note: {note.category}",
+                    detail=f"{note.content}; tags={', '.join(note.tags) if note.tags else '<none>'}",
+                    status_badge="gray operator_annotation",
+                )
+            )
+
+    if anchor_input_registry is not None:
+        for index, anchor in enumerate(anchor_input_registry.list(), start=1):
+            events.append(
+                TimelineEventVM(
+                    event_id=_event_id("anchor_update", anchor.contract, "anchor", anchor.updated_at, index),
+                    timestamp=anchor.updated_at,
+                    event_type="anchor_update",
+                    contract=anchor.contract,
+                    summary="Operator updated cross-asset anchor input",
+                    detail=(
+                        f"key_levels={list(anchor.key_levels)}; session_high={anchor.session_high}; "
+                        f"session_low={anchor.session_low}; correlation_anchor={anchor.correlation_anchor}; "
+                        f"note={anchor.operator_note}"
+                    ),
+                    status_badge="blue operator_context",
+                )
+            )
+
+    return tuple(sorted(events, key=lambda event: (_timestamp_sort_key(event.timestamp), event.event_id)))
 
 
 def _display_unrealized_pnl(*, entry_price: float, current_price: float | None) -> float | None:
@@ -464,6 +583,46 @@ def _risk_authorization_vm(
 
 def _optional_str(value: object) -> str | None:
     return str(value) if isinstance(value, str) and value != "" else None
+
+
+def _event_id(event_type: str, contract: str | None, subject: str, timestamp: str, index: int) -> str:
+    parts = (event_type, contract or "session", subject, timestamp, str(index))
+    return "-".join(_event_id_component(part) for part in parts)
+
+
+def _event_id_component(value: object) -> str:
+    text = str(value).strip().lower()
+    return "".join(char if char.isalnum() else "-" for char in text).strip("-") or "unknown"
+
+
+def _timestamp_sort_key(value: str) -> tuple[int, str]:
+    return (1, value) if value == "unknown" else (0, value)
+
+
+def _trigger_state_badge(state: str) -> str:
+    normalized = state.strip().upper()
+    color = {
+        "QUERY_READY": "green",
+        "ARMED": "yellow",
+        "TOUCHED": "yellow",
+        "APPROACHING": "blue",
+        "INVALIDATED": "red",
+        "BLOCKED": "red",
+        "LOCKOUT": "red",
+        "STALE": "yellow",
+        "ERROR": "red",
+        "UNAVAILABLE": "gray",
+    }.get(normalized, "gray")
+    return f"{color} {normalized}"
+
+
+def _pipeline_badge(final_decision: str) -> str:
+    normalized = final_decision.strip().upper()
+    if normalized in {"APPROVED", "SETUP_APPROVED"}:
+        return f"green {normalized}"
+    if normalized in {"NO_TRADE", "REJECTED"}:
+        return f"gray {normalized}"
+    return f"yellow {normalized or 'UNKNOWN'}"
 
 
 def _optional_int(value: object) -> int | None:
