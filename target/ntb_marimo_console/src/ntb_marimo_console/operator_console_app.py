@@ -8,6 +8,7 @@ def __():
     import marimo as mo
 
     from ntb_marimo_console.active_trade import ActiveTradeRegistry
+    from ntb_marimo_console.anchor_inputs import AnchorInputRegistry
     from ntb_marimo_console.operator_live_runtime import (
         build_operator_runtime_snapshot_producer_from_env,
         operator_runtime_mode_from_env,
@@ -26,6 +27,7 @@ def __():
     get_runtime_snapshot_producer, set_runtime_snapshot_producer = mo.state(None)
     get_pending_profile_id, set_pending_profile_id = mo.state(None)
     get_active_trade_registry, set_active_trade_registry = mo.state(None)
+    get_anchor_input_registry, set_anchor_input_registry = mo.state(None)
     runtime_snapshot_producer = get_runtime_snapshot_producer()
     if runtime_snapshot_producer is None:
         runtime_snapshot_producer = build_operator_runtime_snapshot_producer_from_env()
@@ -34,6 +36,10 @@ def __():
     if active_trade_registry is None:
         active_trade_registry = ActiveTradeRegistry()
         set_active_trade_registry(active_trade_registry)
+    anchor_input_registry = get_anchor_input_registry()
+    if anchor_input_registry is None:
+        anchor_input_registry = AnchorInputRegistry()
+        set_anchor_input_registry(anchor_input_registry)
 
     operator_runtime_mode = operator_runtime_mode_from_env()
     lifecycle = get_lifecycle()
@@ -57,6 +63,8 @@ def __():
         runtime_snapshot_producer,
         active_trade_registry,
         set_active_trade_registry,
+        anchor_input_registry,
+        set_anchor_input_registry,
         get_pending_profile_id,
         set_pending_profile_id,
         clear_retained_evidence,
@@ -71,6 +79,7 @@ def __():
 @app.cell
 def __(
     active_trade_registry,
+    anchor_input_registry,
     lifecycle,
     mo,
     get_pending_profile_id,
@@ -286,6 +295,51 @@ def __(
         tooltip="Records an operator annotation only. No order or broker action is sent.",
         full_width=True,
     )
+    anchor_input_form = mo.ui.form(
+        mo.ui.dictionary(
+            {
+                "contract": mo.ui.dropdown(
+                    options=["NQ", "CL", "6E", "MGC"],
+                    value="NQ",
+                    label="Contract",
+                    full_width=True,
+                ),
+                "key_levels": mo.ui.text(
+                    label="Key Levels",
+                    placeholder="comma-separated levels",
+                    full_width=True,
+                ),
+                "session_high": mo.ui.number(
+                    step=0.01,
+                    value=None,
+                    label="Session High",
+                    full_width=True,
+                ),
+                "session_low": mo.ui.number(
+                    step=0.01,
+                    value=None,
+                    label="Session Low",
+                    full_width=True,
+                ),
+                "correlation_anchor": mo.ui.dropdown(
+                    options=["ES", "NQ", "CL", "6E", "MGC"],
+                    value="ES",
+                    label="Correlation Anchor",
+                    full_width=True,
+                ),
+                "operator_note": mo.ui.text_area(
+                    label="Operator Note",
+                    placeholder="optional session-planning context",
+                    rows=3,
+                    full_width=True,
+                ),
+            }
+        ),
+        submit_button_label="Save Anchor Inputs",
+        clear_on_submit=True,
+        show_clear_button=True,
+        label="Cross-Asset Anchor Inputs",
+    )
 
     profile_controls = mo.vstack(
         [
@@ -334,6 +388,21 @@ def __(
         ],
         gap=0.5,
     )
+    anchor_input_controls = mo.vstack(
+        [
+            mo.md(
+                "\n".join(
+                    [
+                        "## Anchor Input Controls",
+                        "- Operator-supplied context for NQ, CL, 6E, and MGC.",
+                        "- ES is the primary anchor contract and is intentionally not an input target.",
+                    ]
+                )
+            ),
+            anchor_input_form,
+        ],
+        gap=0.5,
+    )
 
     lifecycle_controls = mo.vstack(
         [
@@ -365,6 +434,8 @@ def __(
         active_trade_close_button,
         active_trade_stopped_button,
         active_trade_controls,
+        anchor_input_form,
+        anchor_input_controls,
     )
 
 
@@ -375,6 +446,8 @@ def __(
     active_trade_form,
     active_trade_registry,
     active_trade_stopped_button,
+    anchor_input_form,
+    anchor_input_registry,
     clear_retained_button,
     clear_retained_evidence,
     controls_shell,
@@ -397,6 +470,7 @@ def __(
     request_query_action,
     selected_profile_id,
     set_active_trade_registry,
+    set_anchor_input_registry,
     set_lifecycle,
     set_pending_profile_id,
     switch_available,
@@ -408,6 +482,10 @@ def __(
     from datetime import datetime, timezone
 
     from ntb_marimo_console.active_trade import ThesisReference
+    from ntb_marimo_console.anchor_inputs import (
+        anchor_inputs_payload_for_pipeline,
+        parse_key_levels_text,
+    )
     from ntb_marimo_console.market_data.stream_cache import StreamCacheSnapshot
     from ntb_marimo_console.market_data.stream_manager import StreamManagerSnapshot
     from ntb_marimo_console.viewmodels.mappers import active_trade_vms_from_registry
@@ -439,6 +517,25 @@ def __(
     elif runtime_refresh.value:
         current_lifecycle = refresh_runtime_snapshot(lifecycle)
         set_lifecycle(current_lifecycle)
+
+    anchor_input_status = "ready"
+    anchor_input_message = "Operator-supplied context only; preserved engine remains decision authority."
+    submitted_anchor = anchor_input_form.value
+    if isinstance(submitted_anchor, _Mapping):
+        try:
+            anchor_input_registry.set(
+                contract=str(submitted_anchor.get("contract") or "NQ"),
+                key_levels=parse_key_levels_text(str(submitted_anchor.get("key_levels") or "")),
+                session_high=_float_or_none(submitted_anchor.get("session_high")),
+                session_low=_float_or_none(submitted_anchor.get("session_low")),
+                correlation_anchor=str(submitted_anchor.get("correlation_anchor") or "ES"),
+                operator_note=str(submitted_anchor.get("operator_note") or ""),
+            )
+        except ValueError as exc:
+            anchor_input_status = "invalid"
+            anchor_input_message = str(exc)
+        else:
+            set_anchor_input_registry(anchor_input_registry)
 
     submitted_trade = active_trade_form.value
     if isinstance(submitted_trade, _Mapping):
@@ -499,6 +596,20 @@ def __(
         "rows": active_trade_rows,
         "message": "Operator-recorded annotations only; P&L is a display calculation and execution remains manual.",
     }
+    anchor_payload = anchor_inputs_payload_for_pipeline(anchor_input_registry)
+    shell["anchor_inputs"] = {
+        "status": anchor_input_status,
+        "rows": list(anchor_payload["anchors"].values()) if isinstance(anchor_payload.get("anchors"), dict) else [],
+        "message": anchor_input_message,
+        "integration_status": anchor_payload["integration_status"],
+    }
+    shell["operator_anchor_inputs"] = anchor_payload
+    workflow = shell.get("workflow")
+    if isinstance(workflow, dict):
+        workflow["operator_anchor_inputs_status"] = (
+            "available" if anchor_input_registry.list() else "not_supplied"
+        )
+        workflow["operator_anchor_inputs_integration"] = anchor_payload["integration_status"]
     mode = str(controls_startup_panel.get("runtime_mode", "<unresolved>"))
     profile_id = selected_profile_id
     contract = str(controls_startup_panel.get("contract", "<unresolved>"))
@@ -525,6 +636,15 @@ def _positive_float_or_none(value):
     return parsed if parsed > 0 else None
 
 
+def _float_or_none(value):
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _optional_thesis_reference(values, thesis_reference_type):
     pipeline_result_id = str(values.get("pipeline_result_id") or "").strip()
     trigger_name = str(values.get("trigger_name") or "").strip()
@@ -547,7 +667,7 @@ def _cache_snapshot_from_runtime(runtime_snapshot, stream_manager_snapshot_type)
 
 
 @app.cell
-def __(mo, shell, mode, profile_id, contract, readiness_state, running_as, lifecycle_controls, profile_controls, evidence_controls, active_trade_controls, query_button):
+def __(mo, shell, mode, profile_id, contract, readiness_state, running_as, lifecycle_controls, profile_controls, evidence_controls, active_trade_controls, anchor_input_controls, query_button):
     from ntb_marimo_console.ui.marimo_phase1_renderer import (
         render_phase1_console,
         render_watchman_gate_stop_output,
@@ -579,6 +699,7 @@ def __(mo, shell, mode, profile_id, contract, readiness_state, running_as, lifec
         profile_control_panel=profile_controls,
         evidence_control_panel=evidence_controls,
         active_trade_control_panel=active_trade_controls,
+        anchor_input_control_panel=anchor_input_controls,
     )
     mo.stop(stop_output is not None, stop_output)
 
@@ -608,6 +729,8 @@ def __(mo, shell, mode, profile_id, contract, readiness_state, running_as, lifec
         lifecycle_control_panel=lifecycle_controls,
         profile_control_panel=profile_controls,
         evidence_control_panel=evidence_controls,
+        active_trade_control_panel=active_trade_controls,
+        anchor_input_control_panel=anchor_input_controls,
     )
     rendered
     return (rendered,)

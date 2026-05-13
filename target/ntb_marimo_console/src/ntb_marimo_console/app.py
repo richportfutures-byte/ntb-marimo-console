@@ -398,6 +398,18 @@ def build_phase1_shell_from_artifacts(
             run_history_panel["source"] = artifacts.run_history_source
 
     shell["watchman_gate"] = dict(artifacts.watchman_gate)
+    if inputs.pipeline_query.operator_anchor_inputs is not None:
+        shell["operator_anchor_inputs"] = dict(inputs.pipeline_query.operator_anchor_inputs)
+        anchors = inputs.pipeline_query.operator_anchor_inputs.get("anchors")
+        shell["anchor_inputs"] = {
+            "status": "ready",
+            "rows": list(anchors.values()) if isinstance(anchors, Mapping) else [],
+            "message": "Operator-supplied context only; preserved engine remains decision authority.",
+            "integration_status": inputs.pipeline_query.operator_anchor_inputs.get(
+                "integration_status",
+                "operator_context_available_not_gate_enforced",
+            ),
+        }
     shell["workflow"] = {
         "current_state": artifacts.workflow_status.state.value,
         "state_history": [state.value for state in artifacts.workflow_status.state_history],
@@ -412,6 +424,11 @@ def build_phase1_shell_from_artifacts(
         "audit_replay_ready": artifacts.workflow_status.audit_replay_ready,
         "blocked_reasons": list(artifacts.workflow_status.blocked_reasons),
         "pipeline_query_gate": artifacts.pipeline_query_gate.to_dict(),
+        "operator_anchor_inputs_status": (
+            "available"
+            if inputs.pipeline_query.operator_anchor_inputs is not None
+            else "not_supplied"
+        ),
         "status_summary": artifacts.workflow_status.status_summary,
         "next_action": artifacts.workflow_status.next_action,
         "bounded_action_description": artifacts.workflow_status.bounded_action_description,

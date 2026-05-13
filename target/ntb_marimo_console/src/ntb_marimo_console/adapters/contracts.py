@@ -113,6 +113,7 @@ class PipelineQueryRequest:
     packet: JsonDict
     evaluation_timestamp_iso: str | None = None
     readiness_trigger: JsonDict | None = None
+    operator_anchor_inputs: JsonDict | None = None
 
 
 @dataclass(frozen=True)

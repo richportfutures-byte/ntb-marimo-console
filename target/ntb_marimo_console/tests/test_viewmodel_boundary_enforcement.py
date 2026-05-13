@@ -19,7 +19,9 @@ from ntb_marimo_console.market_data.stream_manager import (
 )
 from ntb_marimo_console.operator_workspace import OperatorWorkspaceRequest, build_r14_cockpit_view_model
 from ntb_marimo_console.ui.marimo_phase1_renderer import (
+    build_anchor_inputs_markdown,
     build_active_trades_markdown,
+    render_anchor_inputs_panel,
     build_stream_health_markdown,
     render_active_trades_panel,
     render_stream_health_panel,
@@ -464,6 +466,41 @@ class ViewModelBoundaryEnforcementTests(unittest.TestCase):
         )
 
         self.assertIsNone(rendered)
+
+    def test_anchor_inputs_markdown_is_operator_context_not_decision_authority(self) -> None:
+        markdown = build_anchor_inputs_markdown(
+            {
+                "status": "ready",
+                "message": "Operator-supplied context only; preserved engine remains decision authority.",
+                "integration_status": "operator_context_available_not_gate_enforced",
+                "rows": [
+                    {
+                        "contract": "NQ",
+                        "key_levels": [18650.0, 18725.5],
+                        "session_high": 18780.0,
+                        "session_low": 18590.25,
+                        "correlation_anchor": "ES",
+                        "operator_note": "Fixture anchor note.",
+                        "updated_at": "2026-05-12T15:30:00+00:00",
+                    }
+                ],
+            }
+        )
+
+        self.assertIn("## Cross-Asset Anchor Inputs", markdown)
+        self.assertIn("operator_context_available_not_gate_enforced", markdown)
+        self.assertIn("preserved engine remains decision authority", markdown)
+        self.assertIn("NQ", markdown)
+        self.assertIn("ES", markdown)
+        self.assertNotIn("Query Enabled: `True`", markdown)
+        self.assertNotIn("trade_authorized", markdown)
+
+    def test_anchor_inputs_panel_renders_in_safe_non_live_mode(self) -> None:
+        rendered = render_anchor_inputs_panel(
+            {"runtime": {"operator_live_runtime_mode": "SAFE_NON_LIVE"}}
+        )
+
+        self.assertIsNotNone(rendered)
 
 
 if __name__ == "__main__":

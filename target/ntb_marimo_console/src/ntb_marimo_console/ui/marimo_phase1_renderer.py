@@ -103,6 +103,7 @@ def render_phase1_console(
     profile_control_panel: Any | None = None,
     evidence_control_panel: Any | None = None,
     active_trade_control_panel: Any | None = None,
+    anchor_input_control_panel: Any | None = None,
 ) -> Any:
     plan = build_phase1_render_plan(shell)
     startup = shell.get("startup")
@@ -117,6 +118,8 @@ def render_phase1_console(
     stream_health_panel = render_stream_health_panel(shell)
     if stream_health_panel is not None:
         elements.append(stream_health_panel)
+
+    elements.append(render_anchor_inputs_panel(shell, control_panel=anchor_input_control_panel))
 
     active_trades_panel = render_active_trades_panel(shell, control_panel=active_trade_control_panel)
     if active_trades_panel is not None:
@@ -186,6 +189,7 @@ def render_watchman_gate_stop_output(
     lifecycle_control_panel: Any | None = None,
     profile_control_panel: Any | None = None,
     evidence_control_panel: Any | None = None,
+    anchor_input_control_panel: Any | None = None,
 ) -> Any | None:
     if not watchman_gate_requires_stop(shell):
         return None
@@ -220,6 +224,8 @@ def render_watchman_gate_stop_output(
     workflow = shell.get("workflow")
     if isinstance(workflow, Mapping):
         elements.append(_render_markdown_card(build_session_workflow_markdown(workflow)))
+
+    elements.append(render_anchor_inputs_panel(shell, control_panel=anchor_input_control_panel))
 
     surfaces = shell.get("surfaces")
     if isinstance(surfaces, Mapping):
@@ -557,6 +563,60 @@ def render_active_trades_panel(
     if control_panel is not None:
         content.append(control_panel)
     return _render_surface_card(mo.vstack(content, gap=0.65))
+
+
+def render_anchor_inputs_panel(
+    shell: Mapping[str, object],
+    *,
+    control_panel: Any | None = None,
+) -> Any:
+    content: list[Any] = []
+    anchor_inputs = shell.get("anchor_inputs")
+    if not isinstance(anchor_inputs, Mapping):
+        anchor_inputs = {
+            "status": "not_configured",
+            "rows": [],
+            "message": "Operator anchor inputs are available as session context and are not a decision authority.",
+            "integration_status": "operator_context_available_not_gate_enforced",
+        }
+    content.append(mo.md(build_anchor_inputs_markdown(anchor_inputs)))
+    if control_panel is not None:
+        content.append(control_panel)
+    return _render_surface_card(mo.vstack(content, gap=0.65))
+
+
+def build_anchor_inputs_markdown(panel: Mapping[str, object]) -> str:
+    rows = panel.get("rows")
+    lines = [
+        "## Cross-Asset Anchor Inputs",
+        f"- Status: `{_as_str(panel.get('status'), default='not_configured')}`",
+        f"- Boundary: {_as_str(panel.get('message'), default='Operator-supplied context only; preserved engine remains decision authority.')}",
+        f"- Integration: `{_as_str(panel.get('integration_status'), default='operator_context_available_not_gate_enforced')}`",
+        "",
+        "| Contract | Key Levels | Session High | Session Low | Correlation Anchor | Updated | Note |",
+        "| --- | --- | ---: | ---: | --- | --- | --- |",
+    ]
+    if not isinstance(rows, list) or not rows:
+        lines.append("| `<none>` |  |  |  |  |  |  |")
+        return "\n".join(lines)
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        key_levels = row.get("key_levels")
+        key_level_text = "<none>"
+        if isinstance(key_levels, list | tuple) and key_levels:
+            key_level_text = ", ".join(_number_text(item) for item in key_levels)
+        lines.append(
+            "| "
+            + f"`{_table_value(row.get('contract'))}` | "
+            + f"`{_table_value(key_level_text)}` | "
+            + f"`{_number_text(row.get('session_high'))}` | "
+            + f"`{_number_text(row.get('session_low'))}` | "
+            + f"`{_table_value(row.get('correlation_anchor'))}` | "
+            + f"`{_table_value(row.get('updated_at'))}` | "
+            + f"{_table_value(row.get('operator_note'))} |"
+        )
+    return "\n".join(lines)
 
 
 def build_active_trades_markdown(panel: Mapping[str, object]) -> str:
