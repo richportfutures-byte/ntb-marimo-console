@@ -17,6 +17,9 @@ LIVE_PROOF_ARTIFACT_DIRECTORY = (
 LIVE_REHEARSAL_RESULT_PATH = (
     LIVE_PROOF_ARTIFACT_DIRECTORY / "five_contract_live_rehearsal_result_2026-05-12.md"
 )
+BLOCKED_LIVE_REHEARSAL_RESULT_PATH = (
+    LIVE_PROOF_ARTIFACT_DIRECTORY / "five_contract_live_rehearsal_blocked_result_2026-05-13.md"
+)
 
 FORBIDDEN_SENSITIVE_FRAGMENTS = (
     "Authorization: Bearer",
@@ -120,6 +123,8 @@ def test_audit_does_not_claim_real_five_contract_proof_unless_artifact_exists(au
     if artifact_present:
         assert "market_data_received=no" in audit_text
         assert "received_contracts_count=0" in audit_text
+        assert "blocking_reason=required_env_keys_missing" in audit_text
+        assert "runtime_start_attempted=no" in audit_text
         assert "Real five-contract live market-data proof" in audit_text
         assert "still classified as pending" in audit_text
         return
@@ -149,6 +154,10 @@ def test_audit_includes_explicit_verdict(audit_text: str) -> None:
 def test_audit_includes_release_blockers_or_proof_gaps(audit_text: str) -> None:
     assert "Release Blockers and Proof Gaps" in audit_text
     assert "real-live proof gap" in audit_text
+    assert "Real LEVELONE_FUTURES market data has not been recorded" in audit_text
+    assert "Real CHART_FUTURES delivery has not been recorded" in audit_text
+    assert "Symbol entitlement and rollover proof has not been recorded" in audit_text
+    assert "Full live-session Marimo usability has not been proven" in audit_text
 
 
 def test_audit_does_not_include_secret_like_strings(audit_text: str) -> None:
@@ -190,3 +199,36 @@ def test_live_rehearsal_result_has_no_sensitive_values() -> None:
 
     for fragment in FORBIDDEN_SENSITIVE_FRAGMENTS:
         assert fragment not in text, f"live rehearsal result must not include sensitive fragment {fragment!r}"
+
+
+def test_blocked_live_rehearsal_result_records_fail_closed_before_runtime_start() -> None:
+    assert BLOCKED_LIVE_REHEARSAL_RESULT_PATH.exists(), "blocked live rehearsal result must be recorded"
+    text = BLOCKED_LIVE_REHEARSAL_RESULT_PATH.read_text(encoding="utf-8")
+
+    assert "**PARTIAL / FAIL-CLOSED**" in text
+    assert "blocked before runtime start" in text
+    assert "| mode | blocked |" in text
+    assert "| status | blocked |" in text
+    assert "| live_flag | yes |" in text
+    assert "| operator_live_runtime_env | yes |" in text
+    assert "| env_keys_present | no |" in text
+    assert "| runtime_start_attempted | no |" in text
+    assert "| live_login_succeeded | no |" in text
+    assert "| live_subscribe_succeeded | no |" in text
+    assert "| subscribed_contracts_count | 0 |" in text
+    assert "| market_data_received | no |" in text
+    assert "| received_contracts_count | 0 |" in text
+    assert "| values_printed | no |" in text
+    assert "| blocking_reason | required_env_keys_missing |" in text
+    assert "does not prove production live readiness" in text
+    assert "real LEVELONE_FUTURES market data for ES, NQ, CL, 6E, and MGC" in text
+    assert "real CHART_FUTURES delivery for ES, NQ, CL, 6E, and MGC" in text
+    assert "symbol entitlement and rollover proof" in text
+    assert "full live-session Marimo usability" in text
+
+
+def test_blocked_live_rehearsal_result_has_no_sensitive_values() -> None:
+    text = BLOCKED_LIVE_REHEARSAL_RESULT_PATH.read_text(encoding="utf-8")
+
+    for fragment in FORBIDDEN_SENSITIVE_FRAGMENTS:
+        assert fragment not in text, f"blocked live rehearsal result must not include sensitive fragment {fragment!r}"

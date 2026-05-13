@@ -10,7 +10,7 @@ R19 is an audit layer only. It does not change runtime behavior, default launch 
 
 The repo is ready to be treated as a fixture-verified personal release candidate, pending operator-run real Schwab live validation across the final target universe. It is not ready to be treated as a production-proven, broker-integrated, live-trading platform, and R19 makes no such claim.
 
-A READY verdict is explicitly withheld because the sanitized D3 five-contract Schwab live rehearsal result is partial: login and subscription plumbing reached `status=ok`, but `market_data_received=no` and `received_contracts_count=0`. A NOT READY verdict is explicitly withheld because every release-blocking item that can be verified deterministically from the repository is verified through fixture-safe tests today.
+A READY verdict is explicitly withheld because the sanitized D3 five-contract Schwab live rehearsal result is partial: login and subscription plumbing reached `status=ok`, but `market_data_received=no` and `received_contracts_count=0`. A later explicit five-contract live rehearsal attempt is also recorded as **PARTIAL / FAIL-CLOSED** because it blocked before runtime start with `blocking_reason=required_env_keys_missing`, `runtime_start_attempted=no`, `subscribed_contracts_count=0`, `market_data_received=no`, and `received_contracts_count=0`. A NOT READY verdict is explicitly withheld because every release-blocking item that can be verified deterministically from the repository is verified through fixture-safe tests today.
 
 ## Evidence Classification
 
@@ -28,11 +28,13 @@ R19 distinguishes four evidence tiers. Fixture and harness evidence must never b
 - The single-quote Schwab manual live harness documented in `docs/schwab_manual_live_harness_runbook.md` remains the concrete opt-in market-data smoke path. It is operator-run, requires explicit `--live`, and does not run during default verification.
 - The R20 five-contract proof-capture foundation (`scripts/capture_five_contract_live_proof.py`) creates a sanitized JSON artifact template for operator review. Fixture mode is the default and cannot satisfy the real-live proof gate. Live artifact creation requires explicit `--live` and explicit operator attestations; it does not run during default verification.
 
-### Real live Schwab evidence (partial, manual-only)
+### Real live Schwab evidence (partial / fail-closed, manual-only)
 
 - A sanitized D3 five-contract live rehearsal result is recorded in `docs/live_proof/five_contract_live_rehearsal_result_2026-05-12.md`.
 - The recorded result proves Schwab streamer metadata retrieval, runtime start, live login, and a reported five-contract subscription without printed sensitive values.
 - The recorded result does not prove live market-data delivery: `market_data_received=no` and `received_contracts_count=0`.
+- A later sanitized explicit five-contract live rehearsal blocked result is recorded in `docs/live_proof/five_contract_live_rehearsal_blocked_result_2026-05-13.md`.
+- The later blocked result proves fail-closed handling before runtime start only: `blocking_reason=required_env_keys_missing`, `runtime_start_attempted=no`, `live_login_succeeded=no`, `live_subscribe_succeeded=no`, `subscribed_contracts_count=0`, `market_data_received=no`, and `received_contracts_count=0`.
 - Real five-contract live market-data proof for `ES`, `NQ`, `CL`, `6E`, and `MGC` is therefore still classified as pending. R19 does not claim that real live market-data proof has passed.
 - The current five-contract proof-capture path is documented in `docs/five_contract_live_proof_capture.md`. Until a reviewed live artifact proves market-data delivery, that path remains a manual capture foundation rather than proof completion.
 
@@ -115,7 +117,14 @@ Release blockers and proof gaps are reported using exact language and explicit c
    - This is not a deterministic code blocker.
    - This is a real-live proof gap.
    - Manual operator-run login/subscription plumbing reached `status=ok`, but no market data was received during the 15-second bounded receive loop.
+   - A later explicit operator-run attempt blocked fail-closed before runtime start with `blocking_reason=required_env_keys_missing`, `runtime_start_attempted=no`, `subscribed_contracts_count=0`, `market_data_received=no`, and `received_contracts_count=0`.
    - Until a sanitized operator-run real five-contract Schwab live result proves market-data delivery, R19 will not claim that a real Schwab five-contract live market-data session has passed.
+
+2. Production live readiness remains blocked by unproven live delivery and usability evidence.
+   - Real LEVELONE_FUTURES market data has not been recorded for `ES`, `NQ`, `CL`, `6E`, and `MGC`.
+   - Real CHART_FUTURES delivery has not been recorded for `ES`, `NQ`, `CL`, `6E`, and `MGC`.
+   - Symbol entitlement and rollover proof has not been recorded.
+   - Full live-session Marimo usability has not been proven.
 
 No additional release blockers were identified by deterministic, source-backed inspection of the repository at this checkpoint. Default launch remains non-live. Fixture-safe behavior remains intact. No fixture fallback after live failure remains intact. The 15-second minimum refresh floor remains enforced.
 
