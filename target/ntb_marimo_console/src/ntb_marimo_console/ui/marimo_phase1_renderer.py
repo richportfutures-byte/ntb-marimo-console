@@ -640,39 +640,7 @@ def render_audit_timeline_panel(shell: Mapping[str, object]) -> Any:
 
 
 def _render_audit_timeline_content(panel: Mapping[str, object]) -> Any:
-    rows = panel.get("timeline_events")
-    row_list = [dict(row) for row in rows if isinstance(row, Mapping)] if isinstance(rows, list) else []
-    event_types = sorted({_as_str(row.get("event_type")) for row in row_list if row.get("event_type") is not None})
-    contracts = sorted({_as_str(row.get("contract")) for row in row_list if row.get("contract") is not None})
-    event_type_filter = mo.ui.dropdown(
-        options=["all", *event_types],
-        value="all",
-        label="Event Type",
-        full_width=True,
-    )
-    contract_filter = mo.ui.dropdown(
-        options=["all", *contracts],
-        value="all",
-        label="Contract",
-        full_width=True,
-    )
-    selected_event_type = _as_str(event_type_filter.value, default="all")
-    selected_contract = _as_str(contract_filter.value, default="all")
-    filtered_rows = [
-        row
-        for row in row_list
-        if (selected_event_type == "all" or _as_str(row.get("event_type")) == selected_event_type)
-        and (selected_contract == "all" or _as_str(row.get("contract")) == selected_contract)
-    ]
-    filtered_panel = dict(panel)
-    filtered_panel["timeline_events"] = filtered_rows
-    return mo.vstack(
-        [
-            mo.hstack([event_type_filter, contract_filter], gap=0.5),
-            mo.md(build_audit_timeline_markdown(filtered_panel)),
-        ],
-        gap=0.5,
-    )
+    return mo.md(build_audit_timeline_markdown(panel))
 
 
 def build_anchor_inputs_markdown(panel: Mapping[str, object]) -> str:

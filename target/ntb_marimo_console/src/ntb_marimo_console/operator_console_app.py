@@ -1,10 +1,11 @@
 import marimo
 
+__generated_with = "0.23.5"
 app = marimo.App(width="full")
 
 
 @app.cell
-def __():
+def _():
     import marimo as mo
 
     from ntb_marimo_console.active_trade import ActiveTradeRegistry
@@ -62,39 +63,36 @@ def __():
             _initial_profile_id = startup.get("selected_profile_id")
             if _initial_profile_id is not None:
                 set_pending_profile_id(str(_initial_profile_id))
-
     return (
-        mo,
-        lifecycle,
-        set_lifecycle,
-        runtime_snapshot_producer,
         active_trade_registry,
-        set_active_trade_registry,
         anchor_input_registry,
-        set_anchor_input_registry,
-        operator_notes_registry,
-        set_operator_notes_registry,
-        get_premarket_manual_sections,
-        set_premarket_manual_sections,
-        get_pending_profile_id,
-        set_pending_profile_id,
         clear_retained_evidence,
+        get_pending_profile_id,
+        get_premarket_manual_sections,
+        lifecycle,
+        mo,
+        operator_notes_registry,
         refresh_runtime_snapshot,
         reload_current_profile,
         request_query_action,
         reset_session,
+        set_active_trade_registry,
+        set_anchor_input_registry,
+        set_lifecycle,
+        set_operator_notes_registry,
+        set_pending_profile_id,
+        set_premarket_manual_sections,
         switch_profile,
     )
 
 
 @app.cell
-def __(
+def _(
     active_trade_registry,
-    anchor_input_registry,
+    get_pending_profile_id,
+    get_premarket_manual_sections,
     lifecycle,
     mo,
-    get_premarket_manual_sections,
-    get_pending_profile_id,
     set_pending_profile_id,
 ):
     from collections.abc import Mapping as _Mapping
@@ -533,41 +531,40 @@ def __(
             mo.hstack([reload_button, reset_button], widths="equal"),
         ]
     )
-
     return (
-        controls_shell,
-        controls_startup_panel,
-        query_available,
-        reset_available,
-        reload_available,
-        selected_profile_id,
-        switch_available,
-        profile_selector,
-        query_button,
-        reset_button,
-        reload_button,
-        runtime_refresh,
-        switch_button,
-        clear_retained_button,
-        lifecycle_controls,
-        profile_controls,
-        evidence_controls,
-        active_trade_form,
         active_trade_action_selector,
         active_trade_close_button,
-        active_trade_stopped_button,
         active_trade_controls,
-        anchor_input_form,
+        active_trade_form,
+        active_trade_stopped_button,
         anchor_input_controls,
-        premarket_brief_form,
-        premarket_brief_controls,
-        operator_notes_form,
+        anchor_input_form,
+        clear_retained_button,
+        controls_shell,
+        controls_startup_panel,
+        evidence_controls,
+        lifecycle_controls,
         operator_notes_controls,
+        operator_notes_form,
+        premarket_brief_controls,
+        premarket_brief_form,
+        profile_controls,
+        profile_selector,
+        query_available,
+        query_button,
+        reload_available,
+        reload_button,
+        reset_available,
+        reset_button,
+        runtime_refresh,
+        selected_profile_id,
+        switch_available,
+        switch_button,
     )
 
 
 @app.cell
-def __(
+def _(
     active_trade_action_selector,
     active_trade_close_button,
     active_trade_form,
@@ -579,33 +576,30 @@ def __(
     clear_retained_evidence,
     controls_shell,
     controls_startup_panel,
-    evidence_controls,
     get_premarket_manual_sections,
     lifecycle,
-    lifecycle_controls,
     operator_notes_form,
     operator_notes_registry,
     premarket_brief_form,
-    profile_controls,
     profile_selector,
     query_available,
     query_button,
+    refresh_runtime_snapshot,
     reload_available,
     reload_button,
     reload_current_profile,
+    request_query_action,
     reset_available,
     reset_button,
     reset_session,
     runtime_refresh,
-    refresh_runtime_snapshot,
-    request_query_action,
     selected_profile_id,
     set_active_trade_registry,
     set_anchor_input_registry,
-    set_operator_notes_registry,
-    set_premarket_manual_sections,
     set_lifecycle,
+    set_operator_notes_registry,
     set_pending_profile_id,
+    set_premarket_manual_sections,
     switch_available,
     switch_button,
     switch_profile,
@@ -624,6 +618,58 @@ def __(
     from ntb_marimo_console.operator_notes import parse_tags_text
     from ntb_marimo_console.premarket_brief import build_premarket_brief
     from ntb_marimo_console.viewmodels.mappers import active_trade_vms_from_registry, timeline_events_from_session
+
+    def _cache_snapshot_from_runtime(runtime_snapshot, snapshot_type):
+        """Extract a StreamCacheSnapshot from the runtime snapshot result."""
+        if runtime_snapshot is None:
+            return None
+        snapshot = getattr(runtime_snapshot, "snapshot", None)
+        if snapshot is None:
+            return None
+        if isinstance(snapshot, snapshot_type):
+            cache = getattr(snapshot, "cache", None)
+            if isinstance(cache, StreamCacheSnapshot):
+                return cache
+        if isinstance(snapshot, StreamCacheSnapshot):
+            return snapshot
+        return None
+
+    def _float_or_none(value):
+        """Convert a value to float, returning None if empty or invalid."""
+        if value is None:
+            return None
+        try:
+            result = float(value)
+            return result if result == result else None  # NaN check
+        except (TypeError, ValueError):
+            return None
+
+    def _positive_float_or_none(value):
+        """Convert to float, returning None if not positive."""
+        result = _float_or_none(value)
+        if result is not None and result > 0:
+            return result
+        return None
+
+    def _blank_string_to_none(value):
+        """Return None if value is empty/blank string, otherwise str."""
+        if value is None:
+            return None
+        s = str(value).strip()
+        return s if s else None
+
+    def _optional_thesis_reference(submitted, thesis_cls):
+        """Build a ThesisReference if any thesis fields are provided."""
+        result_id = _blank_string_to_none(submitted.get("pipeline_result_id"))
+        trigger_name = _blank_string_to_none(submitted.get("trigger_name"))
+        trigger_state = _blank_string_to_none(submitted.get("trigger_state"))
+        if result_id or trigger_name or trigger_state:
+            return thesis_cls(
+                pipeline_result_id=result_id or "",
+                trigger_name=trigger_name or "",
+                trigger_state=trigger_state or "",
+            )
+        return None
 
     current_lifecycle = lifecycle
     switch_target = profile_selector.value
@@ -674,17 +720,17 @@ def __(
 
     operator_notes_status = "ready"
     operator_notes_message = "Session journal entries are operator annotations only."
-    premarket_manual_sections = get_premarket_manual_sections() or {}
-    if not isinstance(premarket_manual_sections, _Mapping):
-        premarket_manual_sections = {}
+    _premarket_manual_sections = get_premarket_manual_sections() or {}
+    if not isinstance(_premarket_manual_sections, _Mapping):
+        _premarket_manual_sections = {}
     submitted_premarket_brief = premarket_brief_form.value
     if isinstance(submitted_premarket_brief, _Mapping):
-        premarket_manual_sections = {
+        _premarket_manual_sections = {
             key: str(submitted_premarket_brief.get(key) or "").strip()
             for key in ("prior_session", "overnight_range", "economic_calendar", "correlation_context")
             if str(submitted_premarket_brief.get(key) or "").strip()
         }
-        set_premarket_manual_sections(premarket_manual_sections)
+        set_premarket_manual_sections(_premarket_manual_sections)
 
     submitted_note = operator_notes_form.value
     if isinstance(submitted_note, _Mapping):
@@ -781,7 +827,7 @@ def __(
         session_date=str(controls_startup_panel.get("session_date", "unknown")),
         anchor_inputs=anchor_input_registry,
         operator_notes=operator_notes_registry,
-        manual_sections=premarket_manual_sections,
+        manual_sections=_premarket_manual_sections,
     )
     shell["premarket_brief_enrichment"] = premarket_brief.to_dict()
     surfaces = shell.get("surfaces")
@@ -833,79 +879,24 @@ def __(
     contract = str(controls_startup_panel.get("contract", "<unresolved>"))
     readiness_state = str(controls_startup_panel.get("readiness_state", "<unresolved>"))
     running_as = str(controls_startup_panel.get("running_as", "<unresolved>"))
-
-    return (
-        shell,
-        mode,
-        profile_id,
-        contract,
-        readiness_state,
-        running_as,
-    )
-
-
-def _positive_float_or_none(value):
-    if isinstance(value, bool) or value is None:
-        return None
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed > 0 else None
-
-
-def _float_or_none(value):
-    if isinstance(value, bool) or value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _blank_string_to_none(value):
-    text = str(value or "").strip()
-    return text or None
-
-
-def _optional_thesis_reference(values, thesis_reference_type):
-    pipeline_result_id = str(values.get("pipeline_result_id") or "").strip()
-    trigger_name = str(values.get("trigger_name") or "").strip()
-    trigger_state = str(values.get("trigger_state") or "").strip()
-    if not pipeline_result_id or not trigger_name or not trigger_state:
-        return None
-    return thesis_reference_type(
-        pipeline_result_id=pipeline_result_id,
-        trigger_name=trigger_name,
-        trigger_state=trigger_state,
-    )
-
-
-def _cache_snapshot_from_runtime(runtime_snapshot, stream_manager_snapshot_type):
-    if runtime_snapshot is None:
-        return None
-    if isinstance(runtime_snapshot, stream_manager_snapshot_type):
-        return runtime_snapshot.cache
-    return runtime_snapshot
+    return mode, profile_id, running_as, shell
 
 
 @app.cell
-def __(
-    mo,
-    shell,
-    mode,
-    profile_id,
-    contract,
-    readiness_state,
-    running_as,
-    lifecycle_controls,
-    profile_controls,
-    evidence_controls,
+def _(
     active_trade_controls,
     anchor_input_controls,
+    evidence_controls,
+    lifecycle_controls,
+    mo,
+    mode,
     operator_notes_controls,
     premarket_brief_controls,
+    profile_controls,
+    profile_id,
     query_button,
+    running_as,
+    shell,
 ):
     from ntb_marimo_console.ui.marimo_phase1_renderer import (
         render_phase1_console,
