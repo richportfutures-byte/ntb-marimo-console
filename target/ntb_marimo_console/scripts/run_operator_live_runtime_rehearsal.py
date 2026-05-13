@@ -141,6 +141,13 @@ _FORBIDDEN_FRAGMENT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"schwab_live\.env"),
     re.compile(r"token\.json"),
 )
+_GATE_SAFE_TEXT_FIELDS: frozenset[str] = frozenset(
+    {
+        "credential_free_gate_command",
+        "intentional_live_command",
+        "production_readiness_blockers",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +198,8 @@ class DryRunRejectedContract:
 class RehearsalDryRunReport:
     mode: str
     status: str
+    readiness_gate: str
+    rehearsal_ready_to_run: bool
     live_behavior_attempted: bool
     runtime_start_attempted: bool
     login_attempted: bool
@@ -205,6 +214,9 @@ class RehearsalDryRunReport:
     rejected_contracts: tuple[DryRunRejectedContract, ...]
     provider_diagnostics: tuple[str, ...]
     refresh_floor_seconds: float
+    credential_free_gate_command: str
+    intentional_live_command: str
+    production_readiness_blockers: tuple[str, ...]
     limitations: tuple[str, ...]
     values_printed: str = "no"
 
@@ -212,6 +224,8 @@ class RehearsalDryRunReport:
         return {
             "mode": self.mode,
             "status": self.status,
+            "readiness_gate": self.readiness_gate,
+            "rehearsal_ready_to_run": _yes_no(self.rehearsal_ready_to_run),
             "live_behavior_attempted": _yes_no(self.live_behavior_attempted),
             "runtime_start_attempted": _yes_no(self.runtime_start_attempted),
             "login_attempted": _yes_no(self.login_attempted),
@@ -226,6 +240,9 @@ class RehearsalDryRunReport:
             "rejected_contracts": [item.to_dict() for item in self.rejected_contracts],
             "provider_diagnostics": list(self.provider_diagnostics),
             "refresh_floor_seconds": self.refresh_floor_seconds,
+            "credential_free_gate_command": self.credential_free_gate_command,
+            "intentional_live_command": self.intentional_live_command,
+            "production_readiness_blockers": list(self.production_readiness_blockers),
             "limitations": list(self.limitations),
             "values_printed": self.values_printed,
         }
@@ -373,14 +390,23 @@ def _sanitize_text(value: str) -> str:
     return sanitized
 
 
-def _sanitize_payload(payload: object) -> object:
+def _sanitize_gate_safe_text(value: str) -> str:
+    sanitized = str(value)
+    for pattern in _FORBIDDEN_FRAGMENT_PATTERNS:
+        sanitized = pattern.sub("[REDACTED]", sanitized)
+    return sanitized[:300]
+
+
+def _sanitize_payload(payload: object, *, field_name: str | None = None) -> object:
     if isinstance(payload, dict):
-        return {key: _sanitize_payload(item) for key, item in payload.items()}
+        return {key: _sanitize_payload(item, field_name=str(key)) for key, item in payload.items()}
     if isinstance(payload, list):
-        return [_sanitize_payload(item) for item in payload]
+        return [_sanitize_payload(item, field_name=field_name) for item in payload]
     if isinstance(payload, tuple):
-        return tuple(_sanitize_payload(item) for item in payload)
+        return tuple(_sanitize_payload(item, field_name=field_name) for item in payload)
     if isinstance(payload, str):
+        if field_name in _GATE_SAFE_TEXT_FIELDS:
+            return _sanitize_gate_safe_text(payload)
         return _sanitize_text(payload)
     return payload
 
@@ -436,6 +462,8 @@ def render_dry_run_text(report: RehearsalDryRunReport) -> str:
     lines = [
         f"mode={payload['mode']}",
         f"status={payload['status']}",
+        f"readiness_gate={payload['readiness_gate']}",
+        f"rehearsal_ready_to_run={payload['rehearsal_ready_to_run']}",
         f"live_behavior_attempted={payload['live_behavior_attempted']}",
         f"runtime_start_attempted={payload['runtime_start_attempted']}",
         f"login_attempted={payload['login_attempted']}",
@@ -447,6 +475,8 @@ def render_dry_run_text(report: RehearsalDryRunReport) -> str:
         f"credentials_required_for_dry_run={payload['credentials_required_for_dry_run']}",
         "services=" + ",".join(str(item) for item in payload["services"]),
         f"refresh_floor_seconds={payload['refresh_floor_seconds']}",
+        f"credential_free_gate_command={payload['credential_free_gate_command']}",
+        f"intentional_live_command={payload['intentional_live_command']}",
         f"values_printed={payload['values_printed']}",
     ]
     for item in payload["contract_plan"]:
@@ -463,6 +493,8 @@ def render_dry_run_text(report: RehearsalDryRunReport) -> str:
         )
     for diagnostic in payload["provider_diagnostics"]:
         lines.append(f"provider_diagnostic={diagnostic}")
+    for blocker in payload["production_readiness_blockers"]:
+        lines.append(f"production_readiness_blocker={blocker}")
     for limitation in payload["limitations"]:
         lines.append(f"limitation={limitation}")
     return "\n".join(lines)
@@ -515,6 +547,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Render the deterministic five-contract live rehearsal plan without reading env, opening files, logging in, or subscribing.",
+    )
+    parser.add_argument(
+        "--readiness-gate",
+        action="store_true",
+        help="Alias for --dry-run; render the credential-free five-contract live rehearsal readiness gate.",
     )
     parser.add_argument(
         "--duration",
@@ -627,6 +664,8 @@ def build_dry_run_report(
     return RehearsalDryRunReport(
         mode="dry_run",
         status="review_only_non_live",
+        readiness_gate="READY_TO_RUN_WITH_INTENTIONAL_LIVE_OPT_IN",
+        rehearsal_ready_to_run=True,
         live_behavior_attempted=False,
         runtime_start_attempted=False,
         login_attempted=False,
@@ -641,6 +680,21 @@ def build_dry_run_report(
         rejected_contracts=rejected,
         provider_diagnostics=diagnostics,
         refresh_floor_seconds=MIN_STREAM_REFRESH_FLOOR_SECONDS,
+        credential_free_gate_command=(
+            "PYTHONPATH=src:../../source/ntb_engine/src:. "
+            "uv run python scripts/run_operator_live_runtime_rehearsal.py --readiness-gate"
+        ),
+        intentional_live_command=(
+            "NTB_OPERATOR_RUNTIME_MODE=OPERATOR_LIVE_RUNTIME "
+            "PYTHONPATH=src:../../source/ntb_engine/src:. "
+            "uv run python scripts/run_operator_live_runtime_rehearsal.py --live --duration 10"
+        ),
+        production_readiness_blockers=(
+            "real_LEVELONE_FUTURES_market_data_not_recorded_for_ES_NQ_CL_6E_MGC",
+            "real_CHART_FUTURES_delivery_not_recorded_for_ES_NQ_CL_6E_MGC",
+            "symbol_entitlement_and_rollover_proof_not_recorded",
+            "production_release_remains_premature_until_sanitized_live_result_records_real_market_data",
+        ),
         limitations=(
             "review_preflight_only_not_subscription_or_login",
             "schwab_live_readiness_unproven_until_authorized_manual_rehearsal",
@@ -1177,7 +1231,7 @@ def _print_dry_run_report(report: RehearsalDryRunReport, *, as_json: bool) -> No
 def run(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    if getattr(args, "dry_run", False):
+    if getattr(args, "dry_run", False) or getattr(args, "readiness_gate", False):
         report = build_dry_run_report(
             symbol_overrides=getattr(args, "symbol", None) or {},
             candidate_contracts=tuple(getattr(args, "dry_run_contract", ()) or ()),

@@ -394,6 +394,8 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(payload["mode"], "dry_run")
         self.assertEqual(payload["status"], "review_only_non_live")
+        self.assertEqual(payload["readiness_gate"], "READY_TO_RUN_WITH_INTENTIONAL_LIVE_OPT_IN")
+        self.assertEqual(payload["rehearsal_ready_to_run"], "yes")
         self.assertEqual(payload["live_behavior_attempted"], "no")
         self.assertEqual(payload["runtime_start_attempted"], "no")
         self.assertEqual(payload["login_attempted"], "no")
@@ -401,6 +403,9 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertEqual(payload["provider_connection_attempted"], "no")
         self.assertEqual(payload["credentials_required_for_dry_run"], "no")
         self.assertEqual(payload["secrets_or_token_files_read"], "no")
+        self.assertIn("--readiness-gate", payload["credential_free_gate_command"])
+        self.assertIn("NTB_OPERATOR_RUNTIME_MODE=OPERATOR_LIVE_RUNTIME", payload["intentional_live_command"])
+        self.assertIn("--live --duration 10", payload["intentional_live_command"])
         self.assertNotIn(SECRET_MARKER, stdout.getvalue())
 
     def test_dry_run_final_plan_is_exact_five_contract_services_only(self) -> None:
@@ -465,6 +470,8 @@ class RehearsalCliBlockingTests(unittest.TestCase):
             self.assertNotIn(fragment, rendered)
         self.assertIn("[REDACTED]", rendered)
         self.assertIn("schwab_live_readiness_unproven_until_authorized_manual_rehearsal", rendered)
+        self.assertIn("real_LEVELONE_FUTURES_market_data_not_recorded_for_ES_NQ_CL_6E_MGC", rendered)
+        self.assertIn("real_CHART_FUTURES_delivery_not_recorded_for_ES_NQ_CL_6E_MGC", rendered)
 
     def test_dry_run_output_is_text_deterministic_and_review_only(self) -> None:
         first = rehearsal.render_dry_run_text(
@@ -477,6 +484,18 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertIn("plan_contract=MGC|Micro Gold|/MGCM26|LEVELONE_FUTURES,CHART_FUTURES", first)
         self.assertIn("rejected_contract=GC|never_supported_excluded|included=no", first)
+        self.assertIn("readiness_gate=READY_TO_RUN_WITH_INTENTIONAL_LIVE_OPT_IN", first)
+        self.assertIn(
+            "intentional_live_command=NTB_OPERATOR_RUNTIME_MODE=OPERATOR_LIVE_RUNTIME "
+            "PYTHONPATH=src:../../source/ntb_engine/src:. "
+            "uv run python scripts/run_operator_live_runtime_rehearsal.py --live --duration 10",
+            first,
+        )
+        self.assertIn(
+            "production_readiness_blocker="
+            "production_release_remains_premature_until_sanitized_live_result_records_real_market_data",
+            first,
+        )
         self.assertIn("review_preflight_only_not_subscription_or_login", first)
 
     def test_dry_run_path_does_not_call_live_dependency_seam(self) -> None:
@@ -487,6 +506,28 @@ class RehearsalCliBlockingTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("mode=dry_run", stdout.getvalue())
+
+    def test_readiness_gate_alias_is_fixture_safe_and_does_not_call_live_dependency_seam(self) -> None:
+        with patch.object(rehearsal, "run_with_dependencies", side_effect=AssertionError("live seam called")):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = rehearsal.run(["--readiness-gate", "--json"])
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["mode"], "dry_run")
+        self.assertEqual(payload["readiness_gate"], "READY_TO_RUN_WITH_INTENTIONAL_LIVE_OPT_IN")
+        self.assertEqual(payload["live_behavior_attempted"], "no")
+        self.assertEqual(payload["secrets_or_token_files_read"], "no")
+        self.assertEqual(
+            payload["production_readiness_blockers"],
+            [
+                "real_LEVELONE_FUTURES_market_data_not_recorded_for_ES_NQ_CL_6E_MGC",
+                "real_CHART_FUTURES_delivery_not_recorded_for_ES_NQ_CL_6E_MGC",
+                "symbol_entitlement_and_rollover_proof_not_recorded",
+                "production_release_remains_premature_until_sanitized_live_result_records_real_market_data",
+            ],
+        )
 
     def test_live_rehearsal_without_market_data_is_partial_and_never_query_ready(self) -> None:
         report = rehearsal.RehearsalReport(
