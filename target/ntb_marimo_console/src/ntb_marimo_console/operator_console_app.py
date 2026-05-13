@@ -9,6 +9,7 @@ def __():
 
     from ntb_marimo_console.active_trade import ActiveTradeRegistry
     from ntb_marimo_console.anchor_inputs import AnchorInputRegistry
+    from ntb_marimo_console.operator_notes import OperatorNotesRegistry
     from ntb_marimo_console.operator_live_runtime import (
         build_operator_runtime_snapshot_producer_from_env,
         operator_runtime_mode_from_env,
@@ -28,6 +29,7 @@ def __():
     get_pending_profile_id, set_pending_profile_id = mo.state(None)
     get_active_trade_registry, set_active_trade_registry = mo.state(None)
     get_anchor_input_registry, set_anchor_input_registry = mo.state(None)
+    get_operator_notes_registry, set_operator_notes_registry = mo.state(None)
     runtime_snapshot_producer = get_runtime_snapshot_producer()
     if runtime_snapshot_producer is None:
         runtime_snapshot_producer = build_operator_runtime_snapshot_producer_from_env()
@@ -40,6 +42,10 @@ def __():
     if anchor_input_registry is None:
         anchor_input_registry = AnchorInputRegistry()
         set_anchor_input_registry(anchor_input_registry)
+    operator_notes_registry = get_operator_notes_registry()
+    if operator_notes_registry is None:
+        operator_notes_registry = OperatorNotesRegistry()
+        set_operator_notes_registry(operator_notes_registry)
 
     operator_runtime_mode = operator_runtime_mode_from_env()
     lifecycle = get_lifecycle()
@@ -65,6 +71,8 @@ def __():
         set_active_trade_registry,
         anchor_input_registry,
         set_anchor_input_registry,
+        operator_notes_registry,
+        set_operator_notes_registry,
         get_pending_profile_id,
         set_pending_profile_id,
         clear_retained_evidence,
@@ -340,6 +348,46 @@ def __(
         show_clear_button=True,
         label="Cross-Asset Anchor Inputs",
     )
+    operator_notes_form = mo.ui.form(
+        mo.ui.dictionary(
+            {
+                "content": mo.ui.text_area(
+                    label="Note",
+                    placeholder="session observation, market context, or journal entry",
+                    rows=4,
+                    full_width=True,
+                ),
+                "category": mo.ui.dropdown(
+                    options=["pre_market", "intraday", "post_session", "general"],
+                    value="general",
+                    label="Category",
+                    full_width=True,
+                ),
+                "contract": mo.ui.dropdown(
+                    options={
+                        "Session": "",
+                        "ES": "ES",
+                        "NQ": "NQ",
+                        "CL": "CL",
+                        "6E": "6E",
+                        "MGC": "MGC",
+                    },
+                    value="Session",
+                    label="Contract",
+                    full_width=True,
+                ),
+                "tags": mo.ui.text(
+                    label="Tags",
+                    placeholder="comma-separated",
+                    full_width=True,
+                ),
+            }
+        ),
+        submit_button_label="Add Operator Note",
+        clear_on_submit=True,
+        show_clear_button=True,
+        label="Operator Notes",
+    )
 
     profile_controls = mo.vstack(
         [
@@ -403,6 +451,21 @@ def __(
         ],
         gap=0.5,
     )
+    operator_notes_controls = mo.vstack(
+        [
+            mo.md(
+                "\n".join(
+                    [
+                        "## Operator Notes Controls",
+                        "- Records session-level journal entries and market context.",
+                        "- Notes are annotations only and do not change engine decisions or query readiness.",
+                    ]
+                )
+            ),
+            operator_notes_form,
+        ],
+        gap=0.5,
+    )
 
     lifecycle_controls = mo.vstack(
         [
@@ -436,6 +499,8 @@ def __(
         active_trade_controls,
         anchor_input_form,
         anchor_input_controls,
+        operator_notes_form,
+        operator_notes_controls,
     )
 
 
@@ -455,6 +520,8 @@ def __(
     evidence_controls,
     lifecycle,
     lifecycle_controls,
+    operator_notes_form,
+    operator_notes_registry,
     profile_controls,
     profile_selector,
     query_available,
@@ -471,6 +538,7 @@ def __(
     selected_profile_id,
     set_active_trade_registry,
     set_anchor_input_registry,
+    set_operator_notes_registry,
     set_lifecycle,
     set_pending_profile_id,
     switch_available,
@@ -488,6 +556,7 @@ def __(
     )
     from ntb_marimo_console.market_data.stream_cache import StreamCacheSnapshot
     from ntb_marimo_console.market_data.stream_manager import StreamManagerSnapshot
+    from ntb_marimo_console.operator_notes import parse_tags_text
     from ntb_marimo_console.viewmodels.mappers import active_trade_vms_from_registry
 
     current_lifecycle = lifecycle
@@ -536,6 +605,25 @@ def __(
             anchor_input_message = str(exc)
         else:
             set_anchor_input_registry(anchor_input_registry)
+
+    operator_notes_status = "ready"
+    operator_notes_message = "Session journal entries are operator annotations only."
+    submitted_note = operator_notes_form.value
+    if isinstance(submitted_note, _Mapping):
+        note_content = str(submitted_note.get("content") or "").strip()
+        if note_content:
+            try:
+                operator_notes_registry.add(
+                    content=note_content,
+                    category=str(submitted_note.get("category") or "general"),
+                    contract=_blank_string_to_none(submitted_note.get("contract")),
+                    tags=parse_tags_text(str(submitted_note.get("tags") or "")),
+                )
+            except ValueError as exc:
+                operator_notes_status = "invalid"
+                operator_notes_message = str(exc)
+            else:
+                set_operator_notes_registry(operator_notes_registry)
 
     submitted_trade = active_trade_form.value
     if isinstance(submitted_trade, _Mapping):
@@ -604,12 +692,20 @@ def __(
         "integration_status": anchor_payload["integration_status"],
     }
     shell["operator_anchor_inputs"] = anchor_payload
+    note_rows = [note.to_dict() for note in operator_notes_registry.list()]
+    shell["operator_notes"] = {
+        "status": operator_notes_status if note_rows or operator_notes_status == "invalid" else "empty",
+        "rows": note_rows,
+        "message": operator_notes_message,
+        "export_json": operator_notes_registry.export_json(),
+    }
     workflow = shell.get("workflow")
     if isinstance(workflow, dict):
         workflow["operator_anchor_inputs_status"] = (
             "available" if anchor_input_registry.list() else "not_supplied"
         )
         workflow["operator_anchor_inputs_integration"] = anchor_payload["integration_status"]
+        workflow["operator_notes_status"] = "available" if note_rows else "empty"
     mode = str(controls_startup_panel.get("runtime_mode", "<unresolved>"))
     profile_id = selected_profile_id
     contract = str(controls_startup_panel.get("contract", "<unresolved>"))
@@ -645,6 +741,11 @@ def _float_or_none(value):
         return None
 
 
+def _blank_string_to_none(value):
+    text = str(value or "").strip()
+    return text or None
+
+
 def _optional_thesis_reference(values, thesis_reference_type):
     pipeline_result_id = str(values.get("pipeline_result_id") or "").strip()
     trigger_name = str(values.get("trigger_name") or "").strip()
@@ -667,7 +768,22 @@ def _cache_snapshot_from_runtime(runtime_snapshot, stream_manager_snapshot_type)
 
 
 @app.cell
-def __(mo, shell, mode, profile_id, contract, readiness_state, running_as, lifecycle_controls, profile_controls, evidence_controls, active_trade_controls, anchor_input_controls, query_button):
+def __(
+    mo,
+    shell,
+    mode,
+    profile_id,
+    contract,
+    readiness_state,
+    running_as,
+    lifecycle_controls,
+    profile_controls,
+    evidence_controls,
+    active_trade_controls,
+    anchor_input_controls,
+    operator_notes_controls,
+    query_button,
+):
     from ntb_marimo_console.ui.marimo_phase1_renderer import (
         render_phase1_console,
         render_watchman_gate_stop_output,
@@ -700,6 +816,7 @@ def __(mo, shell, mode, profile_id, contract, readiness_state, running_as, lifec
         evidence_control_panel=evidence_controls,
         active_trade_control_panel=active_trade_controls,
         anchor_input_control_panel=anchor_input_controls,
+        operator_notes_control_panel=operator_notes_controls,
     )
     mo.stop(stop_output is not None, stop_output)
 
@@ -731,6 +848,7 @@ def __(mo, shell, mode, profile_id, contract, readiness_state, running_as, lifec
         evidence_control_panel=evidence_controls,
         active_trade_control_panel=active_trade_controls,
         anchor_input_control_panel=anchor_input_controls,
+        operator_notes_control_panel=operator_notes_controls,
     )
     rendered
     return (rendered,)

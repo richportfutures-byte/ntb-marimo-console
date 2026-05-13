@@ -104,6 +104,7 @@ def render_phase1_console(
     evidence_control_panel: Any | None = None,
     active_trade_control_panel: Any | None = None,
     anchor_input_control_panel: Any | None = None,
+    operator_notes_control_panel: Any | None = None,
 ) -> Any:
     plan = build_phase1_render_plan(shell)
     startup = shell.get("startup")
@@ -120,6 +121,7 @@ def render_phase1_console(
         elements.append(stream_health_panel)
 
     elements.append(render_anchor_inputs_panel(shell, control_panel=anchor_input_control_panel))
+    elements.append(render_operator_notes_panel(shell, control_panel=operator_notes_control_panel))
 
     active_trades_panel = render_active_trades_panel(shell, control_panel=active_trade_control_panel)
     if active_trades_panel is not None:
@@ -189,7 +191,9 @@ def render_watchman_gate_stop_output(
     lifecycle_control_panel: Any | None = None,
     profile_control_panel: Any | None = None,
     evidence_control_panel: Any | None = None,
+    active_trade_control_panel: Any | None = None,
     anchor_input_control_panel: Any | None = None,
+    operator_notes_control_panel: Any | None = None,
 ) -> Any | None:
     if not watchman_gate_requires_stop(shell):
         return None
@@ -226,6 +230,7 @@ def render_watchman_gate_stop_output(
         elements.append(_render_markdown_card(build_session_workflow_markdown(workflow)))
 
     elements.append(render_anchor_inputs_panel(shell, control_panel=anchor_input_control_panel))
+    elements.append(render_operator_notes_panel(shell, control_panel=operator_notes_control_panel))
 
     surfaces = shell.get("surfaces")
     if isinstance(surfaces, Mapping):
@@ -585,6 +590,25 @@ def render_anchor_inputs_panel(
     return _render_surface_card(mo.vstack(content, gap=0.65))
 
 
+def render_operator_notes_panel(
+    shell: Mapping[str, object],
+    *,
+    control_panel: Any | None = None,
+) -> Any:
+    content: list[Any] = []
+    operator_notes = shell.get("operator_notes")
+    if not isinstance(operator_notes, Mapping):
+        operator_notes = {
+            "status": "empty",
+            "rows": [],
+            "message": "Session journal entries are operator annotations only.",
+        }
+    content.append(mo.md(build_operator_notes_markdown(operator_notes)))
+    if control_panel is not None:
+        content.append(control_panel)
+    return _render_surface_card(mo.vstack(content, gap=0.65))
+
+
 def build_anchor_inputs_markdown(panel: Mapping[str, object]) -> str:
     rows = panel.get("rows")
     lines = [
@@ -615,6 +639,39 @@ def build_anchor_inputs_markdown(panel: Mapping[str, object]) -> str:
             + f"`{_table_value(row.get('correlation_anchor'))}` | "
             + f"`{_table_value(row.get('updated_at'))}` | "
             + f"{_table_value(row.get('operator_note'))} |"
+        )
+    return "\n".join(lines)
+
+
+def build_operator_notes_markdown(panel: Mapping[str, object]) -> str:
+    rows = panel.get("rows")
+    lines = [
+        "## Operator Notes",
+        f"- Status: `{_as_str(panel.get('status'), default='empty')}`",
+        f"- Boundary: {_as_str(panel.get('message'), default='Session journal entries are operator annotations only.')}",
+        "",
+        "| Timestamp | Category | Contract | Tags | Note |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    if not isinstance(rows, list) or not rows:
+        lines.append("| `<none>` |  |  |  |  |")
+        return "\n".join(lines)
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        tags = row.get("tags")
+        tag_text = "<none>"
+        if isinstance(tags, list | tuple) and tags:
+            tag_text = ", ".join(_table_value(item) for item in tags)
+        category = _operator_note_category_badge(row.get("category"))
+        contract = row.get("contract") or "session"
+        lines.append(
+            "| "
+            + f"`{_table_value(row.get('timestamp'))}` | "
+            + f"`{category}` | "
+            + f"`{_table_value(contract)}` | "
+            + f"`{_table_value(tag_text)}` | "
+            + f"{_table_value(row.get('content'))} |"
         )
     return "\n".join(lines)
 
@@ -726,6 +783,17 @@ def _thesis_health_badge(status: object) -> str:
         "invalidated": "red",
         "unknown": "gray",
         "no_thesis": "gray",
+    }.get(normalized, "gray")
+    return f"{color} {normalized}"
+
+
+def _operator_note_category_badge(category: object) -> str:
+    normalized = _as_str(category, default="general").strip().lower()
+    color = {
+        "pre_market": "blue",
+        "intraday": "green",
+        "post_session": "gray",
+        "general": "gray",
     }.get(normalized, "gray")
     return f"{color} {normalized}"
 

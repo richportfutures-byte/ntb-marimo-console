@@ -21,9 +21,11 @@ from ntb_marimo_console.operator_workspace import OperatorWorkspaceRequest, buil
 from ntb_marimo_console.ui.marimo_phase1_renderer import (
     build_anchor_inputs_markdown,
     build_active_trades_markdown,
+    build_operator_notes_markdown,
     render_anchor_inputs_panel,
     build_stream_health_markdown,
     render_active_trades_panel,
+    render_operator_notes_panel,
     render_stream_health_panel,
 )
 from ntb_marimo_console.viewmodels.mappers import (
@@ -497,6 +499,38 @@ class ViewModelBoundaryEnforcementTests(unittest.TestCase):
 
     def test_anchor_inputs_panel_renders_in_safe_non_live_mode(self) -> None:
         rendered = render_anchor_inputs_panel(
+            {"runtime": {"operator_live_runtime_mode": "SAFE_NON_LIVE"}}
+        )
+
+        self.assertIsNotNone(rendered)
+
+    def test_operator_notes_markdown_is_annotation_only(self) -> None:
+        markdown = build_operator_notes_markdown(
+            {
+                "status": "ready",
+                "message": "Session journal entries are operator annotations only.",
+                "rows": [
+                    {
+                        "note_id": "note-1",
+                        "timestamp": "2026-05-12T13:00:00+00:00",
+                        "category": "pre_market",
+                        "contract": None,
+                        "content": "Fixture session context.",
+                        "tags": ["context", "plan"],
+                    }
+                ],
+            }
+        )
+
+        self.assertIn("## Operator Notes", markdown)
+        self.assertIn("blue pre_market", markdown)
+        self.assertIn("Fixture session context", markdown)
+        self.assertIn("annotations only", markdown)
+        self.assertNotIn("Query Enabled: `True`", markdown)
+        self.assertNotIn("trade_authorized", markdown)
+
+    def test_operator_notes_panel_renders_in_safe_non_live_mode(self) -> None:
+        rendered = render_operator_notes_panel(
             {"runtime": {"operator_live_runtime_mode": "SAFE_NON_LIVE"}}
         )
 
