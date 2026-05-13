@@ -20,7 +20,7 @@ No live Schwab rehearsal was performed. No live credentials, token contents, aut
 
 The repository has a fail-closed, explicit-opt-in Schwab stream foundation and a tested cache/readiness path for normalized `LEVELONE_FUTURES` quote messages. A sanitized bounded five-contract `LEVELONE_FUTURES` live result is now recorded for `ES`, `NQ`, `CL`, `6E`, and `MGC`.
 
-The repository still does not implement live `CHART_FUTURES` subscription/parsing in the production streamer session. Any roadmap step that assumes direct five-contract `CHART_FUTURES` live proof is premature until implementation work exists and a sanitized operator-run chart artifact is recorded.
+The repository now includes a narrow explicit-runtime `CHART_FUTURES` subscription/parsing path covered by fixture/mocked tests. Any roadmap step that assumes direct five-contract real live `CHART_FUTURES` proof is still premature until a sanitized operator-run chart artifact is recorded.
 
 ## Capability Matrix
 
@@ -32,7 +32,7 @@ The repository still does not implement live `CHART_FUTURES` subscription/parsin
 | Stream cache | Implemented | `StreamCache` stores normalized records by contract and symbol, marks stale data, and redacts fields/reasons. | Cache readiness can be partial unless downstream five-contract readiness enforces all contracts. |
 | `LEVELONE_FUTURES` normalized quote path | Implemented and bounded live result recorded | `schwab_streamer_session.py` builds a `LEVELONE_FUTURES` subscription and extracts quote entries; `stream_manager.py` accepts normalized quote messages into the cache; `docs/live_proof/five_contract_levelone_live_market_data_result_2026-05-13.md` records counted five-contract live receipt. | Entitlement and rollover robustness beyond the exact recorded run remain unproven. |
 | One-shot futures quote adapter | Implemented, single-symbol | `adapters/schwab_futures_market_data.py` supports a bounded `LEVELONE_FUTURES` fetch path. | Default symbol is ES-oriented and does not establish five-contract streaming. |
-| `CHART_FUTURES` normalized bar handling | Fixture-only | `bar_builder.py` accepts normalized `CHART_FUTURES`-style mappings and fixture/manual rehearsal bars. | No production Schwab `CHART_FUTURES` subscription or raw message parser is wired. |
+| `CHART_FUTURES` normalized bar handling | Implemented foundation, unproven-live | `bar_builder.py` accepts normalized `CHART_FUTURES`-style mappings; `schwab_streamer_session.py` can normalize chart-style data frames; the explicit live runtime rehearsal can route chart bars into the builder. | Real Schwab `CHART_FUTURES` delivery remains unproven-live. |
 | Per-contract stream symbols | Fixture-only | Manual/rehearsal tooling has static symbols `/ESM26`, `/NQM26`, `/CLM26`, `/6EM26`, `/MGCM26` and allows overrides. | No src-level dynamic symbol resolver or rollover service exists. |
 | Rollover handling | Absent | Rehearsal defaults are static and operator-overridable. | A future task must define front-month resolution, rollover timing, and operator override policy. |
 | Entitlement failure behavior | Implemented fail-closed foundation, unproven-live | Login, subscription, receive, malformed data, and missing data failures become blocked/error states with sanitized reasons. | Contract-specific Schwab entitlement failure shapes are not proven by live artifacts. |
@@ -74,7 +74,7 @@ Live `LEVELONE_FUTURES` behavior for all five final contracts is implemented as 
 
 `ChartFuturesBarBuilder` defines a normalized bar acceptance and aggregation path for `CHART_FUTURES`-style records. It rejects unsupported services, excluded contracts, missing OHLCV fields, symbol mismatches, out-of-order bars, and gap states. It distinguishes completed one-minute bars from building bars and aggregates usable five-minute bars.
 
-No production Schwab streamer session currently subscribes to `CHART_FUTURES`, parses raw Schwab `CHART_FUTURES` frames, or pumps live chart messages into the bar builder. `CHART_FUTURES` is fixture-only at this checkpoint.
+The production-intended Schwab streamer session can subscribe to `CHART_FUTURES`, normalize chart-style data frames into bar messages, and let the explicit runtime receive loop pump those messages into `ChartFuturesBarBuilder`. This path is fixture/mocked-tested only at this checkpoint; real Schwab `CHART_FUTURES` delivery remains unproven-live.
 
 ## Symbol And Rollover State
 

@@ -271,14 +271,41 @@ def _admin_login_ack(code: int = 0) -> str:
     )
 
 
-def _subs_ack(code: int = 0) -> str:
+def _subs_ack(code: int = 0, *, service: str = "LEVELONE_FUTURES") -> str:
     return json.dumps(
         {
             "response": [
                 {
-                    "service": "LEVELONE_FUTURES",
+                    "service": service,
                     "command": "SUBS",
                     "content": {"code": code, "msg": "ok"},
+                }
+            ]
+        }
+    )
+
+
+def _chart_frame(symbol: str = "/ESM26", *, minute: int = 0, completed: bool = True) -> str:
+    start = f"2026-05-09T14:{minute:02d}:00+00:00"
+    return json.dumps(
+        {
+            "data": [
+                {
+                    "service": "CHART_FUTURES",
+                    "command": "SUBS",
+                    "timestamp": start,
+                    "content": [
+                        {
+                            "key": symbol,
+                            "start_time": start,
+                            "open": 100.0 + minute,
+                            "high": 100.75 + minute,
+                            "low": 99.75 + minute,
+                            "close": 100.5 + minute,
+                            "volume": 100 + minute,
+                            "completed": completed,
+                        }
+                    ],
                 }
             ]
         }
@@ -423,11 +450,10 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertNotIn("ZN", [row["contract"] for row in rows])
         self.assertNotIn("GC", [row["contract"] for row in rows])
 
-    def test_live_runtime_stream_config_subscribes_levelone_only_until_chart_implementation_exists(self) -> None:
+    def test_live_runtime_stream_config_requests_levelone_and_chart(self) -> None:
         config = rehearsal._build_stream_config(symbol_overrides={})
 
-        self.assertEqual(config.services_requested, ("LEVELONE_FUTURES",))
-        self.assertNotIn("CHART_FUTURES", config.services_requested)
+        self.assertEqual(config.services_requested, ("LEVELONE_FUTURES", "CHART_FUTURES"))
         self.assertEqual(config.contracts_requested, ("ES", "NQ", "CL", "6E", "MGC"))
 
     def test_dry_run_rejects_excluded_and_unsupported_candidates_without_promoting_them(self) -> None:
@@ -502,10 +528,6 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertIn(
             "production_readiness_blocker="
             "production_release_remains_premature_until_non_levelone_predicates_are_satisfied",
-            first,
-        )
-        self.assertIn(
-            "limitation=live_runtime_rehearsal_subscribes_levelone_only_chart_futures_requires_implementation",
             first,
         )
         self.assertIn("review_preflight_only_not_subscription_or_login", first)
@@ -653,6 +675,55 @@ class RehearsalCliBlockingTests(unittest.TestCase):
 
         self.assertTrue(received)
         self.assertEqual(distinct_count, 1)
+
+    def test_receive_pump_routes_chart_futures_bars_into_builder(self) -> None:
+        config = rehearsal._build_stream_config(symbol_overrides={})
+        manager = FakeStartingManager(config=config, client=None)
+        manager._snapshot = manager._active_snapshot(record_count=0)
+        chart_builder = rehearsal.ChartFuturesBarBuilder(expected_symbols=rehearsal.DEFAULT_FRONT_MONTH_SYMBOLS)
+        chart_messages = [
+            {
+                "provider": "schwab",
+                "service": "CHART_FUTURES",
+                "source": "chart_futures",
+                "symbol": "/ESM26",
+                "contract": "ES",
+                "message_type": "bar",
+                "start_time": f"2026-05-09T14:{minute:02d}:00+00:00",
+                "open": 100.0 + minute,
+                "high": 100.75 + minute,
+                "low": 99.75 + minute,
+                "close": 100.5 + minute,
+                "volume": 100 + minute,
+                "completed": True,
+                "observed_at": f"2026-05-09T14:{minute + 1:02d}:00+00:00",
+            }
+            for minute in range(5)
+        ]
+
+        class ChartOnlySession:
+            def __init__(self) -> None:
+                self.messages = list(chart_messages)
+
+            def dispatch_one(self, handler):
+                if not self.messages:
+                    return False
+                handler(self.messages.pop(0))
+                return True
+
+        observation = rehearsal._pump_receive_loop(
+            session=ChartOnlySession(),
+            manager=manager,
+            duration_seconds=2.0,
+            clock=_make_clock(duration=2.0),
+            chart_bar_builder=chart_builder,
+        )
+
+        self.assertFalse(observation.market_data_received)
+        self.assertTrue(observation.chart_data_received)
+        self.assertEqual(observation.chart_received_contracts_count, 1)
+        self.assertEqual(observation.chart_completed_five_minute_contracts_count, 1)
+        self.assertEqual(len(chart_builder.state("ES").completed_five_minute_bars), 1)
 
     def test_receive_pump_surfaces_token_refresh_failure_as_blocking_reason(self) -> None:
         config = rehearsal._build_stream_config(symbol_overrides={})
@@ -882,6 +953,7 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
         websocket_factory = FakeWebsocketFactory()
         websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
         websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
         managers: list[FakeStartingManager] = []
 
         def manager_builder(cfg, c):
@@ -926,6 +998,7 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
         websocket_factory = FakeWebsocketFactory()
         websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
         websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
         websocket_factory.connection.recv_queue.append(_data_frame("/ESM26", 4321.5))
         websocket_factory.connection.recv_queue.append(_data_frame("/NQM26", 17890.25))
         websocket_factory.connection.recv_queue.append(_data_frame("/MGCM26", 2110.0))
@@ -970,6 +1043,48 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
         self.assertNotIn("4321.5", text_output)
         self.assertNotIn("4321.5", json_output)
 
+    def test_dispatch_records_chart_futures_completed_bars_without_printing_values(self) -> None:
+        token_provider = FakeTokenProvider()
+        credentials_provider = FakeCredentialsProvider()
+        websocket_factory = FakeWebsocketFactory()
+        websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
+        for symbol in ("/ESM26", "/NQM26", "/CLM26", "/6EM26", "/MGCM26"):
+            for minute in range(5):
+                websocket_factory.connection.recv_queue.append(_chart_frame(symbol, minute=minute))
+
+        deps = rehearsal.RehearsalDependencies(
+            token_provider=token_provider,
+            credentials_provider=credentials_provider,
+            websocket_factory=websocket_factory,
+            manager_builder=lambda cfg, c: FakeStartingManager(cfg, c),
+            clock=_make_clock(),
+        )
+        report = rehearsal.run_with_dependencies(
+            args=_make_args(live=True, duration=10),
+            env=_full_env(self.target_root),
+            target_root=self.target_root,
+            deps=deps,
+        )
+
+        self.assertEqual(report.mode, "live")
+        self.assertFalse(report.market_data_received)
+        self.assertTrue(report.chart_data_received)
+        self.assertEqual(report.chart_received_contracts_count, 5)
+        self.assertEqual(report.chart_completed_five_minute_contracts_count, 5)
+        self.assertEqual(report.chart_data_diagnostic, "chart_futures_completed_five_minute_bars_received")
+        self.assertEqual(
+            report.per_contract_status["ES"]["chart_status"],
+            "completed_five_minute_bar_available",
+        )
+        self.assertEqual(report.per_contract_status["ES"]["quote_status"], "no_quote_event_received")
+        text_output = rehearsal.render_text(report)
+        json_output = rehearsal.render_json(report)
+        self.assertIn("chart_data_received=yes", text_output)
+        self.assertNotIn("100.5", text_output)
+        self.assertNotIn("100.5", json_output)
+
     def test_dispatch_counts_numeric_schwab_epoch_millis_timestamps_with_real_manager(self) -> None:
         token_provider = FakeTokenProvider()
         credentials_provider = FakeCredentialsProvider()
@@ -978,6 +1093,7 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
         epoch_millis = int(observed_at.timestamp() * 1000)
         websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
         websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
         websocket_factory.connection.recv_queue.append(_data_frame("/ESM26", 4321.5, timestamp=epoch_millis))
         websocket_factory.connection.recv_queue.append(_data_frame("/NQM26", 17890.25, timestamp=epoch_millis))
         websocket_factory.connection.recv_queue.append(_data_frame("/MGCM26", 2110.0, timestamp=epoch_millis))
@@ -1008,6 +1124,7 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
         ws_conn = websocket_factory.connection
         ws_conn.recv_queue.append(_admin_login_ack(code=0))
         ws_conn.recv_queue.append(_subs_ack(code=0))
+        ws_conn.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
         for idx in range(8):
             ws_conn.recv_queue.append(_data_frame("/ESM26", 4321.5 + idx))
 
@@ -1035,14 +1152,13 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
         manager = managers[-1]
         self.assertEqual(manager.start_count, 1)
         self.assertEqual(websocket_factory.call_count, 1)
-        # Login frame sent once, subscribe frame sent once, then logout on shutdown
-        # is sent in the close path (the FakeStartingManager.shutdown returns its
-        # own snapshot but the OperatorSchwabStreamerSession.close still fires
-        # LOGOUT on the underlying websocket). So sent = login + subscribe + logout.
+        # Login frame sent once, one subscribe frame per requested service,
+        # then logout on shutdown is sent in the close path.
         self.assertEqual(ws_conn.sent[0].count("\"command\":\"LOGIN\""), 1)
         self.assertEqual(ws_conn.sent[1].count("\"command\":\"SUBS\""), 1)
+        self.assertEqual(ws_conn.sent[2].count("\"command\":\"SUBS\""), 1)
         # The dispatch loop must NOT have sent additional LOGIN or SUBS frames.
-        for payload in ws_conn.sent[2:]:
+        for payload in ws_conn.sent[3:]:
             self.assertNotIn("\"command\":\"LOGIN\"", payload)
             self.assertNotIn("\"command\":\"SUBS\"", payload)
         # Final report pin
@@ -1056,6 +1172,7 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
         websocket_factory = FakeWebsocketFactory()
         websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
         websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
         websocket_factory.connection.recv_queue.append(_data_frame("/ESM26", 4321.5))
 
         managers: list[FakeStartingManager] = []
@@ -1191,6 +1308,7 @@ class RehearsalFailureTests(unittest.TestCase):
         websocket_factory = FakeWebsocketFactory()
         websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
         websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
 
         deps = rehearsal.RehearsalDependencies(
             token_provider=FakeTokenProvider(),
@@ -1283,6 +1401,7 @@ class RehearsalUniverseTests(unittest.TestCase):
         ws = websocket_factory.connection
         ws.recv_queue.append(_admin_login_ack(code=0))
         ws.recv_queue.append(_subs_ack(code=0))
+        ws.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
 
         deps = rehearsal.RehearsalDependencies(
             token_provider=token_provider,

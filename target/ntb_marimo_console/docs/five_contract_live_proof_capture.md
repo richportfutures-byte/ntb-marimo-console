@@ -67,7 +67,7 @@ The JSON artifact includes:
 
 ## Current Automation Boundary
 
-The existing Schwab market-data live harness remains a manual, opt-in, single-symbol `LEVELONE_FUTURES` smoke path. The operator live runtime rehearsal currently subscribes through the concrete `LEVELONE_FUTURES` streamer path. Neither path is a five-contract `CHART_FUTURES` proof collector.
+The existing Schwab market-data live harness remains a manual, opt-in, single-symbol `LEVELONE_FUTURES` smoke path. The operator live runtime rehearsal can request and route `CHART_FUTURES` bar events through the explicit runtime path, but that implementation is not a live proof until an operator runs it and records sanitized direct chart evidence.
 
 Because of that boundary, this R20 path does not add a new live Schwab chart streamer or refactor the live harness. It creates a repository-safe manual artifact template so the operator can record a reviewed five-contract rehearsal without committing raw live material. A future `CHART_FUTURES` artifact must be backed by direct chart-futures evidence, not by the recorded `LEVELONE_FUTURES` result.
 

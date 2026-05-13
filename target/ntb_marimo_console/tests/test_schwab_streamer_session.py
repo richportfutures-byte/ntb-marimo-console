@@ -36,6 +36,7 @@ from ntb_marimo_console.schwab_stream_client import (
 )
 from ntb_marimo_console.schwab_streamer_session import (
     ADMIN_SERVICE,
+    CHART_FUTURES_SERVICE,
     LEVELONE_FUTURES_SERVICE,
     LOGIN_COMMAND,
     SUBS_COMMAND,
@@ -318,14 +319,45 @@ def _admin_login_ack(code: int = 0) -> str:
     )
 
 
-def _subs_ack(code: int = 0) -> str:
+def _subs_ack(code: int = 0, *, service: str = LEVELONE_FUTURES_SERVICE) -> str:
     return json.dumps(
         {
             "response": [
                 {
-                    "service": LEVELONE_FUTURES_SERVICE,
+                    "service": service,
                     "command": SUBS_COMMAND,
                     "content": {"code": code, "msg": "ok"},
+                }
+            ]
+        }
+    )
+
+
+def _chart_frame(
+    *,
+    symbol: str = "/ESM26",
+    start_time: str = NOW,
+    completed: bool = True,
+) -> str:
+    return json.dumps(
+        {
+            "data": [
+                {
+                    "service": CHART_FUTURES_SERVICE,
+                    "command": SUBS_COMMAND,
+                    "timestamp": start_time,
+                    "content": [
+                        {
+                            "key": symbol,
+                            "start_time": start_time,
+                            "open": 100.0,
+                            "high": 101.0,
+                            "low": 99.5,
+                            "close": 100.5,
+                            "volume": 100,
+                            "completed": completed,
+                        }
+                    ],
                 }
             ]
         }
@@ -660,13 +692,13 @@ class OperatorSchwabStreamerSessionSubscribeTests(unittest.TestCase):
         self.assertNotIn("/GCM", keys_field)
         self.assertIn("/MGCM26", keys_field)
 
-    def test_chart_futures_request_is_not_direct_chart_subscription_with_current_session(self) -> None:
+    def test_chart_futures_request_sends_direct_chart_subscription(self) -> None:
         session, _, _, wf = _build_session()
         self._login(session, wf)
-        wf.connection.recv_queue.append(_subs_ack(code=0))
+        wf.connection.recv_queue.append(_subs_ack(code=0, service=CHART_FUTURES_SERVICE))
         request = StreamSubscriptionRequest(
             provider="schwab",
-            services=("CHART_FUTURES",),
+            services=(CHART_FUTURES_SERVICE,),
             symbols=("/ESM26", "/NQM26", "/CLM26", "/6EM26", "/MGCM26"),
             fields=(0, 1, 2, 3, 4, 5),
             contracts=("ES", "NQ", "CL", "6E", "MGC"),
@@ -677,8 +709,28 @@ class OperatorSchwabStreamerSessionSubscribeTests(unittest.TestCase):
         self.assertTrue(result.succeeded)
         sent_payload = json.loads(wf.connection.sent[0])
         sent_request = sent_payload["requests"][0]
-        self.assertEqual(sent_request["service"], LEVELONE_FUTURES_SERVICE)
-        self.assertNotEqual(sent_request["service"], "CHART_FUTURES")
+        self.assertEqual(sent_request["service"], CHART_FUTURES_SERVICE)
+        self.assertEqual(sent_request["command"], SUBS_COMMAND)
+        self.assertEqual(sent_request["parameters"]["keys"], "/ESM26,/NQM26,/CLM26,/6EM26,/MGCM26")
+
+    def test_combined_levelone_and_chart_request_sends_one_subscription_per_service(self) -> None:
+        session, _, _, wf = _build_session()
+        self._login(session, wf)
+        wf.connection.recv_queue.append(_subs_ack(code=0, service=LEVELONE_FUTURES_SERVICE))
+        wf.connection.recv_queue.append(_subs_ack(code=0, service=CHART_FUTURES_SERVICE))
+        request = StreamSubscriptionRequest(
+            provider="schwab",
+            services=(LEVELONE_FUTURES_SERVICE, CHART_FUTURES_SERVICE),
+            symbols=("/ESM26",),
+            fields=(0, 1, 2, 3, 4, 5),
+            contracts=("ES",),
+        )
+
+        result = session.subscribe(request)
+
+        self.assertTrue(result.succeeded)
+        services = [json.loads(payload)["requests"][0]["service"] for payload in wf.connection.sent]
+        self.assertEqual(services, [LEVELONE_FUTURES_SERVICE, CHART_FUTURES_SERVICE])
 
     def test_subscribe_preserves_data_frame_received_before_ack_for_dispatch(self) -> None:
         session, _, _, wf = _build_session()
@@ -718,14 +770,29 @@ class OperatorSchwabStreamerSessionSubscribeTests(unittest.TestCase):
         self.assertEqual(entries[0]["contract"], "ES")
         self.assertEqual(entries[0]["received_at"], observed_at)
 
-    def test_chart_futures_data_entry_is_not_normalized_as_bar_message_by_current_parser(self) -> None:
+    def test_chart_futures_data_entry_is_normalized_as_bar_message(self) -> None:
+        entries = schwab_streamer_session_module.extract_data_entries(
+            _chart_frame(symbol="/ESM26"),
+            service=CHART_FUTURES_SERVICE,
+        )
+
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["service"], CHART_FUTURES_SERVICE)
+        self.assertEqual(entries[0]["message_type"], "bar")
+        self.assertEqual(entries[0]["contract"], "ES")
+        self.assertEqual(entries[0]["symbol"], "/ESM26")
+        self.assertEqual(entries[0]["start_time"], NOW)
+        self.assertEqual(entries[0]["completed"], True)
+        self.assertEqual(entries[0]["source"], "chart_futures")
+
+    def test_chart_futures_data_entry_missing_required_bar_fields_remains_fail_closed_for_builder(self) -> None:
         raw_message = json.dumps(
             {
                 "data": [
                     {
-                        "service": "CHART_FUTURES",
+                        "service": CHART_FUTURES_SERVICE,
                         "timestamp": NOW,
-                        "content": [{"key": "/ESM26", "1": 100.0, "2": 101.0}],
+                        "content": [{"key": "/ESM26", "start_time": NOW, "open": 100.0}],
                     }
                 ]
             }
@@ -733,15 +800,13 @@ class OperatorSchwabStreamerSessionSubscribeTests(unittest.TestCase):
 
         entries = schwab_streamer_session_module.extract_data_entries(
             raw_message,
-            service="CHART_FUTURES",
+            service=CHART_FUTURES_SERVICE,
         )
 
         self.assertEqual(len(entries), 1)
-        self.assertEqual(entries[0]["service"], "CHART_FUTURES")
-        self.assertEqual(entries[0]["message_type"], "quote")
-        self.assertNotIn("start_time", entries[0])
-        self.assertNotIn("end_time", entries[0])
+        self.assertEqual(entries[0]["message_type"], "bar")
         self.assertNotIn("completed", entries[0])
+        self.assertNotIn("close", entries[0])
 
     def test_subscribe_blocks_zn_and_returns_redacted_failure_without_send(self) -> None:
         session, _, _, wf = _build_session()
@@ -910,6 +975,32 @@ class OperatorSchwabStreamerSessionDispatchTests(unittest.TestCase):
         second = session.dispatch_one(handler=handler)
         self.assertFalse(second)
         self.assertEqual(captured, [])
+
+    def test_dispatch_one_routes_chart_futures_bar_messages_to_handler(self) -> None:
+        session, _, _, wf = _build_session()
+        wf.connection.recv_queue.append(_admin_login_ack(code=0))
+        self.assertTrue(session.login(_live_config()).succeeded)
+        wf.connection.recv_queue.append(_subs_ack(code=0, service=CHART_FUTURES_SERVICE))
+        request = StreamSubscriptionRequest(
+            provider="schwab",
+            services=(CHART_FUTURES_SERVICE,),
+            symbols=("/ESM26",),
+            fields=(0, 1, 2, 3, 4, 5, 6, 7, 8),
+            contracts=("ES",),
+        )
+        self.assertTrue(session.subscribe(request).succeeded)
+
+        captured: list[dict[str, object]] = []
+        wf.connection.recv_queue.append(_chart_frame(symbol="/ESM26"))
+
+        self.assertTrue(session.dispatch_one(handler=lambda message: captured.append(dict(message))))
+
+        self.assertEqual(len(captured), 1)
+        entry = captured[0]
+        self.assertEqual(entry["service"], CHART_FUTURES_SERVICE)
+        self.assertEqual(entry["message_type"], "bar")
+        self.assertEqual(entry["contract"], "ES")
+        self.assertEqual(entry["source"], "chart_futures")
 
     def test_dispatch_one_refreshes_token_without_new_connection_login_or_subscribe(self) -> None:
         token_provider = RefreshingTokenProvider()

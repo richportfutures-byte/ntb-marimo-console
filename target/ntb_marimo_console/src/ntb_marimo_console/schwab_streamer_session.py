@@ -78,6 +78,7 @@ from .market_data.stream_events import redact_sensitive_text
 
 
 DEFAULT_LEVELONE_FUTURES_FIELD_IDS: tuple[int, ...] = (0, 1, 2, 3, 4, 5)
+DEFAULT_CHART_FUTURES_FIELD_IDS: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 6, 7, 8)
 DEFAULT_RECV_TIMEOUT_SECONDS: float = 10.0
 DEFAULT_LOGIN_REQUESTID: str = "0"
 DEFAULT_SUBSCRIBE_REQUESTID: str = "1"
@@ -87,6 +88,8 @@ ADMIN_SERVICE: str = "ADMIN"
 LOGIN_COMMAND: str = "LOGIN"
 LOGOUT_COMMAND: str = "LOGOUT"
 LEVELONE_FUTURES_SERVICE: str = "LEVELONE_FUTURES"
+CHART_FUTURES_SERVICE: str = "CHART_FUTURES"
+SUPPORTED_FUTURES_SERVICES: tuple[str, ...] = (LEVELONE_FUTURES_SERVICE, CHART_FUTURES_SERVICE)
 SUBS_COMMAND: str = "SUBS"
 DispatchStatus = Literal[
     "idle",
@@ -190,6 +193,53 @@ def build_levelone_futures_subscription_payload(
     }
 
 
+def build_chart_futures_subscription_payload(
+    credentials: StreamerCredentials,
+    *,
+    symbols: tuple[str, ...],
+    fields: tuple[int, ...],
+    requestid: str = "2",
+) -> dict[str, object]:
+    return {
+        "requests": [
+            {
+                "service": CHART_FUTURES_SERVICE,
+                "command": SUBS_COMMAND,
+                "requestid": requestid,
+                "SchwabClientCustomerId": credentials.schwab_client_customer_id,
+                "SchwabClientCorrelId": credentials.schwab_client_correl_id,
+                "parameters": {
+                    "keys": ",".join(symbol for symbol in symbols),
+                    "fields": ",".join(str(field_id) for field_id in fields),
+                },
+            }
+        ]
+    }
+
+
+def _subscription_payload_for_service(
+    credentials: StreamerCredentials,
+    *,
+    service: str,
+    symbols: tuple[str, ...],
+    fields: tuple[int, ...],
+    requestid: str,
+) -> dict[str, object]:
+    if service == CHART_FUTURES_SERVICE:
+        return build_chart_futures_subscription_payload(
+            credentials,
+            symbols=symbols,
+            fields=fields,
+            requestid=requestid,
+        )
+    return build_levelone_futures_subscription_payload(
+        credentials,
+        symbols=symbols,
+        fields=fields,
+        requestid=requestid,
+    )
+
+
 def build_logout_payload(
     credentials: StreamerCredentials,
     *,
@@ -269,38 +319,97 @@ def extract_data_entries(
     for item in data_items:
         if not isinstance(item, dict) or item.get("service") != service:
             continue
-        contents = item.get("content")
-        if not isinstance(contents, list):
-            raise OperatorSchwabStreamerSessionError("malformed_data_content")
-        timestamp = item.get("timestamp")
-        received_at = _received_at_from_timestamp(timestamp)
-        for content in contents:
-            if not isinstance(content, dict):
-                raise OperatorSchwabStreamerSessionError("malformed_data_entry")
-            symbol_value = content.get("key")
-            if not isinstance(symbol_value, str) or not symbol_value.strip():
-                continue
-            symbol = symbol_value.strip().upper()
-            contract = _contract_from_symbol(symbol)
-            if contract is None:
-                continue
-            fields = {
-                str(field_key): field_value
-                for field_key, field_value in content.items()
-                if field_key != "key"
-            }
-            out.append(
-                {
-                    "provider": "schwab",
-                    "service": service,
-                    "symbol": symbol,
-                    "contract": contract,
-                    "message_type": "quote",
-                    "fields": fields,
-                    "received_at": received_at,
-                }
-            )
+        out.extend(_extract_data_item_entries(item, service=service))
     return out
+
+
+def extract_supported_data_entries(raw_message: str) -> list[Mapping[str, object]]:
+    entries: list[Mapping[str, object]] = []
+    for service in SUPPORTED_FUTURES_SERVICES:
+        entries.extend(extract_data_entries(raw_message, service=service))
+    return entries
+
+
+def _extract_data_item_entries(
+    item: Mapping[str, object],
+    *,
+    service: str,
+) -> tuple[Mapping[str, object], ...]:
+    contents = item.get("content")
+    if not isinstance(contents, list):
+        raise OperatorSchwabStreamerSessionError("malformed_data_content")
+    timestamp = item.get("timestamp")
+    received_at = _received_at_from_timestamp(timestamp)
+    entries: list[Mapping[str, object]] = []
+    for content in contents:
+        if not isinstance(content, dict):
+            raise OperatorSchwabStreamerSessionError("malformed_data_entry")
+        symbol_value = content.get("key")
+        if not isinstance(symbol_value, str) or not symbol_value.strip():
+            continue
+        symbol = symbol_value.strip().upper()
+        contract = _contract_from_symbol(symbol)
+        if contract is None:
+            continue
+        if service == CHART_FUTURES_SERVICE:
+            entries.append(_chart_futures_bar_entry(content, symbol=symbol, contract=contract, received_at=received_at))
+            continue
+        fields = {
+            str(field_key): field_value
+            for field_key, field_value in content.items()
+            if field_key != "key"
+        }
+        entries.append(
+            {
+                "provider": "schwab",
+                "service": service,
+                "symbol": symbol,
+                "contract": contract,
+                "message_type": "quote",
+                "fields": fields,
+                "received_at": received_at,
+            }
+        )
+    return tuple(entries)
+
+
+def _chart_futures_bar_entry(
+    content: Mapping[str, object],
+    *,
+    symbol: str,
+    contract: str,
+    received_at: str,
+) -> Mapping[str, object]:
+    start_time = _timestamp_value(content, "start_time", "start", "chart_time", "time", "0")
+    end_time = _timestamp_value(content, "end_time", "end", "1")
+    completed = _bool_value(content, "completed", "complete", "is_complete", "closed", "8")
+    payload: dict[str, object] = {
+        "provider": "schwab",
+        "service": CHART_FUTURES_SERVICE,
+        "source": "chart_futures",
+        "symbol": symbol,
+        "contract": contract,
+        "message_type": "bar",
+        "observed_at": received_at,
+        "received_at": received_at,
+    }
+    if start_time:
+        payload["start_time"] = start_time
+    if end_time:
+        payload["end_time"] = end_time
+    for field_name, aliases in {
+        "open": ("open", "open_price", "2"),
+        "high": ("high", "high_price", "3"),
+        "low": ("low", "low_price", "4"),
+        "close": ("close", "close_price", "5"),
+        "volume": ("volume", "total_volume", "6"),
+    }.items():
+        value = _number_value(content, *aliases)
+        if value is not None:
+            payload[field_name] = value
+    if completed is not None:
+        payload["completed"] = completed
+    return payload
 
 
 def _contract_from_symbol(symbol: str) -> str | None:
@@ -324,6 +433,54 @@ def _received_at_from_timestamp(timestamp: object) -> str:
         except (OverflowError, OSError, ValueError):
             return ""
     return text
+
+
+def _timestamp_value(content: Mapping[str, object], *aliases: str) -> str | None:
+    for alias in aliases:
+        value = content.get(alias)
+        if value is None:
+            continue
+        rendered = _received_at_from_timestamp(value)
+        if rendered:
+            return rendered
+    return None
+
+
+def _number_value(content: Mapping[str, object], *aliases: str) -> int | float | None:
+    for alias in aliases:
+        value = content.get(alias)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int | float):
+            return value
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                continue
+            try:
+                parsed = float(text)
+            except ValueError:
+                continue
+            return int(parsed) if parsed.is_integer() else parsed
+    return None
+
+
+def _bool_value(content: Mapping[str, object], *aliases: str) -> bool | None:
+    for alias in aliases:
+        value = content.get(alias)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            if value in {0, 1}:
+                return bool(value)
+            continue
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in {"true", "yes", "1", "complete", "completed", "closed"}:
+                return True
+            if text in {"false", "no", "0", "building", "partial", "open"}:
+                return False
+    return None
 
 
 def _epoch_timestamp_to_iso(timestamp: int | float) -> str:
@@ -454,9 +611,10 @@ def default_schwab_websocket_factory() -> DefaultSchwabWebsocketFactory:
 class OperatorSchwabStreamerSession:
     """Production-intended Schwab streamer session.
 
-    Performs ``ADMIN LOGIN``, ``LEVELONE_FUTURES SUBS``, and ``LOGOUT`` + close
-    exactly once per explicit operator startup. Provides :meth:`dispatch_one`
-    as the receive/dispatch handoff for an operator-driven receive loop.
+    Performs ``ADMIN LOGIN``, futures market-data ``SUBS`` requests, and
+    ``LOGOUT`` + close exactly once per explicit operator startup. Provides
+    :meth:`dispatch_one` as the receive/dispatch handoff for an
+    operator-driven receive loop.
 
     The session is invoked exclusively from the explicit operator launcher
     path (and the manager's ``start()``); never from Marimo refresh, readiness
@@ -592,17 +750,40 @@ class OperatorSchwabStreamerSession:
         if credentials is None or connection is None:
             return StreamClientResult(succeeded=False, reason="subscribe_session_not_ready")
 
-        payload = build_levelone_futures_subscription_payload(
-            credentials,
-            symbols=request.symbols,
-            fields=tuple(fields),
-        )
-        subscription_json = json.dumps(payload, separators=(",", ":"))
-        try:
-            connection.send(subscription_json)
-        except Exception as exc:
-            return StreamClientResult(succeeded=False, reason=f"subscribe_send_failed:{exc}")
+        services = tuple(dict.fromkeys(service.strip().upper() for service in request.services if service.strip()))
+        if not services:
+            services = (LEVELONE_FUTURES_SERVICE,)
+        unsupported = tuple(service for service in services if service not in SUPPORTED_FUTURES_SERVICES)
+        if unsupported:
+            return StreamClientResult(succeeded=False, reason="unsupported_subscription_service:" + ",".join(unsupported))
 
+        for index, service in enumerate(services, start=1):
+            payload = _subscription_payload_for_service(
+                credentials,
+                service=service,
+                symbols=request.symbols,
+                fields=tuple(fields),
+                requestid=str(index),
+            )
+            subscription_json = json.dumps(payload, separators=(",", ":"))
+            try:
+                connection.send(subscription_json)
+            except Exception as exc:
+                return StreamClientResult(succeeded=False, reason=f"subscribe_send_failed:{exc}")
+
+            ack_result = self._drain_until_subscription_ack(connection, service=service)
+            if not ack_result.succeeded:
+                return ack_result
+
+        self._subscribe_succeeded = True
+        return StreamClientResult(succeeded=True)
+
+    def _drain_until_subscription_ack(
+        self,
+        connection: SchwabWebsocketConnection,
+        *,
+        service: str,
+    ) -> StreamClientResult:
         # Drain incoming frames until the SUBS ack appears or we hit timeout.
         # Schwab may deliver data before the SUBS ack frame reaches us; keep
         # those frames for the first dispatch call instead of consuming them.
@@ -611,14 +792,14 @@ class OperatorSchwabStreamerSession:
             try:
                 raw_response = connection.recv(self._timeout_seconds)
             except TimeoutError:
-                return StreamClientResult(succeeded=False, reason="subscribe_timeout")
+                return StreamClientResult(succeeded=False, reason=f"subscribe_timeout:{service}")
             except Exception as exc:
                 return StreamClientResult(succeeded=False, reason=f"subscribe_recv_failed:{exc}")
 
             try:
                 code = parse_response_code(
                     str(raw_response),
-                    service=LEVELONE_FUTURES_SERVICE,
+                    service=service,
                     command=SUBS_COMMAND,
                 )
             except OperatorSchwabStreamerSessionError as exc:
@@ -629,20 +810,19 @@ class OperatorSchwabStreamerSession:
             if code is None:
                 # No SUBS ack in this frame; could be a heartbeat or a data
                 # frame received pre-ack. Continue draining after preserving
-                # any parseable data entries.
+                # any parseable supported data entries.
                 try:
-                    entries = tuple(extract_data_entries(str(raw_response)))
+                    entries = tuple(extract_supported_data_entries(str(raw_response)))
                 except OperatorSchwabStreamerSessionError:
                     entries = ()
                 if entries:
                     self._pending_data_frames.append(entries)
                 continue
             if code != 0:
-                return StreamClientResult(succeeded=False, reason=f"subscribe_denied:code={code}")
-            self._subscribe_succeeded = True
+                return StreamClientResult(succeeded=False, reason=f"subscribe_denied:{service}:code={code}")
             return StreamClientResult(succeeded=True)
 
-        return StreamClientResult(succeeded=False, reason="subscribe_ack_missing")
+        return StreamClientResult(succeeded=False, reason=f"subscribe_ack_missing:{service}")
 
     # -- close ---------------------------------------------------------------
 
@@ -735,7 +915,7 @@ class OperatorSchwabStreamerSession:
             return False
 
         try:
-            entries = extract_data_entries(str(raw_message))
+            entries = extract_supported_data_entries(str(raw_message))
         except OperatorSchwabStreamerSessionError:
             self._last_dispatch_status = "parse_error"
             return True

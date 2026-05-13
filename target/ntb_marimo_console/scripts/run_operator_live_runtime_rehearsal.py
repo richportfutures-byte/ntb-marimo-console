@@ -38,6 +38,7 @@ from ntb_marimo_console.contract_universe import (
     is_never_supported_contract,
     normalize_contract_symbol,
 )
+from ntb_marimo_console.market_data import ChartFuturesBarBuilder
 from ntb_marimo_console.market_data.stream_manager import (
     MIN_STREAM_REFRESH_FLOOR_SECONDS,
     SchwabStreamManagerConfig,
@@ -291,6 +292,11 @@ class RehearsalReport:
     market_data_received: bool = False
     received_contracts_count: int = 0
     market_data_diagnostic: str = "not_evaluated"
+    chart_data_received: bool = False
+    chart_received_contracts_count: int = 0
+    chart_completed_five_minute_contracts_count: int = 0
+    chart_data_diagnostic: str = "not_evaluated"
+    per_contract_status: dict[str, dict[str, str]] = field(default_factory=dict)
     repeated_login_on_refresh: bool = False
     cleanup_status: str = "skipped"  # "ok" | "skipped" | "error"
     duration_seconds: float = 0.0
@@ -320,6 +326,11 @@ class RehearsalReport:
             "market_data_received": _yes_no(self.market_data_received),
             "received_contracts_count": int(self.received_contracts_count),
             "market_data_diagnostic": self.market_data_diagnostic,
+            "chart_data_received": _yes_no(self.chart_data_received),
+            "chart_received_contracts_count": int(self.chart_received_contracts_count),
+            "chart_completed_five_minute_contracts_count": int(self.chart_completed_five_minute_contracts_count),
+            "chart_data_diagnostic": self.chart_data_diagnostic,
+            "per_contract_status": self.per_contract_status,
             "repeated_login_on_refresh": "no",
             "cleanup_status": self.cleanup_status,
             "duration_seconds": float(self.duration_seconds),
@@ -330,6 +341,23 @@ class RehearsalReport:
                 for check in self.checks
             ],
         }
+
+
+@dataclass(frozen=True)
+class ReceiveLoopObservation:
+    market_data_received: bool
+    received_contracts_count: int
+    chart_data_received: bool = False
+    chart_received_contracts_count: int = 0
+    chart_completed_five_minute_contracts_count: int = 0
+    chart_blocking_reasons: tuple[str, ...] = ()
+    quote_contracts: tuple[str, ...] = ()
+    chart_contracts: tuple[str, ...] = ()
+    chart_completed_contracts: tuple[str, ...] = ()
+
+    def __iter__(self):
+        yield self.market_data_received
+        yield self.received_contracts_count
 
 
 def assess_rehearsal_readiness(report: RehearsalReport) -> RehearsalReadinessAssessment:
@@ -443,6 +471,10 @@ def render_text(report: RehearsalReport) -> str:
         "market_data_received",
         "received_contracts_count",
         "market_data_diagnostic",
+        "chart_data_received",
+        "chart_received_contracts_count",
+        "chart_completed_five_minute_contracts_count",
+        "chart_data_diagnostic",
         "repeated_login_on_refresh",
         "cleanup_status",
         "duration_seconds",
@@ -635,7 +667,7 @@ def _build_stream_config(
     symbols = tuple(symbol_map[contract] for contract in contracts)
     return SchwabStreamManagerConfig(
         provider="schwab",
-        services_requested=("LEVELONE_FUTURES",),
+        services_requested=("LEVELONE_FUTURES", "CHART_FUTURES"),
         symbols_requested=symbols,
         fields_requested=DEFAULT_LEVELONE_FUTURES_FIELD_IDS,
         explicit_live_opt_in=True,
@@ -707,7 +739,6 @@ def build_dry_run_report(
             "review_preflight_only_not_subscription_or_login",
             "schwab_live_readiness_unproven_until_authorized_manual_rehearsal",
             "levelone_futures_and_chart_futures_delivery_not_assumed",
-            "live_runtime_rehearsal_subscribes_levelone_only_chart_futures_requires_implementation",
             "mgc_micro_gold_not_gc_substitute",
             "default_app_launch_remains_non_live",
         ),
@@ -892,7 +923,8 @@ def _pump_receive_loop(
     duration_seconds: float,
     clock: Callable[[], float],
     reconnect_controller: SchwabReconnectController | None = None,
-) -> tuple[bool, int]:
+    chart_bar_builder: ChartFuturesBarBuilder | None = None,
+) -> ReceiveLoopObservation:
     """Drive the bounded dispatch loop.
 
     Returns (market_data_received, distinct_contract_count) as observed via
@@ -902,10 +934,29 @@ def _pump_receive_loop(
     """
 
     contracts_seen: set[str] = set()
+    chart_contracts_seen: set[str] = set()
+    chart_completed_contracts_seen: set[str] = set()
+    chart_blocking_reasons: list[str] = []
     received_at_least_one = False
+    chart_received_at_least_one = False
 
     def _handler(message: Mapping[str, object]) -> None:
-        nonlocal received_at_least_one
+        nonlocal chart_received_at_least_one, received_at_least_one
+        service = str(message.get("service", "")).strip().upper()
+        if service == "CHART_FUTURES":
+            if chart_bar_builder is None:
+                chart_blocking_reasons.append("chart_bar_builder_unavailable")
+                return
+            result = chart_bar_builder.ingest(message)
+            if result.accepted and result.contract:
+                chart_contracts_seen.add(result.contract)
+                chart_received_at_least_one = True
+                state = chart_bar_builder.state(result.contract)
+                if state.completed_five_minute_bars:
+                    chart_completed_contracts_seen.add(result.contract)
+                return
+            chart_blocking_reasons.extend(str(reason) for reason in result.blocking_reasons)
+            return
         try:
             ingested = manager.ingest_message(message)
         except Exception:
@@ -943,7 +994,17 @@ def _pump_receive_loop(
             # receive interval does not prove the whole bounded window quiet.
             time.sleep(min(MAX_IDLE_DISPATCH_SLEEP_SECONDS, max(0.0, remaining)))
             continue
-    return received_at_least_one, len(contracts_seen)
+    return ReceiveLoopObservation(
+        market_data_received=received_at_least_one,
+        received_contracts_count=len(contracts_seen),
+        chart_data_received=chart_received_at_least_one,
+        chart_received_contracts_count=len(chart_contracts_seen),
+        chart_completed_five_minute_contracts_count=len(chart_completed_contracts_seen),
+        chart_blocking_reasons=tuple(dict.fromkeys(chart_blocking_reasons)),
+        quote_contracts=tuple(sorted(contracts_seen)),
+        chart_contracts=tuple(sorted(chart_contracts_seen)),
+        chart_completed_contracts=tuple(sorted(chart_completed_contracts_seen)),
+    )
 
 
 def _token_refresh_blocking_reason(session: object) -> str | None:
@@ -957,6 +1018,30 @@ def _token_refresh_blocking_reason(session: object) -> str | None:
     if not isinstance(reason, str) or not reason.strip():
         return None
     return _sanitize_text(reason.strip())
+
+
+def _per_contract_runtime_status(observation: ReceiveLoopObservation) -> dict[str, dict[str, str]]:
+    quote_contracts = set(observation.quote_contracts)
+    chart_contracts = set(observation.chart_contracts)
+    chart_completed_contracts = set(observation.chart_completed_contracts)
+    statuses: dict[str, dict[str, str]] = {}
+    for contract in final_target_contracts():
+        quote_status = "fresh_quote_update_received" if contract in quote_contracts else "no_quote_event_received"
+        if contract in chart_completed_contracts:
+            chart_status = "completed_five_minute_bar_available"
+            last_chart_event_status = "completed_bar"
+        elif contract in chart_contracts:
+            chart_status = "chart_event_received_building_or_partial"
+            last_chart_event_status = "building_or_partial_bar"
+        else:
+            chart_status = "no_chart_event_received"
+            last_chart_event_status = "none"
+        statuses[contract] = {
+            "quote_status": quote_status,
+            "chart_status": chart_status,
+            "last_chart_event_status": last_chart_event_status,
+        }
+    return statuses
 
 
 # ---------------------------------------------------------------------------
@@ -1096,7 +1181,9 @@ def run_with_dependencies(
         report.checks.append(RehearsalCheck("streamer_credentials_obtained", "blocked"))
         return report
 
-    config = _build_stream_config(symbol_overrides=getattr(args, "symbol", None) or {})
+    symbol_overrides = getattr(args, "symbol", None) or {}
+    config = _build_stream_config(symbol_overrides=symbol_overrides)
+    chart_bar_builder = ChartFuturesBarBuilder(expected_symbols=resolve_symbol_map(symbol_overrides))
     report.subscribed_contracts_count = len(config.contracts_requested)
 
     captured_sessions: list[OperatorSchwabStreamerSession] = []
@@ -1170,24 +1257,37 @@ def run_with_dependencies(
             manager=launch.manager,
         )
 
-        received, distinct_count = _pump_receive_loop(
+        receive_observation = _pump_receive_loop(
             session=session,
             manager=launch.manager,
             duration_seconds=float(duration_clamped),
             clock=clock,
             reconnect_controller=reconnect_controller,
+            chart_bar_builder=chart_bar_builder,
         )
-        report.market_data_received = received
-        report.received_contracts_count = distinct_count
+        report.market_data_received = receive_observation.market_data_received
+        report.received_contracts_count = receive_observation.received_contracts_count
+        report.chart_data_received = receive_observation.chart_data_received
+        report.chart_received_contracts_count = receive_observation.chart_received_contracts_count
+        report.chart_completed_five_minute_contracts_count = (
+            receive_observation.chart_completed_five_minute_contracts_count
+        )
+        report.per_contract_status = _per_contract_runtime_status(receive_observation)
         report.checks.append(
             RehearsalCheck(
                 "market_data_received",
-                "ok" if received else "info",
+                "ok" if receive_observation.market_data_received else "info",
+            )
+        )
+        report.checks.append(
+            RehearsalCheck(
+                "chart_data_received",
+                "ok" if receive_observation.chart_data_received else "info",
             )
         )
 
         post_receive_snapshot = launch.manager.snapshot()
-        if received:
+        if receive_observation.market_data_received:
             report.market_data_diagnostic = "levelone_futures_updates_received"
         elif (
             isinstance(post_receive_snapshot, StreamManagerSnapshot)
@@ -1196,6 +1296,14 @@ def run_with_dependencies(
             report.market_data_diagnostic = "stream_blocked_after_subscription"
         else:
             report.market_data_diagnostic = "no_levelone_futures_updates_received_during_bounded_window"
+        if receive_observation.chart_completed_five_minute_contracts_count == len(final_target_contracts()):
+            report.chart_data_diagnostic = "chart_futures_completed_five_minute_bars_received"
+        elif receive_observation.chart_data_received:
+            report.chart_data_diagnostic = "chart_futures_building_or_partial_bars_received"
+        elif receive_observation.chart_blocking_reasons:
+            report.chart_data_diagnostic = "chart_futures_malformed_or_blocked"
+        else:
+            report.chart_data_diagnostic = "no_chart_futures_updates_received_during_bounded_window"
         if isinstance(post_receive_snapshot, StreamManagerSnapshot) and post_receive_snapshot.state in {
             "blocked",
             "disconnected",
