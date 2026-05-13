@@ -1,7 +1,57 @@
-import marimo
+try:
+    import marimo
+except ModuleNotFoundError:
+    class _MissingMarimoApp:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def cell(self, func=None, **kwargs):
+            if func is not None:
+                return func
+
+            def decorator(inner):
+                return inner
+
+            return decorator
+
+        def run(self):
+            raise RuntimeError("marimo is required to run operator_console_app.")
+
+    class _MissingMarimoModule:
+        App = _MissingMarimoApp
+
+    marimo = _MissingMarimoModule()
 
 __generated_with = "0.23.5"
 app = marimo.App(width="full")
+
+
+def optional_thesis_reference_from_form(submitted, thesis_cls):
+    def _blank_string_to_none(value):
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text if text else None
+
+    result_id = _blank_string_to_none(submitted.get("pipeline_result_id"))
+    trigger_name = _blank_string_to_none(submitted.get("trigger_name"))
+    trigger_state = _blank_string_to_none(submitted.get("trigger_state"))
+    supplied = (result_id, trigger_name, trigger_state)
+    if not any(supplied):
+        return None, None
+    if not all(supplied):
+        return None, "Thesis reference requires result id, trigger name, and trigger state."
+    try:
+        return (
+            thesis_cls(
+                pipeline_result_id=result_id,
+                trigger_name=trigger_name,
+                trigger_state=trigger_state,
+            ),
+            None,
+        )
+    except ValueError as exc:
+        return None, str(exc)
 
 
 @app.cell
@@ -658,19 +708,6 @@ def _(
         s = str(value).strip()
         return s if s else None
 
-    def _optional_thesis_reference(submitted, thesis_cls):
-        """Build a ThesisReference if any thesis fields are provided."""
-        result_id = _blank_string_to_none(submitted.get("pipeline_result_id"))
-        trigger_name = _blank_string_to_none(submitted.get("trigger_name"))
-        trigger_state = _blank_string_to_none(submitted.get("trigger_state"))
-        if result_id or trigger_name or trigger_state:
-            return thesis_cls(
-                pipeline_result_id=result_id or "",
-                trigger_name=trigger_name or "",
-                trigger_state=trigger_state or "",
-            )
-        return None
-
     current_lifecycle = lifecycle
     switch_target = profile_selector.value
 
@@ -720,6 +757,8 @@ def _(
 
     operator_notes_status = "ready"
     operator_notes_message = "Session journal entries are operator annotations only."
+    active_trade_status = "ready"
+    active_trade_message = "Operator-recorded annotations only; P&L is a display calculation and execution remains manual."
     _premarket_manual_sections = get_premarket_manual_sections() or {}
     if not isinstance(_premarket_manual_sections, _Mapping):
         _premarket_manual_sections = {}
@@ -753,17 +792,26 @@ def _(
     if isinstance(submitted_trade, _Mapping):
         entry_price = _positive_float_or_none(submitted_trade.get("entry_price"))
         if entry_price is not None:
-            thesis_reference = _optional_thesis_reference(submitted_trade, ThesisReference)
-            active_trade_registry.add(
-                contract=str(submitted_trade.get("contract") or "ES"),
-                direction=str(submitted_trade.get("direction") or "long"),
-                entry_price=entry_price,
-                stop_loss=_positive_float_or_none(submitted_trade.get("stop_loss")),
-                target=_positive_float_or_none(submitted_trade.get("target")),
-                thesis_reference=thesis_reference,
-                operator_notes=str(submitted_trade.get("operator_notes") or ""),
-            )
-            set_active_trade_registry(active_trade_registry)
+            thesis_reference, thesis_error = optional_thesis_reference_from_form(submitted_trade, ThesisReference)
+            if thesis_error is not None:
+                active_trade_status = "invalid"
+                active_trade_message = thesis_error
+            else:
+                try:
+                    active_trade_registry.add(
+                        contract=str(submitted_trade.get("contract") or "ES"),
+                        direction=str(submitted_trade.get("direction") or "long"),
+                        entry_price=entry_price,
+                        stop_loss=_positive_float_or_none(submitted_trade.get("stop_loss")),
+                        target=_positive_float_or_none(submitted_trade.get("target")),
+                        thesis_reference=thesis_reference,
+                        operator_notes=str(submitted_trade.get("operator_notes") or ""),
+                    )
+                except ValueError as exc:
+                    active_trade_status = "invalid"
+                    active_trade_message = str(exc)
+                else:
+                    set_active_trade_registry(active_trade_registry)
 
     selected_active_trade_id = active_trade_action_selector.value
     if (
@@ -804,9 +852,9 @@ def _(
         for item in active_trade_vms_from_registry(active_trade_registry, cache_snapshot)
     ]
     shell["active_trades"] = {
-        "status": "ready",
+        "status": active_trade_status,
         "rows": active_trade_rows,
-        "message": "Operator-recorded annotations only; P&L is a display calculation and execution remains manual.",
+        "message": active_trade_message,
     }
     anchor_payload = anchor_inputs_payload_for_pipeline(anchor_input_registry)
     shell["anchor_inputs"] = {
@@ -876,8 +924,6 @@ def _(
         workflow["operator_notes_status"] = "available" if note_rows else "empty"
     mode = str(controls_startup_panel.get("runtime_mode", "<unresolved>"))
     profile_id = selected_profile_id
-    contract = str(controls_startup_panel.get("contract", "<unresolved>"))
-    readiness_state = str(controls_startup_panel.get("readiness_state", "<unresolved>"))
     running_as = str(controls_startup_panel.get("running_as", "<unresolved>"))
     return mode, profile_id, running_as, shell
 

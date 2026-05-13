@@ -2,9 +2,17 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from html import escape as _html_escape
 from typing import Any
 
-import marimo as mo
+try:
+    import marimo as mo
+except ModuleNotFoundError:
+    class _MissingMarimo:
+        def __getattr__(self, name: str) -> object:
+            raise RuntimeError("marimo is required to render Marimo UI surfaces.")
+
+    mo = _MissingMarimo()
 
 from ..session_evidence import NO_RECENT_SESSION_EVIDENCE
 from ..watchman_gate import build_watchman_gate_markdown, watchman_gate_requires_stop
@@ -22,40 +30,220 @@ FROZEN_SURFACE_KEYS: tuple[str, ...] = (
     "run_history",
 )
 
+# ---------------------------------------------------------------------------
+# Dark-theme CSS design system — injected once via _ntb_css_style_element()
+# ---------------------------------------------------------------------------
+
+_NTB_CSS = """
+.marimo-cell-output:has(.ntb-shell),
+.marimo-cell-output:has(.ntb-card),
+.marimo-cell-output:has(.ntb-section),
+.marimo-cell-output:has(.ntb-severity),
+.marimo-cell-output:has(.ntb-ribbon) {
+  background:#0b1220!important; color:#e2e8f0;
+}
+.ntb-shell{padding:0 4px;background:#0b1220;color:#e2e8f0}
+.ntb-header{display:flex;align-items:center;gap:14px;padding:12px 16px;
+  border:1px solid #334155;border-radius:10px;background:#0f172a}
+.ntb-header__title{font-size:1.05em;font-weight:700;letter-spacing:-0.01em;color:#e2e8f0}
+.ntb-header__subtitle{color:#94a3b8;font-size:0.78em;margin-top:2px}
+.ntb-header__pills{margin-left:auto;display:flex;gap:8px;
+  align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.ntb-pill{display:inline-flex;align-items:center;gap:6px;
+  background:#1e293b;color:#e2e8f0;border:1px solid #334155;
+  padding:4px 10px;border-radius:6px;font-size:0.8em;font-weight:500}
+.ntb-pill__label{color:#94a3b8;font-size:0.72em;text-transform:uppercase;
+  letter-spacing:0.06em;font-weight:600}
+.ntb-pill__value{font-weight:700;font-variant-numeric:tabular-nums}
+.ntb-section{margin:18px 0 6px;padding:0 4px;
+  display:flex;align-items:center;gap:10px}
+.ntb-section__title{font-size:0.78em;font-weight:700;letter-spacing:0.1em;
+  text-transform:uppercase;color:#cbd5e1;white-space:nowrap}
+.ntb-section__rule{flex:1;height:1px;background:#334155}
+.ntb-card{background:#1e293b;color:#e2e8f0;
+  border:1px solid #334155;border-radius:10px;padding:14px;margin:6px 0}
+.ntb-grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.ntb-grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.ntb-grid-4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.ntb-stat{background:#1e293b;border-radius:8px;padding:10px;
+  border:1px solid #334155}
+.ntb-stat__label{color:#94a3b8;font-size:0.72em;text-transform:uppercase;
+  letter-spacing:0.06em;font-weight:600}
+.ntb-stat__value{margin-top:4px;color:#e2e8f0;font-size:0.95em;
+  font-variant-numeric:tabular-nums}
+.ntb-severity{display:flex;align-items:center;gap:14px;
+  padding:14px 16px;border-radius:10px;border:1px solid;margin-bottom:10px}
+.ntb-severity__badge{font-weight:800;font-size:0.78em;letter-spacing:0.1em;
+  text-transform:uppercase;padding:4px 10px;border-radius:6px;color:#0b1220}
+.ntb-severity__title{font-size:1em;font-weight:700;color:#e2e8f0}
+.ntb-severity__subtitle{color:#94a3b8;font-size:0.85em;margin-top:2px}
+.ntb-severity--ready{border-color:#1f5132;background:rgba(34,197,94,0.07)}
+.ntb-severity--caution{border-color:#7a5b15;background:rgba(250,204,21,0.07)}
+.ntb-severity--blocked{border-color:#7f1d1d;background:rgba(239,68,68,0.08)}
+.ntb-chip{display:inline-flex;align-items:center;padding:3px 9px;
+  border-radius:14px;font-size:0.78em;font-weight:600;border:1px solid;
+  margin:2px 4px 2px 0;font-variant-numeric:tabular-nums}
+.ntb-chip--ready{color:#86efac;border-color:#1f5132;background:rgba(34,197,94,0.07)}
+.ntb-chip--blocked{color:#fca5a5;border-color:#7f1d1d;background:rgba(239,68,68,0.07)}
+.ntb-chip--caution{color:#fde68a;border-color:#7a5b15;background:rgba(250,204,21,0.07)}
+.ntb-chip--info{color:#93c5fd;border-color:#1e3a5f;background:rgba(59,130,246,0.07)}
+.ntb-ribbon{padding:6px 12px;border-radius:6px;font-size:0.78em;
+  color:#94a3b8;background:#0b1220;border:1px dashed #334155;margin:8px 0 14px}
+.ntb-callout{background:rgba(99,102,241,0.07);border-left:3px solid #818cf8;
+  border-radius:8px;padding:14px;margin-bottom:12px}
+.ntb-list{margin:6px 0 0;padding:0;list-style:none}
+.ntb-list li{padding:5px 0;color:#cbd5e1;border-top:1px dashed #334155}
+.ntb-list li:first-child{border-top:none}
+.ntb-muted{color:#94a3b8;font-size:0.85em}
+.ntb-table{width:100%;border-collapse:collapse;font-size:0.84em}
+.ntb-table th{text-align:left;color:#94a3b8;font-weight:600;padding:6px 8px;
+  border-bottom:1px solid #334155}
+.ntb-table td{padding:6px 8px;border-top:1px solid #1e293b;color:#cbd5e1}
+"""
+
+
+def _ntb_css_style_element() -> Any:
+    """Return a marimo Html element that injects the NTB dark-theme CSS."""
+    return mo.Html(f"<style>{_NTB_CSS}</style>")
+
+
+# ---------------------------------------------------------------------------
+# HTML builder helpers
+# ---------------------------------------------------------------------------
+
+def _h(value: object) -> str:
+    """HTML-escape a value for safe embedding."""
+    return _html_escape(str(value)) if value is not None else ""
+
+
+def _ntb_pill(label: str, value: str, *, color: str | None = None) -> str:
+    """Render a header pill badge."""
+    style = f' style="color:{color}"' if color else ""
+    return (
+        '<span class="ntb-pill">'
+        f'<span class="ntb-pill__label">{_h(label)}</span>'
+        f'<span class="ntb-pill__value"{style}>{_h(value)}</span>'
+        "</span>"
+    )
+
+
+def _ntb_chip(value: str, kind: str = "info") -> str:
+    """Render a colored inline chip badge."""
+    return f'<span class="ntb-chip ntb-chip--{kind}">{_h(value)}</span>'
+
+
+def _ntb_chip_for_status(value: str) -> str:
+    """Auto-select chip color based on common status values."""
+    v = str(value).lower()
+    if v in ("true", "ready", "pass", "enabled", "available", "fresh",
+             "valid", "healthy", "final_supported", "inactive", "clear"):
+        return _ntb_chip(value, "ready")
+    if v in ("false", "blocked", "disabled", "fail", "not_ready",
+             "unavailable", "stale", "error", "not_queried"):
+        return _ntb_chip(value, "blocked")
+    if v in ("touched", "caution", "degraded", "warn", "warning"):
+        return _ntb_chip(value, "caution")
+    return _ntb_chip(value, "info")
+
+
+def _ntb_severity_banner(
+    status: str, title: str, subtitle: str, *, tier: str | None = None,
+) -> str:
+    """Render a colored severity banner."""
+    if tier is None:
+        sl = status.lower()
+        if sl in ("ready", "pass", "enabled", "healthy", "ok"):
+            tier = "ready"
+        elif sl in ("blocked", "disabled", "fail", "error", "not_ready"):
+            tier = "blocked"
+        else:
+            tier = "caution"
+    badge_colors = {"ready": "#22c55e", "caution": "#facc15", "blocked": "#ef4444"}
+    badge_bg = badge_colors.get(tier, "#94a3b8")
+    return (
+        f'<div class="ntb-severity ntb-severity--{tier}">'
+        f'<span class="ntb-severity__badge" style="background:{badge_bg}">'
+        f"{_h(status)}</span>"
+        "<div>"
+        f'<div class="ntb-severity__title">{_h(title)}</div>'
+        f'<div class="ntb-severity__subtitle">{_h(subtitle)}</div>'
+        "</div></div>"
+    )
+
+
+def _ntb_stat_card(label: str, value: str, *, chip: bool = False, note: str | None = None) -> str:
+    """Render a single stat card for use inside a grid."""
+    if chip:
+        val_html = _ntb_chip_for_status(value)
+    else:
+        val_html = _h(value)
+    note_html = f'<div class="ntb-muted" style="margin-top:6px">{_h(note)}</div>' if note else ""
+    return (
+        '<div class="ntb-stat">'
+        f'<div class="ntb-stat__label">{_h(label)}</div>'
+        f'<div class="ntb-stat__value">{val_html}</div>'
+        f"{note_html}"
+        "</div>"
+    )
+
+
+def _ntb_section_divider(title: str) -> str:
+    """Render an uppercase section title with a horizontal rule."""
+    return (
+        '<div class="ntb-section">'
+        f'<div class="ntb-section__title">{_h(title)}</div>'
+        '<div class="ntb-section__rule"></div>'
+        "</div>"
+    )
+
+
+def _ntb_ribbon(text: str) -> str:
+    """Render a dashed-border boundary disclaimer."""
+    return f'<div class="ntb-ribbon">{_h(text)}</div>'
+
+
+def _ntb_list_html(items: list[str]) -> str:
+    """Render a styled list."""
+    if not items:
+        return '<span class="ntb-muted">&lt;none&gt;</span>'
+    li = "".join(f"<li>{_h(item)}</li>" for item in items)
+    return f'<ul class="ntb-list">{li}</ul>'
+
+
+# ---------------------------------------------------------------------------
+# Style dicts — updated for dark theme
+# ---------------------------------------------------------------------------
+
 _CONSOLE_STACK_STYLE = {
     "gap": "14px",
     "padding": "12px",
-    "background": "var(--md-sys-color-surface, #f8fafc)",
+    "background": "#0b1220",
 }
 
-_HEADER_STYLE = {
-    "border": "1px solid var(--md-sys-color-outline-variant, #d5dbe3)",
-    "borderRadius": "8px",
-    "padding": "14px 16px",
-    "background": "var(--md-sys-color-surface-container-low, #ffffff)",
-    "boxShadow": "0 1px 2px rgba(15, 23, 42, 0.04)",
-}
+_HEADER_STYLE: dict[str, str] = {}  # header now uses HTML classes
 
 _CARD_STYLE = {
-    "border": "1px solid var(--md-sys-color-outline-variant, #d5dbe3)",
-    "borderRadius": "8px",
-    "padding": "12px 14px",
-    "background": "var(--md-sys-color-surface-container-lowest, #ffffff)",
-    "boxShadow": "0 1px 2px rgba(15, 23, 42, 0.035)",
+    "border": "1px solid #334155",
+    "borderRadius": "10px",
+    "padding": "14px",
+    "background": "#1e293b",
+    "color": "#e2e8f0",
 }
 
 _CONTROL_CARD_STYLE = {
-    "border": "1px solid var(--md-sys-color-outline-variant, #d5dbe3)",
-    "borderRadius": "8px",
+    "border": "1px solid #334155",
+    "borderRadius": "10px",
     "padding": "12px",
-    "background": "var(--md-sys-color-surface-container-low, #f8fafc)",
+    "background": "#1e293b",
+    "color": "#e2e8f0",
 }
 
 _DEBUG_CARD_STYLE = {
-    "border": "1px dashed var(--md-sys-color-outline-variant, #d5dbe3)",
+    "border": "1px dashed #334155",
     "borderRadius": "8px",
     "padding": "10px 12px",
-    "background": "var(--md-sys-color-surface-container-lowest, #ffffff)",
+    "background": "#0f172a",
+    "color": "#94a3b8",
     "opacity": "0.86",
 }
 
@@ -114,6 +302,7 @@ def render_phase1_console(
         operator_ready = startup.get("operator_ready") is True
 
     elements: list[Any] = [
+        _ntb_css_style_element(),
         _render_console_header(shell, heading=heading, mode_summary=mode_summary),
     ]
     elements.append(render_premarket_brief_panel(shell, control_panel=premarket_brief_control_panel))
@@ -134,34 +323,42 @@ def render_phase1_console(
         elements.append(render_r14_cockpit_shell(cockpit))
 
     if isinstance(startup, Mapping):
-        elements.append(_render_markdown_card(build_startup_status_markdown(startup)))
-        elements.append(_render_markdown_card(build_profile_operations_markdown(startup)))
+        elements.append(_render_startup_status_html(startup))
         if profile_control_panel is not None:
             elements.append(_render_control_card(profile_control_panel))
+        elements.append(
+            mo.accordion({"Supported Profile Operations": _render_markdown_card(build_profile_operations_markdown(startup))})
+        )
 
     runtime = shell.get("runtime")
     if isinstance(runtime, Mapping):
-        elements.append(_render_markdown_card(build_runtime_identity_markdown(runtime)))
+        elements.append(
+            mo.accordion({"Runtime Identity": _render_markdown_card(build_runtime_identity_markdown(runtime))})
+        )
 
     lifecycle = shell.get("lifecycle")
     if isinstance(lifecycle, Mapping):
-        elements.append(_render_markdown_card(build_session_lifecycle_markdown(lifecycle)))
+        elements.append(_render_session_lifecycle_html(lifecycle))
         if lifecycle_control_panel is not None:
             elements.append(_render_control_card(lifecycle_control_panel))
 
     evidence = shell.get("evidence")
     if isinstance(evidence, Mapping):
-        elements.append(_render_markdown_card(build_session_evidence_markdown(evidence)))
+        elements.append(_render_session_evidence_html(evidence))
         if evidence_control_panel is not None:
             elements.append(_render_control_card(evidence_control_panel))
 
     workflow = shell.get("workflow")
     if isinstance(workflow, Mapping):
-        elements.append(_render_markdown_card(build_session_workflow_markdown(workflow)))
+        elements.append(_render_session_workflow_html(workflow))
 
     if operator_ready:
         for warning in plan["warnings"]:
-            elements.append(_render_markdown_card(f"**Warning:** {warning}"))
+            elements.append(mo.Html(
+                '<div class="ntb-severity ntb-severity--caution" style="margin:6px 0">'
+                '<span class="ntb-severity__badge" style="background:#facc15">WARNING</span>'
+                f'<div><div class="ntb-severity__title">{_h(warning)}</div></div></div>'
+            ))
 
         for section in plan["sections"]:
             key = _as_str(section.get("key"), default="unknown")
@@ -171,17 +368,14 @@ def render_phase1_console(
             panel = panel_raw if isinstance(panel_raw, Mapping) else {"warning": "unavailable"}
             elements.append(_render_surface_section(key, panel, query_action_control=query_action_control))
     else:
-        elements.append(
-            _render_markdown_card(
-                "\n".join(
-                    [
-                        "## Operator Surfaces",
-                        "- Blocked until startup preflight passes and runtime assembly completes.",
-                        "- Fix the reported startup diagnostics, then relaunch the console.",
-                    ]
-                )
+        elements.append(mo.Html(
+            _ntb_severity_banner(
+                "BLOCKED", "Operator Surfaces Blocked",
+                "Blocked until startup preflight passes and runtime assembly completes. "
+                "Fix the reported startup diagnostics, then relaunch the console.",
+                tier="blocked",
             )
-        )
+        ))
 
     elements.append(_render_debug_secondary(_as_str(plan["debug"].get("shell_json"), default="{}")))
     return mo.vstack(elements, gap=0.75).style(_CONSOLE_STACK_STYLE)
@@ -204,6 +398,7 @@ def render_watchman_gate_stop_output(
         return None
 
     elements: list[Any] = [
+        _ntb_css_style_element(),
         _render_console_header(shell, heading=heading, mode_summary=mode_summary),
     ]
     elements.append(render_premarket_brief_panel(shell, control_panel=premarket_brief_control_panel))
@@ -253,6 +448,276 @@ def render_watchman_gate_stop_output(
 
     elements.append(_render_debug_secondary(json.dumps(dict(shell), indent=2)))
     return mo.vstack(elements, gap=0.75).style(_CONSOLE_STACK_STYLE)
+
+# ---------------------------------------------------------------------------
+# HTML section builders (Phase 2 conversions)
+# ---------------------------------------------------------------------------
+
+
+def _render_startup_status_html(startup: Mapping[str, object]) -> Any:
+    """Render Startup Status as an HTML card with stat grid and chips."""
+    readiness = _as_str(startup.get("readiness_state"), default="<unavailable>")
+    operator_ready = startup.get("operator_ready") is True
+    tier = "ready" if operator_ready else "blocked"
+    title = "Startup preflight passed" if operator_ready else "Startup preflight incomplete"
+    subtitle = _as_str(startup.get("status_summary"), default="")
+
+    stats = '<div class="ntb-grid-3">'
+    stats += _ntb_stat_card("App Identity", _as_str(startup.get("app_name"), default="NTB Marimo Console"))
+    stats += _ntb_stat_card("Selected Profile", _as_str(startup.get("selected_profile_id"), default="<unresolved>"))
+    stats += _ntb_stat_card("Contract", _as_str(startup.get("contract"), default="<unresolved>"))
+    stats += _ntb_stat_card("Runtime Mode", _as_str(startup.get("runtime_mode_label"), default="<unavailable>"))
+    stats += _ntb_stat_card("Running As", _as_str(startup.get("running_as"), default="<unavailable>"))
+    stats += _ntb_stat_card("Session Date", _as_str(startup.get("session_date"), default="<unresolved>"))
+    stats += _ntb_stat_card("Preflight", _as_str(startup.get("preflight_status"), default="<unavailable>"), chip=True)
+    stats += _ntb_stat_card("Readiness", readiness, chip=True)
+    stats += _ntb_stat_card("Operator Ready", _as_str(startup.get("operator_ready"), default="False"), chip=True)
+    stats += _ntb_stat_card("Session State", _as_str(startup.get("current_session_state"), default="NOT_ASSEMBLED"), chip=True)
+    stats += "</div>"
+
+    readiness_history = startup.get("readiness_history")
+    history_text = "<unavailable>"
+    if isinstance(readiness_history, list):
+        history_text = " → ".join(_as_str(item) for item in readiness_history) if readiness_history else "<none>"
+
+    detail_html = (
+        '<div class="ntb-muted" style="margin-top:10px">'
+        f"<strong>Startup Path:</strong> {_h(history_text)}"
+        "</div>"
+        '<div class="ntb-muted" style="margin-top:4px">'
+        f"<strong>Next Action:</strong> {_h(_as_str(startup.get('next_action'), default='<unavailable>'))}"
+        "</div>"
+    )
+
+    blocking_html = ""
+    blocking_checks = startup.get("blocking_checks")
+    if isinstance(blocking_checks, list) and blocking_checks:
+        items = []
+        for check in blocking_checks:
+            if not isinstance(check, Mapping):
+                continue
+            cat = _as_str(check.get("category"), default="unknown")
+            summary = _as_str(check.get("summary"), default="<unavailable>")
+            remedy = _as_str(check.get("remedy"), default="<unavailable>")
+            items.append(f"[{cat}] {summary} — Remedy: {remedy}")
+        if items:
+            blocking_html = (
+                '<div style="margin-top:10px">'
+                '<div class="ntb-stat__label" style="color:#ef4444">Blocking Diagnostics</div>'
+                + _ntb_list_html(items)
+                + "</div>"
+            )
+
+    full_html = (
+        _ntb_section_divider("Startup Status")
+        + '<div class="ntb-card">'
+        + _ntb_severity_banner(_as_str(startup.get("preflight_status"), default="INCOMPLETE"), title, subtitle, tier=tier)
+        + stats
+        + detail_html
+        + blocking_html
+        + "</div>"
+    )
+    return mo.Html(full_html)
+
+
+def _render_session_lifecycle_html(lifecycle: Mapping[str, object]) -> Any:
+    """Render Session Lifecycle as an HTML card."""
+    current_state = _as_str(lifecycle.get("current_lifecycle_state"), default="<unavailable>")
+    session_state = _as_str(lifecycle.get("current_session_state"), default="<unavailable>")
+    last_action = _as_str(lifecycle.get("last_action"), default="<unavailable>")
+
+    stats = '<div class="ntb-grid-3">'
+    stats += _ntb_stat_card("Lifecycle State", current_state, chip=True)
+    stats += _ntb_stat_card("Session State", session_state, chip=True)
+    stats += _ntb_stat_card("Last Action", last_action)
+    stats += _ntb_stat_card("Reload Result", _as_str(lifecycle.get("reload_result"), default="<unavailable>"), chip=True)
+    stats += _ntb_stat_card("Operator Ready", _as_str(lifecycle.get("operator_ready"), default="False"), chip=True)
+    stats += _ntb_stat_card("Query Action", _as_str(lifecycle.get("query_action_status"), default="<unavailable>"), chip=True)
+    stats += _ntb_stat_card("Reset Available", _as_str(lifecycle.get("reset_available"), default="False"), chip=True)
+    stats += _ntb_stat_card("Reload Available", _as_str(lifecycle.get("reload_available"), default="False"), chip=True)
+    stats += _ntb_stat_card("Profile Switch", _as_str(lifecycle.get("profile_switch_available"), default="False"), chip=True)
+    stats += "</div>"
+
+    detail_html = (
+        '<div class="ntb-muted" style="margin-top:10px">'
+        f"<strong>Live Runtime Mode:</strong> {_h(_as_str(lifecycle.get('operator_live_runtime_mode'), default='SAFE_NON_LIVE'))}"
+        "</div>"
+        '<div class="ntb-muted" style="margin-top:4px">'
+        f"<strong>Status Summary:</strong> {_h(_as_str(lifecycle.get('status_summary'), default='<unavailable>'))}"
+        "</div>"
+        '<div class="ntb-muted" style="margin-top:4px">'
+        f"<strong>Next Action:</strong> {_h(_as_str(lifecycle.get('next_action'), default='<unavailable>'))}"
+        "</div>"
+    )
+
+    full_html = (
+        _ntb_section_divider("Session Lifecycle")
+        + '<div class="ntb-card">'
+        + stats
+        + detail_html
+        + "</div>"
+    )
+    return mo.Html(full_html)
+
+
+def _render_session_workflow_html(workflow: Mapping[str, object]) -> Any:
+    """Render Session Workflow as an HTML card."""
+    current = _as_str(workflow.get("current_state"), default="<unavailable>")
+    watchman = _as_str(workflow.get("watchman_gate_status"), default="<unavailable>")
+    live_query = _as_str(workflow.get("live_query_status"), default="<unavailable>")
+
+    stats = '<div class="ntb-grid-3">'
+    stats += _ntb_stat_card("Current State", current, chip=True)
+    stats += _ntb_stat_card("Watchman Gate", watchman, chip=True)
+    stats += _ntb_stat_card("Live Query", live_query, chip=True)
+    stats += _ntb_stat_card("Query Action", _as_str(workflow.get("query_action_status"), default="<unavailable>"), chip=True)
+    stats += _ntb_stat_card("Query Available", _as_str(workflow.get("query_action_available"), default="False"), chip=True)
+    stats += _ntb_stat_card("Decision Review", _as_str(workflow.get("decision_review_ready"), default="False"), chip=True)
+    stats += _ntb_stat_card("Audit/Replay", _as_str(workflow.get("audit_replay_ready"), default="False"), chip=True)
+    stats += "</div>"
+
+    history = workflow.get("state_history")
+    history_text = "<unavailable>"
+    if isinstance(history, list):
+        history_text = " → ".join(_as_str(item) for item in history) if history else "<none>"
+
+    detail_html = (
+        '<div class="ntb-muted" style="margin-top:10px">'
+        f"<strong>Workflow History:</strong> {_h(history_text)}"
+        "</div>"
+        '<div class="ntb-muted" style="margin-top:4px">'
+        f"<strong>Status Summary:</strong> {_h(_as_str(workflow.get('status_summary'), default='<unavailable>'))}"
+        "</div>"
+        '<div class="ntb-muted" style="margin-top:4px">'
+        f"<strong>Next Action:</strong> {_h(_as_str(workflow.get('next_action'), default='<unavailable>'))}"
+        "</div>"
+    )
+
+    blocked_html = ""
+    blocked_reasons = workflow.get("blocked_reasons")
+    if isinstance(blocked_reasons, list) and blocked_reasons:
+        items = [_as_str(r) for r in blocked_reasons]
+        blocked_html = (
+            '<div style="margin-top:10px">'
+            '<div class="ntb-stat__label" style="color:#ef4444">Blocked Reasons</div>'
+            + _ntb_list_html(items)
+            + "</div>"
+        )
+
+    error_html = ""
+    error_message = workflow.get("error_message")
+    if error_message is not None:
+        error_html = (
+            '<div class="ntb-severity ntb-severity--blocked" style="margin-top:10px">'
+            '<span class="ntb-severity__badge" style="background:#ef4444">ERROR</span>'
+            f'<div><div class="ntb-severity__title">{_h(_as_str(error_message))}</div></div></div>'
+        )
+
+    full_html = (
+        _ntb_section_divider("Session Workflow")
+        + '<div class="ntb-card">'
+        + stats
+        + detail_html
+        + blocked_html
+        + error_html
+        + "</div>"
+    )
+    return mo.Html(full_html)
+
+
+def _render_session_evidence_html(evidence: Mapping[str, object]) -> Any:
+    """Render Session Evidence as an HTML card."""
+    persistence_health = _as_str(evidence.get("persistence_health_status"), default="<unavailable>")
+    tier = "ready" if persistence_health.lower() in ("healthy", "ok") else "caution"
+
+    stats = '<div class="ntb-grid-3">'
+    stats += _ntb_stat_card("Persistence Health", persistence_health, chip=True)
+    stats += _ntb_stat_card("Current Session Events", _as_str(evidence.get("current_session_record_count"), default="0"))
+    stats += _ntb_stat_card("Restored Prior-Run", _as_str(evidence.get("restored_record_count"), default="0"))
+    stats += _ntb_stat_card("Active Profile", _as_str(evidence.get("active_profile_id"), default="<unavailable>"))
+    stats += _ntb_stat_card("Restore Status", _as_str(evidence.get("restore_status"), default="<unavailable>"), chip=True)
+    stats += _ntb_stat_card("Last Persistence", _as_str(evidence.get("last_persistence_status"), default="<unavailable>"), chip=True)
+    stats += "</div>"
+
+    recent_profiles = evidence.get("recent_profiles")
+    recent_profiles_text = "<none>"
+    if isinstance(recent_profiles, list):
+        recent_profiles_text = ", ".join(_as_str(item) for item in recent_profiles) if recent_profiles else "<none>"
+
+    detail_html = (
+        '<div class="ntb-muted" style="margin-top:10px">'
+        f"<strong>Recent Profiles:</strong> {_h(recent_profiles_text)}"
+        "</div>"
+        '<div class="ntb-muted" style="margin-top:4px">'
+        f"<strong>Status Summary:</strong> {_h(_as_str(evidence.get('status_summary'), default='<unavailable>'))}"
+        "</div>"
+    )
+
+    # Last known outcomes table
+    outcomes_html = ""
+    last_known_outcomes = evidence.get("last_known_outcomes")
+    if isinstance(last_known_outcomes, list) and last_known_outcomes:
+        rows = ""
+        for outcome in last_known_outcomes:
+            if not isinstance(outcome, Mapping):
+                continue
+            profile = _h(_as_str(outcome.get("profile_id")))
+            if outcome.get("has_recent_evidence") is not True:
+                summary = _h(_as_str(outcome.get("status_summary"), default=NO_RECENT_SESSION_EVIDENCE))
+                rows += f'<tr><td>{profile}</td><td colspan="3">{summary}</td></tr>'
+            else:
+                rows += (
+                    f'<tr><td>{profile}</td>'
+                    f'<td>#{_h(_as_str(outcome.get("event_index")))}</td>'
+                    f'<td>{_h(_as_str(outcome.get("source_label"), default=outcome.get("source_scope")))}</td>'
+                    f'<td>{_ntb_chip_for_status(_as_str(outcome.get("last_action"), default="<unavailable>"))}</td>'
+                    f'</tr>'
+                )
+        if rows:
+            outcomes_html = (
+                '<div style="margin-top:12px">'
+                '<div class="ntb-stat__label" style="margin-bottom:6px">Last Known Outcome By Profile</div>'
+                '<div style="overflow-x:auto">'
+                '<table class="ntb-table"><thead><tr>'
+                '<th>Profile</th><th>Event</th><th>Source</th><th>Action</th>'
+                '</tr></thead><tbody>'
+                + rows
+                + '</tbody></table></div></div>'
+            )
+
+    # Recent activity
+    activity_html = ""
+    recent_activity = evidence.get("recent_activity")
+    if isinstance(recent_activity, list) and recent_activity:
+        items = []
+        for item in recent_activity:
+            if not isinstance(item, Mapping):
+                continue
+            idx = _as_str(item.get("event_index"))
+            source = _as_str(item.get("source_label"), default=item.get("source_scope"))
+            ts = _as_str(item.get("recorded_at_utc"))
+            profile = _as_str(item.get("active_profile_id"))
+            summary = _as_str(item.get("summary"), default="<unavailable>")
+            items.append(f"#{idx} [{source}] at {ts} {profile}: {summary}")
+        if items:
+            activity_html = (
+                '<div style="margin-top:10px">'
+                '<div class="ntb-stat__label" style="margin-bottom:4px">Recent Activity</div>'
+                + _ntb_list_html(items)
+                + "</div>"
+            )
+
+    full_html = (
+        _ntb_section_divider("Recent Session Evidence")
+        + '<div class="ntb-card">'
+        + _ntb_severity_banner(persistence_health, "Evidence Persistence", _as_str(evidence.get("restore_status_summary"), default=""), tier=tier)
+        + stats
+        + detail_html
+        + outcomes_html
+        + activity_html
+        + "</div>"
+    )
+    return mo.Html(full_html)
 
 
 def build_startup_status_markdown(startup: Mapping[str, object]) -> str:
@@ -758,6 +1223,8 @@ def build_audit_timeline_markdown(panel: Mapping[str, object]) -> str:
     filters = panel.get("timeline_filters")
     event_filters = "<none>"
     contract_filters = "<none>"
+    selected_event_types: tuple[str, ...] = ()
+    selected_contracts: tuple[str, ...] = ()
     if isinstance(filters, Mapping):
         event_types = filters.get("event_types")
         contracts = filters.get("contracts")
@@ -765,6 +1232,8 @@ def build_audit_timeline_markdown(panel: Mapping[str, object]) -> str:
             event_filters = ", ".join(f"`{_table_value(item)}`" for item in event_types)
         if isinstance(contracts, list | tuple) and contracts:
             contract_filters = ", ".join(f"`{_table_value(item)}`" for item in contracts)
+        selected_event_types = _selected_filter_values(filters.get("selected_event_types"))
+        selected_contracts = _selected_filter_values(filters.get("selected_contracts"))
 
     lines = [
         "## Audit / Replay Timeline",
@@ -772,6 +1241,8 @@ def build_audit_timeline_markdown(panel: Mapping[str, object]) -> str:
         "- Boundary: read-only audit context; preserved engine remains the sole decision authority and execution remains manual.",
         f"- Event Type Filters: {event_filters}",
         f"- Contract Filters: {contract_filters}",
+        f"- Active Event Type Filters: {_filter_value_text(selected_event_types)}",
+        f"- Active Contract Filters: {_filter_value_text(selected_contracts)}",
         "",
         "| Time | Type | Contract | Status | Summary | Detail |",
         "| --- | --- | --- | --- | --- | --- |",
@@ -782,6 +1253,12 @@ def build_audit_timeline_markdown(panel: Mapping[str, object]) -> str:
 
     for row in rows:
         if not isinstance(row, Mapping):
+            continue
+        if not _timeline_row_matches_filters(
+            row,
+            selected_event_types=selected_event_types,
+            selected_contracts=selected_contracts,
+        ):
             continue
         contract = row.get("contract") or "session"
         lines.append(
@@ -794,6 +1271,32 @@ def build_audit_timeline_markdown(panel: Mapping[str, object]) -> str:
             + f"{_table_value(row.get('detail'))} |"
         )
     return "\n".join(lines)
+
+
+def _selected_filter_values(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list | tuple):
+        return ()
+    return tuple(_as_str(item, default="").strip() for item in value if _as_str(item, default="").strip())
+
+
+def _filter_value_text(values: tuple[str, ...]) -> str:
+    if not values:
+        return "`<none>`"
+    return ", ".join(f"`{_table_value(item)}`" for item in values)
+
+
+def _timeline_row_matches_filters(
+    row: Mapping[str, object],
+    *,
+    selected_event_types: tuple[str, ...],
+    selected_contracts: tuple[str, ...],
+) -> bool:
+    if selected_event_types and _as_str(row.get("event_type"), default="") not in selected_event_types:
+        return False
+    contract = _as_str(row.get("contract") or "session", default="session")
+    if selected_contracts and contract not in selected_contracts:
+        return False
+    return True
 
 
 def build_operator_notes_markdown(panel: Mapping[str, object]) -> str:
@@ -977,7 +1480,7 @@ def _optional_float(value: object) -> float | None:
 def render_r14_cockpit_shell(cockpit: Mapping[str, object]) -> Any:
     return mo.vstack(
         [
-            _render_markdown_card(build_r14_cockpit_header_markdown(cockpit)),
+            _render_r14_cockpit_header_html(cockpit),
             mo.hstack(
                 [
                     _render_markdown_card(build_r14_cockpit_premarket_markdown(cockpit)),
@@ -990,6 +1493,75 @@ def render_r14_cockpit_shell(cockpit: Mapping[str, object]) -> Any:
         ],
         gap=0.75,
     )
+
+
+def _render_r14_cockpit_header_html(cockpit: Mapping[str, object]) -> Any:
+    """Render the cockpit header as HTML stat grids with chips."""
+    identity = _mapping_or_empty(cockpit.get("identity"))
+    runtime = _mapping_or_empty(cockpit.get("runtime_status"))
+    query = _mapping_or_empty(cockpit.get("query_readiness"))
+
+    gate_status = _as_str(query.get("pipeline_gate_state"), default="DISABLED")
+    gate_tier = "ready" if gate_status == "ENABLED" else "blocked"
+    gate_title = "Pipeline gate is open" if gate_status == "ENABLED" else "Pipeline gate is disabled"
+    gate_subtitle = _as_str(query.get("gate_statement"), default="")
+
+    # Stat grid cards
+    stats_html = '<div class="ntb-grid-3">'
+    stats_html += _ntb_stat_card("Profile", _as_str(identity.get("current_profile"), default="<unavailable>"))
+    stats_html += _ntb_stat_card("Contract", _as_str(identity.get("contract"), default="<unavailable>"))
+    stats_html += _ntb_stat_card("Support", _as_str(identity.get("contract_support_status"), default="<unavailable>"), chip=True)
+    stats_html += _ntb_stat_card("Runtime", _as_str(identity.get("runtime_profile_status"), default="<unavailable>"), chip=True)
+    stats_html += _ntb_stat_card("Provider", _as_str(runtime.get("provider_status"), default="<unavailable>"), chip=True)
+    stats_html += _ntb_stat_card("Stream", _as_str(runtime.get("stream_status"), default="<unavailable>"), chip=True)
+    stats_html += _ntb_stat_card("Quote", _as_str(runtime.get("quote_freshness"), default="<unavailable>"), chip=True)
+    stats_html += _ntb_stat_card("Session", _as_str(runtime.get("session_clock_state"), default="<unavailable>"), chip=True)
+    stats_html += _ntb_stat_card("Event", _as_str(runtime.get("event_lockout_state"), default="<unavailable>"), chip=True)
+    stats_html += _ntb_stat_card("Gate", gate_status, chip=True)
+    stats_html += _ntb_stat_card("Manual Query", _as_str(query.get("manual_query_allowed"), default="False"), chip=True)
+    stats_html += _ntb_stat_card("Evaluated At", _as_str(runtime.get("evaluated_at"), default="<unavailable>"))
+    stats_html += "</div>"
+
+    # Query reason
+    reason_html = (
+        '<div class="ntb-muted" style="margin-top:10px">'
+        f"<strong>Query Reason:</strong> {_h(_query_reason(query))}"
+        "</div>"
+        '<div class="ntb-muted" style="margin-top:4px">'
+        f"<strong>Provenance:</strong> {_h(_as_str(query.get('query_ready_provenance'), default='<unavailable>'))}"
+        "</div>"
+    )
+
+    # Operator states as callout
+    operator_states = cockpit.get("operator_states")
+    states_html = ""
+    if isinstance(operator_states, list) and operator_states:
+        items = []
+        for state in operator_states:
+            if isinstance(state, Mapping):
+                cat = _as_str(state.get("category"), default="")
+                st = _as_str(state.get("state"), default="")
+                summary = _as_str(state.get("summary"), default="")
+                reason = _as_str(state.get("reason"), default="")
+                source = _as_str(state.get("source"), default="")
+                items.append(f"{_h(cat)} / {_h(st)}: {_h(summary)} Reason: {_h(reason)}. Source: {_h(source)}.")
+        states_html = (
+            '<div class="ntb-callout" style="margin-top:10px">'
+            '<div class="ntb-stat__label" style="color:#818cf8">Operator State Reasons</div>'
+            + _ntb_list_html(items)
+            + "</div>"
+        )
+
+    full_html = (
+        _ntb_section_divider("Primary Operator Cockpit")
+        + '<div class="ntb-card">'
+        + _ntb_severity_banner(gate_status, gate_title, gate_subtitle, tier=gate_tier)
+        + stats_html
+        + reason_html
+        + states_html
+        + "</div>"
+    )
+    return mo.Html(full_html)
 
 
 def build_r14_cockpit_header_markdown(cockpit: Mapping[str, object]) -> str:
@@ -1390,14 +1962,44 @@ def _render_surface_section(
 
 
 def _render_console_header(shell: Mapping[str, object], *, heading: str, mode_summary: str) -> Any:
-    return mo.vstack(
-        [
-            mo.md(f"# {heading}"),
-            mo.md(_build_context_summary_markdown(shell)),
-            mo.md(mode_summary),
-        ],
-        gap=0.45,
-    ).style(_HEADER_STYLE)
+    startup = shell.get("startup")
+    runtime = shell.get("runtime")
+    startup_map = startup if isinstance(startup, Mapping) else {}
+    runtime_map = runtime if isinstance(runtime, Mapping) else {}
+
+    mode = _first_value(startup_map, runtime_map, "runtime_mode_label", "runtime_mode")
+    profile_id = _first_value(startup_map, runtime_map, "selected_profile_id", "profile_id")
+    contract = _first_value(startup_map, runtime_map, "contract")
+    readiness = _first_value(startup_map, runtime_map, "readiness_state", "startup_readiness_state")
+    session_state = _first_value(startup_map, runtime_map, "current_session_state", "session_state")
+    running_as = _first_value(startup_map, runtime_map, "running_as", "runtime_backend")
+
+    readiness_color = "#22c55e" if readiness == "OPERATOR_SURFACES_READY" else "#facc15"
+    session_color = "#22c55e" if "READY" in session_state else ("#facc15" if "BLOCKED" in session_state else "#94a3b8")
+
+    pills_html = (
+        '<div class="ntb-header__pills">'
+        + _ntb_pill("Mode", mode)
+        + _ntb_pill("Profile", profile_id)
+        + _ntb_pill("Contract", contract)
+        + _ntb_pill("Readiness", readiness, color=readiness_color)
+        + _ntb_pill("Session", session_state, color=session_color)
+        + "</div>"
+    )
+
+    header_html = (
+        '<div class="ntb-shell"><div class="ntb-header">'
+        "<div>"
+        f'<div class="ntb-header__title">{_h(heading)}</div>'
+        f'<div class="ntb-header__subtitle">'
+        f"Running as {_h(running_as)} &middot; {_h(mode)}"
+        "</div></div>"
+        + pills_html
+        + "</div>"
+        + _ntb_ribbon(mode_summary)
+        + "</div>"
+    )
+    return mo.Html(header_html)
 
 
 def _build_context_summary_markdown(shell: Mapping[str, object]) -> str:
@@ -1485,9 +2087,8 @@ def _as_str(value: object, *, default: str = "<missing>") -> str:
 
 
 def _render_debug_secondary(shell_json: str) -> Any:
-    return mo.vstack(
+    debug_content = mo.vstack(
         [
-            mo.md("## Debug (Secondary)"),
             mo.ui.code_editor(
                 value=shell_json,
                 language="json",
@@ -1496,6 +2097,7 @@ def _render_debug_secondary(shell_json: str) -> Any:
         ],
         gap=0.4,
     ).style(_DEBUG_CARD_STYLE)
+    return mo.accordion({"Debug (Secondary)": debug_content})
 
 
 def _safe_json(value: object) -> str:

@@ -171,6 +171,7 @@ def active_trade_vms_from_registry(
                 status=trade.status,
                 current_price=current_price,
                 unrealized_pnl=_display_unrealized_pnl(
+                    direction=trade.direction,
                     entry_price=trade.entry_price,
                     current_price=current_price,
                 ),
@@ -298,10 +299,16 @@ def timeline_events_from_session(
     return tuple(sorted(events, key=lambda event: (_timestamp_sort_key(event.timestamp), event.event_id)))
 
 
-def _display_unrealized_pnl(*, entry_price: float, current_price: float | None) -> float | None:
+def _display_unrealized_pnl(
+    *,
+    direction: str,
+    entry_price: float,
+    current_price: float | None,
+) -> float | None:
     if current_price is None:
         return None
-    return current_price - entry_price
+    price_delta = current_price - entry_price
+    return -price_delta if direction == "short" else price_delta
 
 
 def _per_contract_health_status(snapshot: StreamManagerSnapshot) -> dict[str, str]:

@@ -6,6 +6,8 @@ from .mappers import (
     readiness_card_vm_from_context,
     run_history_row_vm_from_row,
     session_header_vm,
+    stream_health_vm_from_snapshot,
+    timeline_events_from_session,
     trigger_status_vm_from_eval,
 )
 from .models import (
@@ -16,6 +18,8 @@ from .models import (
     ReadinessCardVM,
     RunHistoryRowVM,
     SessionHeaderVM,
+    StreamHealthVM,
+    TimelineEventVM,
     TriggerStatusVM,
 )
 
@@ -27,6 +31,8 @@ __all__ = [
     "ReadinessCardVM",
     "RunHistoryRowVM",
     "SessionHeaderVM",
+    "StreamHealthVM",
+    "TimelineEventVM",
     "TriggerStatusVM",
     "active_trade_vms_from_registry",
     "live_observable_vm_from_snapshot",
@@ -35,5 +41,7 @@ __all__ = [
     "readiness_card_vm_from_context",
     "run_history_row_vm_from_row",
     "session_header_vm",
+    "stream_health_vm_from_snapshot",
+    "timeline_events_from_session",
     "trigger_status_vm_from_eval",
 ]

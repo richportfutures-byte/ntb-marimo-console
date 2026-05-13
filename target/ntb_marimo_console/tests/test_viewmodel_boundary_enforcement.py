@@ -401,6 +401,40 @@ class ViewModelBoundaryEnforcementTests(unittest.TestCase):
         self.assertEqual(rows[0].distance_from_stop, 20.0)
         self.assertEqual(rows[0].distance_from_target, 10.0)
 
+    def test_active_trade_vm_unrealized_points_are_direction_aware_for_shorts(self) -> None:
+        registry = ActiveTradeRegistry(clock=FakeClock())
+        registry.add(
+            trade_id="trade-nq-short-fixture",
+            contract="NQ",
+            direction="short",
+            entry_price=100.0,
+            thesis_reference=ThesisReference(
+                pipeline_result_id="pipeline-result-fixture-001",
+                trigger_name="fixture-trigger",
+                trigger_state="QUERY_READY",
+            ),
+            stop_loss=105.0,
+            target=90.0,
+        )
+        manager = SchwabStreamManager(
+            live_config(contracts=("NQ",), symbols=("NQ_TEST",)),
+            client=FakeStreamClient(),
+            clock=FakeClock(),
+        )
+        manager.start()
+        manager.ingest_message(
+            {
+                **quote_message(contract="NQ", symbol="NQ_TEST", received_at="2026-05-12T14:00:00+00:00"),
+                "fields": {"last": 95.0},
+            }
+        )
+
+        rows = active_trade_vms_from_registry(registry, manager.snapshot().cache)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].direction, "short")
+        self.assertEqual(rows[0].unrealized_pnl, 5.0)
+
     def test_active_trade_vm_excludes_closed_trades(self) -> None:
         registry = ActiveTradeRegistry(clock=FakeClock())
         open_trade = registry.add(
@@ -638,6 +672,51 @@ class ViewModelBoundaryEnforcementTests(unittest.TestCase):
         self.assertIn("Pipeline result: NO_TRADE", markdown)
         self.assertNotIn("Query Enabled: `True`", markdown)
         self.assertNotIn("trade_authorized", markdown)
+
+    def test_audit_timeline_markdown_applies_supplied_filters(self) -> None:
+        markdown = build_audit_timeline_markdown(
+            {
+                "timeline_status": "ready",
+                "timeline_filters": {
+                    "event_types": ["pipeline_result", "note"],
+                    "contracts": ["ES", "NQ"],
+                    "selected_event_types": ["note"],
+                    "selected_contracts": ["NQ"],
+                },
+                "timeline_events": [
+                    {
+                        "event_id": "event-1",
+                        "timestamp": "2026-05-12T13:05:00+00:00",
+                        "event_type": "pipeline_result",
+                        "contract": "ES",
+                        "summary": "Pipeline result: NO_TRADE",
+                        "detail": "termination_stage=risk_authorization",
+                        "status_badge": "gray NO_TRADE",
+                    },
+                    {
+                        "event_id": "event-2",
+                        "timestamp": "2026-05-12T13:10:00+00:00",
+                        "event_type": "note",
+                        "contract": "NQ",
+                        "summary": "Operator note: intraday",
+                        "detail": "NQ note",
+                        "status_badge": "gray operator_annotation",
+                    },
+                ],
+            }
+        )
+
+        self.assertIn("Active Event Type Filters: `note`", markdown)
+        self.assertIn("Active Contract Filters: `NQ`", markdown)
+        self.assertIn("Operator note: intraday", markdown)
+        self.assertNotIn("Pipeline result: NO_TRADE", markdown)
+
+    def test_viewmodels_public_exports_include_new_runtime_symbols(self) -> None:
+        import ntb_marimo_console.viewmodels as public
+
+        self.assertIs(public.TimelineEventVM, TimelineEventVM)
+        self.assertIs(public.StreamHealthVM, StreamHealthVM)
+        self.assertIs(public.timeline_events_from_session, timeline_events_from_session)
 
 
 if __name__ == "__main__":
