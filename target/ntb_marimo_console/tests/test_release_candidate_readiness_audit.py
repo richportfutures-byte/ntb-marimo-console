@@ -20,6 +20,9 @@ LIVE_REHEARSAL_RESULT_PATH = (
 BLOCKED_LIVE_REHEARSAL_RESULT_PATH = (
     LIVE_PROOF_ARTIFACT_DIRECTORY / "five_contract_live_rehearsal_blocked_result_2026-05-13.md"
 )
+SUBSCRIPTION_ONLY_LIVE_REHEARSAL_RESULT_PATH = (
+    LIVE_PROOF_ARTIFACT_DIRECTORY / "five_contract_live_rehearsal_subscription_only_result_2026-05-13.md"
+)
 
 FORBIDDEN_SENSITIVE_FRAGMENTS = (
     "Authorization: Bearer",
@@ -125,6 +128,9 @@ def test_audit_does_not_claim_real_five_contract_proof_unless_artifact_exists(au
         assert "received_contracts_count=0" in audit_text
         assert "blocking_reason=required_env_keys_missing" in audit_text
         assert "runtime_start_attempted=no" in audit_text
+        assert "subscribed_contracts_count=5" in audit_text
+        assert "live_login_succeeded=yes" in audit_text
+        assert "live_subscribe_succeeded=yes" in audit_text
         assert "Real five-contract live market-data proof" in audit_text
         assert "still classified as pending" in audit_text
         return
@@ -154,6 +160,7 @@ def test_audit_includes_explicit_verdict(audit_text: str) -> None:
 def test_audit_includes_release_blockers_or_proof_gaps(audit_text: str) -> None:
     assert "Release Blockers and Proof Gaps" in audit_text
     assert "real-live proof gap" in audit_text
+    assert "Successful live login and successful live subscription are insufficient" in audit_text
     assert "Real LEVELONE_FUTURES market data has not been recorded" in audit_text
     assert "Real CHART_FUTURES delivery has not been recorded" in audit_text
     assert "Symbol entitlement and rollover proof has not been recorded" in audit_text
@@ -232,3 +239,61 @@ def test_blocked_live_rehearsal_result_has_no_sensitive_values() -> None:
 
     for fragment in FORBIDDEN_SENSITIVE_FRAGMENTS:
         assert fragment not in text, f"blocked live rehearsal result must not include sensitive fragment {fragment!r}"
+
+
+def test_subscription_only_live_rehearsal_result_records_partial_fail_closed_outcome() -> None:
+    assert SUBSCRIPTION_ONLY_LIVE_REHEARSAL_RESULT_PATH.exists(), (
+        "subscription-only live rehearsal result must be recorded"
+    )
+    text = SUBSCRIPTION_ONLY_LIVE_REHEARSAL_RESULT_PATH.read_text(encoding="utf-8")
+
+    assert "**PARTIAL / FAIL-CLOSED**" in text
+    assert "| mode | live |" in text
+    assert "| status | ok |" in text
+    assert "| repo_check | yes |" in text
+    assert "| live_flag | yes |" in text
+    assert "| operator_live_runtime_env | yes |" in text
+    assert "| env_keys_present | yes |" in text
+    assert "| token_path_under_target_state | yes |" in text
+    assert "| token_file_present | yes |" in text
+    assert "| token_file_parseable | yes |" in text
+    assert "| token_contract_valid | yes |" in text
+    assert "| access_token_present | yes |" in text
+    assert "| refresh_token_present | yes |" in text
+    assert "| token_fresh | no |" in text
+    assert "| streamer_credentials_obtained | yes |" in text
+    assert "| runtime_start_attempted | yes |" in text
+    assert "| live_login_succeeded | yes |" in text
+    assert "| live_subscribe_succeeded | yes |" in text
+    assert "| subscribed_contracts_count | 5 |" in text
+    assert "| market_data_received | no |" in text
+    assert "| received_contracts_count | 0 |" in text
+    assert "| repeated_login_on_refresh | no |" in text
+    assert "| cleanup_status | ok |" in text
+    assert "| duration_seconds | 10.0 |" in text
+    assert "| values_printed | no |" in text
+    assert "successful subscription is not live market-data proof" in text
+    assert "real LEVELONE_FUTURES delivery for ES, NQ, CL, 6E, or MGC" in text
+    assert "real CHART_FUTURES delivery" in text
+    assert "symbol entitlement or rollover correctness" in text
+    assert "Production release remains premature" in text
+    assert "No live-readiness acceptance, QUERY_READY state, D3 completion, or production release readiness" in text
+
+
+def test_subscription_only_result_has_no_sensitive_values_or_production_ready_claim() -> None:
+    text = SUBSCRIPTION_ONLY_LIVE_REHEARSAL_RESULT_PATH.read_text(encoding="utf-8")
+    lowered = text.lower()
+
+    for fragment in FORBIDDEN_SENSITIVE_FRAGMENTS:
+        assert fragment not in text, (
+            f"subscription-only live rehearsal result must not include sensitive fragment {fragment!r}"
+        )
+    forbidden_claims = (
+        "production live readiness is proven",
+        "production release is ready",
+        "d3 complete",
+        "query_ready satisfied",
+        "live-readiness acceptance satisfied",
+    )
+    for claim in forbidden_claims:
+        assert claim not in lowered

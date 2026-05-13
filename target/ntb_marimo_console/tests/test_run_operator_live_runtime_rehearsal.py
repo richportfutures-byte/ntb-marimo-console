@@ -543,7 +543,7 @@ class RehearsalCliBlockingTests(unittest.TestCase):
             token_contract_valid=True,
             access_token_present=True,
             refresh_token_present=True,
-            token_fresh="unknown",
+            token_fresh="no",
             streamer_credentials_obtained=True,
             runtime_start_attempted=True,
             live_login_succeeded=True,

@@ -10,7 +10,7 @@ R19 is an audit layer only. It does not change runtime behavior, default launch 
 
 The repo is ready to be treated as a fixture-verified personal release candidate, pending operator-run real Schwab live validation across the final target universe. It is not ready to be treated as a production-proven, broker-integrated, live-trading platform, and R19 makes no such claim.
 
-A READY verdict is explicitly withheld because the sanitized D3 five-contract Schwab live rehearsal result is partial: login and subscription plumbing reached `status=ok`, but `market_data_received=no` and `received_contracts_count=0`. A later explicit five-contract live rehearsal attempt is also recorded as **PARTIAL / FAIL-CLOSED** because it blocked before runtime start with `blocking_reason=required_env_keys_missing`, `runtime_start_attempted=no`, `subscribed_contracts_count=0`, `market_data_received=no`, and `received_contracts_count=0`. A NOT READY verdict is explicitly withheld because every release-blocking item that can be verified deterministically from the repository is verified through fixture-safe tests today.
+A READY verdict is explicitly withheld because the sanitized D3 five-contract Schwab live rehearsal evidence remains partial. The prior explicit rehearsal blocker was `blocking_reason=required_env_keys_missing` before runtime start. The current subscription-only evidence improves that state: live environment keys were present, streamer credentials were obtained, runtime start was attempted, live login succeeded, live subscription succeeded, and `subscribed_contracts_count=5`. It still recorded `market_data_received=no` and `received_contracts_count=0`, so it remains **PARTIAL / FAIL-CLOSED**. A NOT READY verdict is explicitly withheld because every release-blocking item that can be verified deterministically from the repository is verified through fixture-safe tests today.
 
 ## Evidence Classification
 
@@ -35,6 +35,9 @@ R19 distinguishes four evidence tiers. Fixture and harness evidence must never b
 - The recorded result does not prove live market-data delivery: `market_data_received=no` and `received_contracts_count=0`.
 - A later sanitized explicit five-contract live rehearsal blocked result is recorded in `docs/live_proof/five_contract_live_rehearsal_blocked_result_2026-05-13.md`.
 - The later blocked result proves fail-closed handling before runtime start only: `blocking_reason=required_env_keys_missing`, `runtime_start_attempted=no`, `live_login_succeeded=no`, `live_subscribe_succeeded=no`, `subscribed_contracts_count=0`, `market_data_received=no`, and `received_contracts_count=0`.
+- A newer sanitized subscription-only five-contract live rehearsal result is recorded in `docs/live_proof/five_contract_live_rehearsal_subscription_only_result_2026-05-13.md`.
+- The newer result proves credential retrieval, runtime start, live login, and live subscription reached the five-contract target universe: `env_keys_present=yes`, `token_path_under_target_state=yes`, `token_file_present=yes`, `token_file_parseable=yes`, `token_contract_valid=yes`, `token_fresh=no`, `streamer_credentials_obtained=yes`, `runtime_start_attempted=yes`, `live_login_succeeded=yes`, `live_subscribe_succeeded=yes`, and `subscribed_contracts_count=5`.
+- The newer result still does not prove live market-data delivery: `market_data_received=no`, `received_contracts_count=0`, `values_printed=no`, `repeated_login_on_refresh=no`, and `cleanup_status=ok`.
 - Real five-contract live market-data proof for `ES`, `NQ`, `CL`, `6E`, and `MGC` is therefore still classified as pending. R19 does not claim that real live market-data proof has passed.
 - The current five-contract proof-capture path is documented in `docs/five_contract_live_proof_capture.md`. Until a reviewed live artifact proves market-data delivery, that path remains a manual capture foundation rather than proof completion.
 
@@ -118,6 +121,8 @@ Release blockers and proof gaps are reported using exact language and explicit c
    - This is a real-live proof gap.
    - Manual operator-run login/subscription plumbing reached `status=ok`, but no market data was received during the 15-second bounded receive loop.
    - A later explicit operator-run attempt blocked fail-closed before runtime start with `blocking_reason=required_env_keys_missing`, `runtime_start_attempted=no`, `subscribed_contracts_count=0`, `market_data_received=no`, and `received_contracts_count=0`.
+   - The current explicit operator-run result improved past the env-key blocker and reached live login plus five-contract subscription with `subscribed_contracts_count=5`, but it still recorded `market_data_received=no` and `received_contracts_count=0`.
+   - Successful live login and successful live subscription are insufficient without real market data for the final target universe.
    - Until a sanitized operator-run real five-contract Schwab live result proves market-data delivery, R19 will not claim that a real Schwab five-contract live market-data session has passed.
 
 2. Production live readiness remains blocked by unproven live delivery and usability evidence.
