@@ -13,9 +13,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PYTHONPATH_ENTRIES = ("src", "../../source/ntb_engine/src", ".")
 PYTHONPATH_DISPLAY = "src:../../source/ntb_engine/src:."
 D3_REHEARSAL_STATUS = (
-    "D3 live rehearsal status: PARTIAL / FAIL-CLOSED; "
-    "market_data_received=no; received_contracts_count=0; "
-    "production live Schwab readiness remains unproven."
+    "D3 live rehearsal status: LEVELONE_FUTURES BOUNDED LIVE DELIVERY RECORDED; "
+    "market_data_received=yes; received_contracts_count=5; "
+    "CHART_FUTURES and production live Schwab readiness remain unproven."
 )
 
 

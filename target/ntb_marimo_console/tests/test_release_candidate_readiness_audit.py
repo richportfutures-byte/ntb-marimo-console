@@ -23,6 +23,9 @@ BLOCKED_LIVE_REHEARSAL_RESULT_PATH = (
 SUBSCRIPTION_ONLY_LIVE_REHEARSAL_RESULT_PATH = (
     LIVE_PROOF_ARTIFACT_DIRECTORY / "five_contract_live_rehearsal_subscription_only_result_2026-05-13.md"
 )
+LEVELONE_LIVE_MARKET_DATA_RESULT_PATH = (
+    LIVE_PROOF_ARTIFACT_DIRECTORY / "five_contract_levelone_live_market_data_result_2026-05-13.md"
+)
 
 FORBIDDEN_SENSITIVE_FRAGMENTS = (
     "Authorization: Bearer",
@@ -121,33 +124,31 @@ def test_audit_distinguishes_fixture_evidence_from_real_live_proof(audit_text: s
     assert "Fixture evidence is not represented as real live evidence" in audit_text
 
 
-def test_audit_does_not_claim_real_five_contract_proof_unless_artifact_exists(audit_text: str) -> None:
+def test_audit_records_bounded_levelone_proof_without_chart_or_production_claim(audit_text: str) -> None:
     artifact_present = real_five_contract_live_proof_artifact_exists()
-    if artifact_present:
-        assert "market_data_received=no" in audit_text
-        assert "received_contracts_count=0" in audit_text
-        assert "blocking_reason=required_env_keys_missing" in audit_text
-        assert "runtime_start_attempted=no" in audit_text
-        assert "subscribed_contracts_count=5" in audit_text
-        assert "live_login_succeeded=yes" in audit_text
-        assert "live_subscribe_succeeded=yes" in audit_text
-        assert "Real five-contract live market-data proof" in audit_text
-        assert "still classified as pending" in audit_text
-        return
-    assert "Real five-contract Schwab live proof is pending operator-run validation" in audit_text
-    assert "real-live proof gap" in audit_text
-    assert "Manual operator-run proof is still pending" in audit_text
-    assert "this is not a deterministic code blocker" in audit_text.lower()
+    assert artifact_present
+    assert "market_data_received=no" in audit_text
+    assert "received_contracts_count=0" in audit_text
+    assert "blocking_reason=required_env_keys_missing" in audit_text
+    assert "runtime_start_attempted=no" in audit_text
+    assert "subscribed_contracts_count=5" in audit_text
+    assert "live_login_succeeded=yes" in audit_text
+    assert "live_subscribe_succeeded=yes" in audit_text
+    assert "market_data_received=yes" in audit_text
+    assert "received_contracts_count=5" in audit_text
+    assert "market_data_diagnostic=levelone_futures_updates_received" in audit_text
+    assert "bounded LEVELONE_FUTURES delivery" in audit_text
+    assert "CHART_FUTURES proof remains pending" in audit_text
+    assert "Production live readiness remains withheld" in audit_text
     affirmative_claims = (
-        "real five-contract Schwab live session has been proven",
-        "real five-contract Schwab live session is verified",
-        "real five-contract Schwab live session: pass",
-        "real five-contract Schwab live session: passed",
-        "real five-contract Schwab live session has passed and is in the repo",
+        "chart_futures delivery is proven",
+        "production live readiness is proven",
+        "production release is ready",
+        "is a fully production-proven live-trading platform",
     )
     for claim in affirmative_claims:
         assert claim.lower() not in audit_text.lower(), (
-            "audit must not claim real five-contract Schwab live proof unless artifact exists"
+            "audit must not promote LEVELONE_FUTURES evidence into CHART_FUTURES or production readiness"
         )
 
 
@@ -159,11 +160,11 @@ def test_audit_includes_explicit_verdict(audit_text: str) -> None:
 
 def test_audit_includes_release_blockers_or_proof_gaps(audit_text: str) -> None:
     assert "Release Blockers and Proof Gaps" in audit_text
-    assert "real-live proof gap" in audit_text
-    assert "Successful live login and successful live subscription are insufficient" in audit_text
-    assert "Real LEVELONE_FUTURES market data has not been recorded" in audit_text
+    assert "bounded real-live LEVELONE_FUTURES evidence item" in audit_text
+    assert "Successful live login and successful live subscription remain insufficient" in audit_text
+    assert "Bounded real LEVELONE_FUTURES market data has been recorded" in audit_text
     assert "Real CHART_FUTURES delivery has not been recorded" in audit_text
-    assert "Symbol entitlement and rollover proof has not been recorded" in audit_text
+    assert "Symbol entitlement and rollover proof beyond the exact reported run has not been recorded" in audit_text
     assert "Full live-session Marimo usability has not been proven" in audit_text
 
 
@@ -297,3 +298,92 @@ def test_subscription_only_result_has_no_sensitive_values_or_production_ready_cl
     )
     for claim in forbidden_claims:
         assert claim not in lowered
+
+
+def test_levelone_live_market_data_result_records_bounded_success_only() -> None:
+    assert LEVELONE_LIVE_MARKET_DATA_RESULT_PATH.exists(), (
+        "bounded five-contract LEVELONE_FUTURES live result must be recorded"
+    )
+    text = LEVELONE_LIVE_MARKET_DATA_RESULT_PATH.read_text(encoding="utf-8")
+
+    assert "**BOUNDED LEVELONE_FUTURES LIVE DELIVERY RECORDED**" in text
+    assert "| mode | live |" in text
+    assert "| status | ok |" in text
+    assert "| repo_check | yes |" in text
+    assert "| live_flag | yes |" in text
+    assert "| operator_live_runtime_env | yes |" in text
+    assert "| env_keys_present | yes |" in text
+    assert "| token_path_under_target_state | yes |" in text
+    assert "| token_file_present | yes |" in text
+    assert "| token_file_parseable | yes |" in text
+    assert "| token_contract_valid | yes |" in text
+    assert "| access_token_present | yes |" in text
+    assert "| refresh_token_present | yes |" in text
+    assert "| token_fresh | no |" in text
+    assert "| streamer_credentials_obtained | yes |" in text
+    assert "| runtime_start_attempted | yes |" in text
+    assert "| live_login_succeeded | yes |" in text
+    assert "| live_subscribe_succeeded | yes |" in text
+    assert "| subscribed_contracts_count | 5 |" in text
+    assert "| market_data_received | yes |" in text
+    assert "| received_contracts_count | 5 |" in text
+    assert "| market_data_diagnostic | levelone_futures_updates_received |" in text
+    assert "| repeated_login_on_refresh | no |" in text
+    assert "| cleanup_status | ok |" in text
+    assert "| duration_seconds | 30.0 |" in text
+    assert "| values_printed | no |" in text
+    assert "proves bounded live LEVELONE_FUTURES delivery" in text
+    assert "CHART_FUTURES" in text
+    assert "Production release remains premature" in text
+    assert "raw market values and raw streamer payloads were not recorded" in text.lower()
+
+
+def test_levelone_live_market_data_result_preserves_contract_boundaries() -> None:
+    text = LEVELONE_LIVE_MARKET_DATA_RESULT_PATH.read_text(encoding="utf-8")
+
+    for contract in ("ES", "NQ", "CL", "6E", "MGC"):
+        assert f"- {contract}" in text
+    assert "- ZN" in text
+    assert "- GC" in text
+    assert "MGC is Micro Gold. It is not GC" in text
+    assert "GC is not a substitute for MGC" in text
+
+
+def test_levelone_live_market_data_result_has_no_sensitive_values_or_raw_market_data() -> None:
+    text = LEVELONE_LIVE_MARKET_DATA_RESULT_PATH.read_text(encoding="utf-8")
+    lowered = text.lower()
+
+    for fragment in FORBIDDEN_SENSITIVE_FRAGMENTS:
+        assert fragment not in text, (
+            f"bounded LEVELONE_FUTURES live result must not include sensitive fragment {fragment!r}"
+        )
+    forbidden_fragments = (
+        "raw quote value:",
+        "raw streamer payload:",
+        "bid=",
+        "ask=",
+        "last=",
+        "price=",
+        "open=",
+        "high=",
+        "low=",
+        "close=",
+    )
+    for fragment in forbidden_fragments:
+        assert fragment not in lowered
+
+
+def test_levelone_live_market_data_result_does_not_claim_chart_or_production_ready() -> None:
+    text = LEVELONE_LIVE_MARKET_DATA_RESULT_PATH.read_text(encoding="utf-8").lower()
+
+    forbidden_claims = (
+        "chart_futures delivery is proven",
+        "chart_futures proof has passed",
+        "production live readiness is proven",
+        "production release is ready",
+        "query_ready satisfied",
+        "live-readiness acceptance satisfied",
+        "d3 complete",
+    )
+    for claim in forbidden_claims:
+        assert claim not in text

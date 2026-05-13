@@ -204,15 +204,17 @@ def test_no_fixture_fallback_after_live_failure_is_represented() -> None:
     assert artifact["fail_closed_query_readiness_assertion"]["asserted"] is True  # type: ignore[index]
 
 
-def test_release_audit_remains_conditionally_ready_without_live_artifact() -> None:
+def test_release_audit_records_levelone_success_but_remains_conditionally_ready() -> None:
     audit_text = AUDIT_DOC_PATH.read_text(encoding="utf-8")
 
     assert "**Verdict: CONDITIONALLY READY**" in audit_text
-    assert "market_data_received=no" in audit_text
-    assert "received_contracts_count=0" in audit_text
-    assert "market-data delivery proof" in audit_text
+    assert "market_data_received=yes" in audit_text
+    assert "received_contracts_count=5" in audit_text
+    assert "market_data_diagnostic=levelone_futures_updates_received" in audit_text
+    assert "bounded LEVELONE_FUTURES delivery" in audit_text
+    assert "CHART_FUTURES delivery remains unproven" in audit_text
     assert "scripts/capture_five_contract_live_proof.py" in audit_text
-    assert "R19 does not claim that real live market-data proof has passed" in audit_text
+    assert "Production live readiness remains withheld" in audit_text
     assert "**Verdict: READY**" not in audit_text
 
 

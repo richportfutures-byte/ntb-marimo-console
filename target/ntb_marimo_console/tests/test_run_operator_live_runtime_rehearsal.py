@@ -472,7 +472,6 @@ class RehearsalCliBlockingTests(unittest.TestCase):
             self.assertNotIn(fragment, rendered)
         self.assertIn("[REDACTED]", rendered)
         self.assertIn("schwab_live_readiness_unproven_until_authorized_manual_rehearsal", rendered)
-        self.assertIn("real_LEVELONE_FUTURES_market_data_not_recorded_for_ES_NQ_CL_6E_MGC", rendered)
         self.assertIn("real_CHART_FUTURES_delivery_not_recorded_for_ES_NQ_CL_6E_MGC", rendered)
 
     def test_dry_run_output_is_text_deterministic_and_review_only(self) -> None:
@@ -495,7 +494,7 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         )
         self.assertIn(
             "production_readiness_blocker="
-            "production_release_remains_premature_until_sanitized_live_result_records_real_market_data",
+            "production_release_remains_premature_until_non_levelone_predicates_are_satisfied",
             first,
         )
         self.assertIn("review_preflight_only_not_subscription_or_login", first)
@@ -524,10 +523,10 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertEqual(
             payload["production_readiness_blockers"],
             [
-                "real_LEVELONE_FUTURES_market_data_not_recorded_for_ES_NQ_CL_6E_MGC",
                 "real_CHART_FUTURES_delivery_not_recorded_for_ES_NQ_CL_6E_MGC",
-                "symbol_entitlement_and_rollover_proof_not_recorded",
-                "production_release_remains_premature_until_sanitized_live_result_records_real_market_data",
+                "symbol_entitlement_and_rollover_proof_beyond_exact_run_not_recorded",
+                "full_live_session_marimo_usability_not_proven",
+                "production_release_remains_premature_until_non_levelone_predicates_are_satisfied",
             ],
         )
 
@@ -567,6 +566,44 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertEqual(assessment["production_live_ready"], "no")
         self.assertEqual(assessment["query_ready_allowed"], "no")
         self.assertIn("market_data_delivery_not_proven", assessment["blocking_reasons"])
+
+    def test_live_rehearsal_with_five_contract_levelone_data_is_not_production_ready(self) -> None:
+        report = rehearsal.RehearsalReport(
+            mode="live",
+            status="ok",
+            repo_check=True,
+            live_flag=True,
+            operator_live_runtime_env=True,
+            env_keys_present=True,
+            token_path_under_target_state=True,
+            token_file_present=True,
+            token_file_parseable=True,
+            token_contract_valid=True,
+            access_token_present=True,
+            refresh_token_present=True,
+            token_fresh="no",
+            streamer_credentials_obtained=True,
+            runtime_start_attempted=True,
+            live_login_succeeded=True,
+            live_subscribe_succeeded=True,
+            subscribed_contracts_count=5,
+            market_data_received=True,
+            received_contracts_count=5,
+            market_data_diagnostic="levelone_futures_updates_received",
+            repeated_login_on_refresh=False,
+            cleanup_status="ok",
+            duration_seconds=30.0,
+        )
+
+        assessment = rehearsal.assess_rehearsal_readiness(report).to_dict()
+
+        self.assertEqual(assessment["classification"], "live_levelone_market_data_delivery_proven")
+        self.assertEqual(assessment["login_subscription_plumbing_proven"], "yes")
+        self.assertEqual(assessment["market_data_delivery_proven"], "yes")
+        self.assertEqual(assessment["production_live_ready"], "no")
+        self.assertEqual(assessment["query_ready_allowed"], "no")
+        self.assertIn("chart_futures_delivery_not_proven", assessment["blocking_reasons"])
+        self.assertIn("full_live_session_marimo_usability_not_proven", assessment["blocking_reasons"])
 
     def test_receive_pump_continues_after_initial_quiet_dispatch_until_duration(self) -> None:
         config = rehearsal._build_stream_config(symbol_overrides={})

@@ -352,8 +352,13 @@ def assess_rehearsal_readiness(report: RehearsalReport) -> RehearsalReadinessAss
         and report.received_contracts_count == len(final_target_contracts())
     )
     if market_data_proven:
-        classification = "live_market_data_delivery_proven"
-        blocking_reasons: tuple[str, ...] = ("rehearsal_result_is_review_only_not_query_authority",)
+        classification = "live_levelone_market_data_delivery_proven"
+        blocking_reasons: tuple[str, ...] = (
+            "chart_futures_delivery_not_proven",
+            "full_live_session_marimo_usability_not_proven",
+            "production_readiness_requires_non_levelone_predicates",
+            "rehearsal_result_is_review_only_not_query_authority",
+        )
     elif plumbing_proven:
         classification = "partial_live_login_and_subscription_only"
         blocking_reasons = (
@@ -693,10 +698,10 @@ def build_dry_run_report(
             "uv run python scripts/run_operator_live_runtime_rehearsal.py --live --duration 10"
         ),
         production_readiness_blockers=(
-            "real_LEVELONE_FUTURES_market_data_not_recorded_for_ES_NQ_CL_6E_MGC",
             "real_CHART_FUTURES_delivery_not_recorded_for_ES_NQ_CL_6E_MGC",
-            "symbol_entitlement_and_rollover_proof_not_recorded",
-            "production_release_remains_premature_until_sanitized_live_result_records_real_market_data",
+            "symbol_entitlement_and_rollover_proof_beyond_exact_run_not_recorded",
+            "full_live_session_marimo_usability_not_proven",
+            "production_release_remains_premature_until_non_levelone_predicates_are_satisfied",
         ),
         limitations=(
             "review_preflight_only_not_subscription_or_login",
