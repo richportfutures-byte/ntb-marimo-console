@@ -6,7 +6,12 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from ntb_marimo_console.adapters.contracts import AuditReplayRecord
-from ntb_marimo_console.contract_universe import contract_policy_label, is_final_target_contract, normalize_contract_symbol
+from ntb_marimo_console.contract_universe import (
+    contract_policy_label,
+    final_target_contracts,
+    is_final_target_contract,
+    normalize_contract_symbol,
+)
 from ntb_marimo_console.decision_review_audit import build_decision_review_audit_event
 from ntb_marimo_console.decision_review_replay import build_decision_review_replay_vm
 from ntb_marimo_console.evidence_replay import EVIDENCE_REPLAY_SCHEMA
@@ -67,6 +72,7 @@ class OperatorWorkspaceViewModel:
     premarket_plan: dict[str, object]
     live_thesis_monitor: dict[str, object]
     pipeline_gate: dict[str, object]
+    contract_statuses: tuple[OperatorContractStatusVM, ...]
     last_pipeline_result: dict[str, object]
     evidence_and_replay: dict[str, object]
     schema: str = OPERATOR_WORKSPACE_SCHEMA
@@ -78,6 +84,7 @@ class OperatorWorkspaceViewModel:
             "premarket_plan": self.premarket_plan,
             "live_thesis_monitor": self.live_thesis_monitor,
             "pipeline_gate": self.pipeline_gate,
+            "contract_statuses": [status.to_dict() for status in self.contract_statuses],
             "last_pipeline_result": self.last_pipeline_result,
             "evidence_and_replay": self.evidence_and_replay,
         }
@@ -123,6 +130,36 @@ class CockpitRuntimeStatusVM:
         if self.stream_health is not None:
             payload["stream_health"] = dict(self.stream_health)
         return payload
+
+
+@dataclass(frozen=True)
+class OperatorContractStatusVM:
+    contract: str
+    profile_label: str
+    support_state: str
+    quote_status: str
+    chart_status: str
+    quote_freshness_state: str
+    chart_freshness_state: str
+    blocking_reasons: tuple[str, ...]
+    status_text: str
+    query_evaluation_eligible: bool
+    runtime_state: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "contract": self.contract,
+            "profile_label": self.profile_label,
+            "support_state": self.support_state,
+            "quote_status": self.quote_status,
+            "chart_status": self.chart_status,
+            "quote_freshness_state": self.quote_freshness_state,
+            "chart_freshness_state": self.chart_freshness_state,
+            "blocking_reasons": list(self.blocking_reasons),
+            "status_text": self.status_text,
+            "query_evaluation_eligible": self.query_evaluation_eligible,
+            "runtime_state": self.runtime_state,
+        }
 
 
 @dataclass(frozen=True)
@@ -308,6 +345,7 @@ class R14CockpitViewModel:
     premarket: CockpitPremarketVM
     triggers: tuple[CockpitTriggerSummaryVM, ...]
     query_readiness: CockpitQueryReadinessVM
+    contract_statuses: tuple[OperatorContractStatusVM, ...]
     last_pipeline_result: CockpitPipelineResultVM
     replay_availability: CockpitReplayAvailabilityVM
     operator_states: tuple[CockpitOperatorStateVM, ...]
@@ -322,6 +360,7 @@ class R14CockpitViewModel:
             "premarket": self.premarket.to_dict(),
             "triggers": [trigger.to_dict() for trigger in self.triggers],
             "query_readiness": self.query_readiness.to_dict(),
+            "contract_statuses": [status.to_dict() for status in self.contract_statuses],
             "last_pipeline_result": self.last_pipeline_result.to_dict(),
             "replay_availability": self.replay_availability.to_dict(),
             "operator_states": [state.to_dict() for state in self.operator_states],
@@ -339,6 +378,7 @@ def build_operator_workspace_view_model(request: OperatorWorkspaceRequest) -> Op
     premarket_plan = _build_premarket_plan(request.premarket_brief, validator)
     live_thesis = _build_live_thesis_monitor(trigger)
     pipeline_gate = _build_pipeline_gate(gate)
+    contract_statuses = _build_operator_contract_statuses(request, gate)
     last_pipeline_result = _build_last_pipeline_result(request.last_pipeline_result)
     evidence = _build_evidence_and_replay(
         request,
@@ -351,6 +391,7 @@ def build_operator_workspace_view_model(request: OperatorWorkspaceRequest) -> Op
         premarket_plan=premarket_plan,
         live_thesis_monitor=live_thesis,
         pipeline_gate=pipeline_gate,
+        contract_statuses=contract_statuses,
         last_pipeline_result=last_pipeline_result,
         evidence_and_replay=evidence,
     )
@@ -430,12 +471,14 @@ def build_r14_cockpit_view_model(request: OperatorWorkspaceRequest) -> R14Cockpi
     )
     last_pipeline_result = _build_cockpit_pipeline_result(request.last_pipeline_result)
     replay_availability = _build_cockpit_replay_availability(evidence)
+    contract_statuses = _build_operator_contract_statuses(request, gate)
     operator_states = _build_cockpit_operator_states(
         identity=identity,
         runtime=runtime_status,
         premarket=premarket,
         triggers=triggers,
         query=query_readiness,
+        contract_statuses=contract_statuses,
         last_pipeline_result=last_pipeline_result,
     )
     return R14CockpitViewModel(
@@ -444,6 +487,7 @@ def build_r14_cockpit_view_model(request: OperatorWorkspaceRequest) -> R14Cockpi
         premarket=premarket,
         triggers=triggers,
         query_readiness=query_readiness,
+        contract_statuses=contract_statuses,
         last_pipeline_result=last_pipeline_result,
         replay_availability=replay_availability,
         operator_states=operator_states,
@@ -477,6 +521,217 @@ def _build_header(
         "event_lockout_status": _safe_status(request.event_lockout_status or _event_lockout_status_from_gate(gate)),
         "evaluated_at": _safe_text(request.evaluated_at or _string_or_none(gate.get("evaluated_at")) or _string_or_none(live.get("generated_at")) or "unavailable"),
     }
+
+
+def _build_operator_contract_statuses(
+    request: OperatorWorkspaceRequest,
+    gate: Mapping[str, Any],
+) -> tuple[OperatorContractStatusVM, ...]:
+    live = _live_snapshot_payload(request.live_observable)
+    provider_status = _safe_status(
+        request.provider_status
+        or _string_or_none(gate.get("provider_status"))
+        or _string_or_none(live.get("provider_status"))
+        or "unavailable"
+    )
+    stream_status = _safe_status(request.stream_status or _string_or_none(gate.get("stream_status")) or "unavailable")
+    selected_gate_contract = _safe_text(_string_or_none(gate.get("contract")) or "").upper()
+    gate_enabled = _safe_pipeline_gate_enabled(gate)
+    gate_reasons = _dedupe(
+        (
+            *_sequence_text(gate.get("blocking_reasons")),
+            *_sequence_text(gate.get("disabled_reasons")),
+            *_sequence_text(gate.get("missing_conditions")),
+        )
+    )
+    if _raw_pipeline_gate_enabled(gate) and not gate_enabled:
+        gate_reasons = _dedupe((*gate_reasons, "pipeline_gate_provenance_not_verified"))
+    contracts = final_target_contracts() if is_final_target_contract(normalize_contract_symbol(request.contract)) else (
+        normalize_contract_symbol(request.contract),
+    )
+    return tuple(
+        _operator_contract_status(
+            contract,
+            live=live,
+            provider_status=provider_status,
+            stream_status=stream_status,
+            selected_gate_contract=selected_gate_contract,
+            gate_enabled=gate_enabled,
+            gate_reasons=gate_reasons,
+            profile_id=request.profile_id,
+        )
+        for contract in contracts
+    )
+
+
+def _operator_contract_status(
+    contract: str,
+    *,
+    live: Mapping[str, Any],
+    provider_status: str,
+    stream_status: str,
+    selected_gate_contract: str,
+    gate_enabled: bool,
+    gate_reasons: Sequence[str],
+    profile_id: str | None,
+) -> OperatorContractStatusVM:
+    support_state = _support_status(contract, None)
+    contract_payload = _live_contract_payload(live, contract)
+    quality = _mapping_or_empty(contract_payload.get("quality"))
+    chart_bar = _mapping_or_empty(contract_payload.get("chart_bar"))
+    quality_reasons = _sequence_text(quality.get("blocking_reasons"))
+    chart_reasons = _sequence_text(chart_bar.get("blocking_reasons"))
+    quote_status = _quote_status(quality, quality_reasons)
+    chart_status = _chart_status(chart_bar, chart_reasons)
+    query_reasons = gate_reasons if selected_gate_contract == contract else ("no_pipeline_gate_for_contract",)
+    query_evaluation_eligible = selected_gate_contract == contract and gate_enabled
+    blocking_reasons = _dedupe(
+        (
+            *quality_reasons,
+            *chart_reasons,
+            *(query_reasons if not query_evaluation_eligible else ()),
+        )
+    )
+    return OperatorContractStatusVM(
+        contract=contract,
+        profile_label=_contract_status_label(contract, profile_id),
+        support_state=support_state,
+        quote_status=quote_status,
+        chart_status=chart_status,
+        quote_freshness_state=_quote_freshness_state(quote_status),
+        chart_freshness_state=_chart_freshness_state(chart_status, chart_bar),
+        blocking_reasons=blocking_reasons,
+        status_text=_contract_status_text(
+            quote_status=quote_status,
+            chart_status=chart_status,
+            query_evaluation_eligible=query_evaluation_eligible,
+        ),
+        query_evaluation_eligible=query_evaluation_eligible,
+        runtime_state=_operator_runtime_state(
+            provider_status=provider_status,
+            stream_status=stream_status,
+            live=live,
+            profile_id=profile_id,
+            blocking_reasons=blocking_reasons,
+        ),
+    )
+
+
+def _contract_status_text(
+    *,
+    quote_status: str,
+    chart_status: str,
+    query_evaluation_eligible: bool,
+) -> str:
+    if chart_status == "chart missing":
+        return "Chart bars are missing, so the query path remains blocked where bars are required."
+    if chart_status == "chart stale":
+        return "Chart bars are stale, so fresh chart confirmation is required before query readiness."
+    if chart_status == "malformed chart event":
+        return "The latest chart event is malformed or missing required bar fields."
+    if quote_status == "quote missing":
+        return "Quote data is missing for this contract."
+    if quote_status == "quote stale":
+        return "Quote data is stale for this contract."
+    if query_evaluation_eligible:
+        return "Quote and chart status are displayed from produced runtime and gate state; manual query is eligible."
+    return "Query readiness has not been produced for this contract by the pipeline gate."
+
+
+def _quote_status(quality: Mapping[str, Any], reasons: Sequence[str]) -> str:
+    if not quality:
+        return "quote missing"
+    if _has_reason_prefix(reasons, "missing_cache_record:"):
+        return "quote missing"
+    if quality.get("fresh") is not True:
+        return "quote stale"
+    if quality.get("required_fields_present") is not True:
+        return "quote missing"
+    if reasons:
+        return "quote blocked"
+    return "quote available"
+
+
+def _chart_status(chart_bar: Mapping[str, Any], reasons: Sequence[str]) -> str:
+    if not chart_bar:
+        return "chart missing"
+    if _has_reason_prefix(reasons, "malformed_chart_event:") or _has_reason_prefix(
+        reasons,
+        "chart_bar_missing_required_fields:",
+    ):
+        return "malformed chart event"
+    state = _safe_status(chart_bar.get("state") or "unavailable")
+    if chart_bar.get("available") is True and chart_bar.get("fresh") is True:
+        return "chart available"
+    if state == "unavailable":
+        return "chart missing"
+    if state == "stale" or chart_bar.get("fresh") is False:
+        return "chart stale"
+    if state == "building" or chart_bar.get("building") is True:
+        return "chart building"
+    if state == "blocked":
+        return "chart blocked"
+    return "chart missing"
+
+
+def _quote_freshness_state(quote_status: str) -> str:
+    if quote_status == "quote available":
+        return "fresh"
+    if quote_status == "quote stale":
+        return "stale"
+    if quote_status == "quote missing":
+        return "missing"
+    return "blocked"
+
+
+def _chart_freshness_state(chart_status: str, chart_bar: Mapping[str, Any]) -> str:
+    if chart_status == "chart available":
+        return "fresh"
+    if chart_status == "chart stale":
+        return "stale"
+    if chart_status in {"chart missing", "chart building"}:
+        return "missing"
+    if chart_bar.get("fresh") is True:
+        return "fresh_blocked"
+    return "blocked"
+
+
+def _operator_runtime_state(
+    *,
+    provider_status: str,
+    stream_status: str,
+    live: Mapping[str, Any],
+    profile_id: str | None,
+    blocking_reasons: Sequence[str],
+) -> str:
+    source_text = " ".join(
+        (
+            provider_status,
+            stream_status,
+            _safe_status(live.get("provider") or ""),
+            _safe_status(profile_id or ""),
+        )
+    )
+    if "fixture" in source_text:
+        return "fixture"
+    if provider_status in {"disabled", "safe_non_live"} or stream_status in {"disabled", "safe_non_live"}:
+        return "live-disabled"
+    if provider_status in {"blocked", "error", "shutdown"} or stream_status in {"blocked", "error", "shutdown"}:
+        return "live-error"
+    if provider_status == "unavailable" and stream_status == "unavailable":
+        return "dry-run"
+    if _has_reason_prefix(blocking_reasons, "operator_live_runtime_snapshot_unavailable"):
+        return "live-disabled"
+    if provider_status in {"connected", "active"} and stream_status in {"connected", "active"}:
+        return "live-ready"
+    return "dry-run"
+
+
+def _contract_status_label(contract: str, profile_id: str | None) -> str:
+    if contract == "MGC":
+        return "Micro Gold"
+    prefix = str(profile_id or "").strip()
+    return prefix if prefix and contract.lower() in prefix.lower() else contract
 
 
 def _stream_health_payload(value: Mapping[str, Any] | None) -> dict[str, object] | None:
@@ -668,6 +923,7 @@ def _build_cockpit_operator_states(
     premarket: CockpitPremarketVM,
     triggers: Sequence[CockpitTriggerSummaryVM],
     query: CockpitQueryReadinessVM,
+    contract_statuses: Sequence[OperatorContractStatusVM],
     last_pipeline_result: CockpitPipelineResultVM,
 ) -> tuple[CockpitOperatorStateVM, ...]:
     states: list[CockpitOperatorStateVM] = []
@@ -759,6 +1015,30 @@ def _build_cockpit_operator_states(
             _first_reason(query_reasons, "bars_missing") or runtime.bar_freshness,
             "runtime_status",
         )
+
+    for status in contract_statuses:
+        if status.contract != contract:
+            continue
+        if status.chart_status == "chart stale":
+            append(
+                "stale_chart_bars",
+                "stale",
+                "Chart bars are stale.",
+                _first_reason(status.blocking_reasons, "chart_bar_stale:")
+                or _first_reason(status.blocking_reasons, "stale_bar_data")
+                or status.chart_freshness_state,
+                "contract_status",
+            )
+        if status.chart_status == "malformed chart event":
+            append(
+                "malformed_chart_event",
+                "blocked",
+                "Latest chart event is malformed or missing required bar fields.",
+                _first_reason(status.blocking_reasons, "malformed_chart_event:")
+                or _first_reason(status.blocking_reasons, "chart_bar_missing_required_fields:")
+                or status.chart_status,
+                "contract_status",
+            )
 
     if runtime.event_lockout_state == "active" or _has_reason(query_reasons, "event_lockout_active"):
         append(
@@ -1062,6 +1342,10 @@ def _safe_pipeline_gate_enabled(gate: Mapping[str, Any]) -> bool:
         _safe_text(_string_or_none(gate.get("trigger_state")) or "UNAVAILABLE").upper() == "QUERY_READY"
         and gate.get("trigger_state_from_real_producer") is True
     )
+
+
+def _has_reason_prefix(reasons: Sequence[str], prefix: str) -> bool:
+    return any(str(reason).startswith(prefix) for reason in reasons)
 
 
 def _build_last_pipeline_result(last_pipeline_result: Mapping[str, Any] | None) -> dict[str, object]:
@@ -1497,12 +1781,25 @@ def _gate_payload(value: PipelineQueryGateResult | Mapping[str, Any] | None) -> 
     return {}
 
 
-def _live_payload(value: LiveObservableSnapshotV2 | Mapping[str, Any] | None, contract: str) -> dict[str, object]:
+def _live_snapshot_payload(value: LiveObservableSnapshotV2 | Mapping[str, Any] | None) -> dict[str, object]:
     if isinstance(value, LiveObservableSnapshotV2):
-        payload = value.to_dict()
-    elif isinstance(value, Mapping):
-        payload = dict(value)
-    else:
+        return value.to_dict()
+    if isinstance(value, Mapping):
+        return dict(value)
+    return {}
+
+
+def _live_contract_payload(live: Mapping[str, Any], contract: str) -> Mapping[str, Any]:
+    contracts = live.get("contracts")
+    if not isinstance(contracts, Mapping):
+        return {}
+    payload = contracts.get(contract)
+    return payload if isinstance(payload, Mapping) else {}
+
+
+def _live_payload(value: LiveObservableSnapshotV2 | Mapping[str, Any] | None, contract: str) -> dict[str, object]:
+    payload = _live_snapshot_payload(value)
+    if not payload:
         return {}
     quote_freshness = "unknown"
     bar_freshness = "unknown"
@@ -1529,6 +1826,10 @@ def _live_payload(value: LiveObservableSnapshotV2 | Mapping[str, Any] | None, co
         "bar_freshness": bar_freshness,
         "blocking_reasons": list(blocking_reasons),
     }
+
+
+def _mapping_or_empty(value: object) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
 
 
 def _support_status(contract: str, support_matrix_final_supported: bool | None) -> str:

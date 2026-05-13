@@ -1515,6 +1515,7 @@ def _render_r14_cockpit_header_html(cockpit: Mapping[str, object]) -> Any:
     stats_html += _ntb_stat_card("Provider", _as_str(runtime.get("provider_status"), default="<unavailable>"), chip=True)
     stats_html += _ntb_stat_card("Stream", _as_str(runtime.get("stream_status"), default="<unavailable>"), chip=True)
     stats_html += _ntb_stat_card("Quote", _as_str(runtime.get("quote_freshness"), default="<unavailable>"), chip=True)
+    stats_html += _ntb_stat_card("Chart", _as_str(runtime.get("bar_freshness"), default="<unavailable>"), chip=True)
     stats_html += _ntb_stat_card("Session", _as_str(runtime.get("session_clock_state"), default="<unavailable>"), chip=True)
     stats_html += _ntb_stat_card("Event", _as_str(runtime.get("event_lockout_state"), default="<unavailable>"), chip=True)
     stats_html += _ntb_stat_card("Gate", gate_status, chip=True)
@@ -1552,11 +1553,13 @@ def _render_r14_cockpit_header_html(cockpit: Mapping[str, object]) -> Any:
             + "</div>"
         )
 
+    contract_status_html = _contract_status_table_html(cockpit.get("contract_statuses"))
     full_html = (
         _ntb_section_divider("Primary Operator Cockpit")
         + '<div class="ntb-card">'
         + _ntb_severity_banner(gate_status, gate_title, gate_subtitle, tier=gate_tier)
         + stats_html
+        + contract_status_html
         + reason_html
         + states_html
         + "</div>"
@@ -1572,8 +1575,8 @@ def build_r14_cockpit_header_markdown(cockpit: Mapping[str, object]) -> str:
         [
             "## Primary Operator Cockpit",
             "",
-            "| Profile | Contract | Support | Runtime | Provider | Stream | Quote | Session | Event | Gate |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| Profile | Contract | Support | Runtime | Provider | Stream | Quote | Chart | Session | Event | Gate |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
             (
                 f"| `{_table_value(identity.get('current_profile'))}` "
                 f"| `{_table_value(identity.get('contract'))}` "
@@ -1582,10 +1585,14 @@ def build_r14_cockpit_header_markdown(cockpit: Mapping[str, object]) -> str:
                 f"| `{_table_value(runtime.get('provider_status'))}` "
                 f"| `{_table_value(runtime.get('stream_status'))}` "
                 f"| `{_table_value(runtime.get('quote_freshness'))}` "
+                f"| `{_table_value(runtime.get('bar_freshness'))}` "
                 f"| `{_table_value(runtime.get('session_clock_state'))}` "
                 f"| `{_table_value(runtime.get('event_lockout_state'))}` "
                 f"| `{_table_value(query.get('pipeline_gate_state'))}` |"
             ),
+            "",
+            "### Contract Data Status",
+            _contract_status_markdown(cockpit.get("contract_statuses")),
             f"- Manual Query Allowed: `{_as_str(query.get('manual_query_allowed'), default=False)}`",
             f"- Query Reason: {_query_reason(query)}",
             f"- QUERY_READY Provenance: `{_as_str(query.get('query_ready_provenance'), default='<unavailable>')}`",
@@ -1768,6 +1775,8 @@ def _render_surface_section(
                     + f"startup={_as_str(row.get('startup_readiness_state'))}, "
                     + f"operator_ready={_as_str(row.get('operator_ready'))}, "
                     + f"market_data={_as_str(row.get('market_data_status'))}, "
+                    + f"quote={_as_str(row.get('quote_status'), default='<unavailable>')}, "
+                    + f"chart={_as_str(row.get('chart_status'), default='<unavailable>')}, "
                     + f"source={_as_str(row.get('readiness_source'), default='<unavailable>')}, "
                     + f"live_state={_as_str(row.get('live_runtime_readiness_state'), default='<unavailable>')}, "
                     + f"runtime_cache={_as_str(row.get('runtime_cache_status'), default='<unavailable>')}, "
@@ -2089,6 +2098,7 @@ def _as_str(value: object, *, default: str = "<missing>") -> str:
 def _render_debug_secondary(shell_json: str) -> Any:
     debug_content = mo.vstack(
         [
+            mo.md("## Debug (Secondary)"),
             mo.ui.code_editor(
                 value=shell_json,
                 language="json",
@@ -2160,6 +2170,72 @@ def _operator_state_lines(value: object) -> str:
         source = _as_str(item.get("source"), default="<unavailable>")
         lines.append(f"  - `{state}` / `{category}`: {summary} Reason: `{reason}`. Source: `{source}`.")
     return "\n".join(lines) if lines else "  - `<none>`"
+
+
+def _contract_status_markdown(value: object) -> str:
+    if not isinstance(value, list | tuple):
+        return "`<unavailable>`"
+    lines = [
+        "| Contract | Label | Mode | Support | Quote | Chart | Query | Message | Reasons |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    rendered = 0
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        reasons = item.get("blocking_reasons")
+        reason_text = ", ".join(_as_str(reason) for reason in reasons) if isinstance(reasons, list) else ""
+        lines.append(
+            "| "
+            + f"`{_table_value(item.get('contract'))}` "
+            + f"| `{_table_value(item.get('profile_label'))}` "
+            + f"| `{_table_value(item.get('runtime_state'))}` "
+            + f"| `{_table_value(item.get('support_state'))}` "
+            + f"| `{_table_value(item.get('quote_status'))}` "
+            + f"| `{_table_value(item.get('chart_status'))}` "
+            + f"| `{_table_value(item.get('query_evaluation_eligible'))}` "
+            + f"| {_table_value(item.get('status_text'))} "
+            + f"| `{_table_value(reason_text or '<none>')}` |"
+        )
+        rendered += 1
+    if rendered == 0:
+        lines.append("| `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` |")
+    return "\n".join(lines)
+
+
+def _contract_status_table_html(value: object) -> str:
+    if not isinstance(value, list | tuple):
+        return ""
+    rows: list[str] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        reasons = item.get("blocking_reasons")
+        reason_text = ", ".join(_as_str(reason) for reason in reasons) if isinstance(reasons, list) else ""
+        rows.append(
+            "<tr>"
+            + f"<td>{_h(_as_str(item.get('contract'), default='<unavailable>'))}</td>"
+            + f"<td>{_h(_as_str(item.get('profile_label'), default='<unavailable>'))}</td>"
+            + f"<td>{_h(_as_str(item.get('runtime_state'), default='<unavailable>'))}</td>"
+            + f"<td>{_h(_as_str(item.get('support_state'), default='<unavailable>'))}</td>"
+            + f"<td>{_h(_as_str(item.get('quote_status'), default='<unavailable>'))}</td>"
+            + f"<td>{_h(_as_str(item.get('chart_status'), default='<unavailable>'))}</td>"
+            + f"<td>{_h(_as_str(item.get('query_evaluation_eligible'), default='False'))}</td>"
+            + f"<td>{_h(_as_str(item.get('status_text'), default='<unavailable>'))}</td>"
+            + f"<td>{_h(reason_text or '<none>')}</td>"
+            + "</tr>"
+        )
+    if not rows:
+        return ""
+    return (
+        '<div style="margin-top:12px; overflow-x:auto">'
+        '<div class="ntb-stat__label" style="margin-bottom:6px">Contract Data Status</div>'
+        '<table class="ntb-table"><thead><tr>'
+        "<th>Contract</th><th>Label</th><th>Mode</th><th>Support</th><th>Quote</th><th>Chart</th><th>Query</th><th>Message</th><th>Reasons</th>"
+        "</tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table></div>"
+    )
 
 
 def _mapping_item_lines(value: object, fields: tuple[str, ...]) -> str:

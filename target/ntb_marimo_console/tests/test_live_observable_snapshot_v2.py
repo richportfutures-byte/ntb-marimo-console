@@ -122,6 +122,38 @@ def record(
     )
 
 
+def chart_record(
+    *,
+    contract: str = "ES",
+    symbol: str = "/ESM26",
+    fields: tuple[tuple[str, object], ...] | None = None,
+    fresh: bool = True,
+    blocking_reasons: tuple[str, ...] = (),
+) -> StreamCacheRecord:
+    return StreamCacheRecord(
+        provider="schwab",
+        service="CHART_FUTURES",
+        symbol=symbol,
+        contract=contract,
+        message_type="bar",
+        fields=fields
+        or (
+            ("start_time", "2026-05-06T13:59:00+00:00"),
+            ("end_time", "2026-05-06T14:00:00+00:00"),
+            ("open", 7170.0),
+            ("high", 7177.0),
+            ("low", 7168.0),
+            ("close", 7175.0),
+            ("volume", 120),
+            ("completed", True),
+        ),
+        updated_at="2026-05-06T14:00:00+00:00",
+        age_seconds=0.0 if fresh else 120.0,
+        fresh=fresh,
+        blocking_reasons=blocking_reasons,
+    )
+
+
 def test_snapshot_includes_schema_provider_status_and_generated_at() -> None:
     snapshot = build_live_observable_snapshot_v2(cache_snapshot(record=record()))
     payload = snapshot.to_dict()
@@ -640,6 +672,41 @@ def test_builder_accepts_stream_cache_snapshot_without_network_side_effects() ->
 
     assert payload["contracts"]["ES"]["quality"]["required_fields_present"] is True
     assert payload["contracts"]["ES"]["quality"]["fresh"] is True
+
+
+def test_mixed_quote_and_chart_records_keep_quote_status_and_surface_chart_building() -> None:
+    payload = build_live_observable_snapshot_v2(
+        cache_snapshot(records=(chart_record(), record())),
+    ).to_dict()
+    es = payload["contracts"]["ES"]
+
+    assert es["quote"]["bid"] == 7175.0
+    assert es["quality"]["fresh"] is True
+    assert es["chart_bar"]["state"] == "building"
+    assert es["chart_bar"]["source"] == "chart_futures"
+    assert es["chart_bar"]["completed_one_minute_available"] is True
+    assert es["chart_bar"]["completed_five_minute_available"] is False
+    assert "completed_five_minute_bars_unavailable" in es["chart_bar"]["blocking_reasons"]
+
+
+def test_stale_and_malformed_chart_records_surface_chart_blocking_status_without_quote_loss() -> None:
+    stale_payload = build_live_observable_snapshot_v2(
+        cache_snapshot(records=(record(), chart_record(fresh=False))),
+    ).to_dict()
+    malformed_payload = build_live_observable_snapshot_v2(
+        cache_snapshot(
+            records=(
+                record(),
+                chart_record(fields=(("start_time", "2026-05-06T13:59:00+00:00"),)),
+            )
+        ),
+    ).to_dict()
+
+    assert stale_payload["contracts"]["ES"]["quality"]["fresh"] is True
+    assert stale_payload["contracts"]["ES"]["chart_bar"]["state"] == "stale"
+    assert "chart_bar_stale:ES" in stale_payload["contracts"]["ES"]["chart_bar"]["blocking_reasons"]
+    assert malformed_payload["contracts"]["ES"]["chart_bar"]["state"] == "blocked"
+    assert "malformed_chart_event:ES" in malformed_payload["contracts"]["ES"]["chart_bar"]["blocking_reasons"]
 
 
 def complete_records() -> tuple[StreamCacheRecord, ...]:

@@ -67,11 +67,17 @@ class FiveContractReadinessRow:
     non_live_fixture_usable: bool
     market_data_status: str
     live_data_available: bool
+    quote_status: str
+    chart_status: str
+    quote_freshness_state: str
+    chart_freshness_state: str
     missing_live_fields: tuple[str, ...]
     live_runtime_readiness_state: RuntimeReadinessState
+    operator_runtime_state: str
     runtime_cache_status: str
     runtime_cache_bound: bool
     runtime_cache_blocked_reasons: tuple[str, ...]
+    chart_blocking_reasons: tuple[str, ...]
     runtime_provider_status: str | None
     runtime_symbol: str | None
     trigger_state_summary: str
@@ -102,11 +108,17 @@ class FiveContractReadinessRow:
             "non_live_fixture_usable": self.non_live_fixture_usable,
             "market_data_status": self.market_data_status,
             "live_data_available": self.live_data_available,
+            "quote_status": self.quote_status,
+            "chart_status": self.chart_status,
+            "quote_freshness_state": self.quote_freshness_state,
+            "chart_freshness_state": self.chart_freshness_state,
             "missing_live_fields": list(self.missing_live_fields),
             "live_runtime_readiness_state": self.live_runtime_readiness_state,
+            "operator_runtime_state": self.operator_runtime_state,
             "runtime_cache_status": self.runtime_cache_status,
             "runtime_cache_bound": self.runtime_cache_bound,
             "runtime_cache_blocked_reasons": list(self.runtime_cache_blocked_reasons),
+            "chart_blocking_reasons": list(self.chart_blocking_reasons),
             "runtime_provider_status": self.runtime_provider_status,
             "runtime_symbol": self.runtime_symbol,
             "trigger_state_summary": self.trigger_state_summary,
@@ -254,8 +266,13 @@ class _RuntimeContractReadiness:
     cache_status: str
     market_data_status: str
     live_data_available: bool
+    quote_status: str
+    chart_status: str
+    quote_freshness_state: str
+    chart_freshness_state: str
     missing_live_fields: tuple[str, ...]
     blocked_reasons: tuple[str, ...]
+    chart_blocking_reasons: tuple[str, ...]
     provider_status: str | None
     symbol: str | None
     label: str | None
@@ -378,11 +395,17 @@ def _build_row(
         ),
         market_data_status=market_data_status,
         live_data_available=runtime_readiness.live_data_available if runtime_bound else market_data_status != "Market data unavailable",
+        quote_status=runtime_readiness.quote_status if runtime_bound else "fixture quote unavailable",
+        chart_status=runtime_readiness.chart_status if runtime_bound else "fixture chart unavailable",
+        quote_freshness_state=runtime_readiness.quote_freshness_state if runtime_bound else "fixture",
+        chart_freshness_state=runtime_readiness.chart_freshness_state if runtime_bound else "fixture",
         missing_live_fields=missing_live_fields,
         live_runtime_readiness_state=runtime_readiness.state,
+        operator_runtime_state=_operator_runtime_state(runtime_bound, runtime_readiness.state),
         runtime_cache_status=runtime_readiness.cache_status,
         runtime_cache_bound=runtime_bound,
         runtime_cache_blocked_reasons=runtime_readiness.blocked_reasons,
+        chart_blocking_reasons=runtime_readiness.chart_blocking_reasons,
         runtime_provider_status=runtime_readiness.provider_status,
         runtime_symbol=runtime_readiness.symbol,
         trigger_state_summary=_trigger_state_summary(shell),
@@ -409,8 +432,13 @@ def _runtime_contract_readiness(
             cache_status=LIVE_RUNTIME_CACHE_STATUS,
             market_data_status="Live runtime not requested",
             live_data_available=False,
+            quote_status="quote missing",
+            chart_status="chart missing",
+            quote_freshness_state="missing",
+            chart_freshness_state="missing",
             missing_live_fields=("live_runtime_cache",),
             blocked_reasons=LIVE_RUNTIME_NOT_REQUESTED_BLOCKERS,
+            chart_blocking_reasons=("chart_bars_missing:" + contract,),
             provider_status=None,
             symbol=None,
             label=_contract_label(contract),
@@ -424,8 +452,13 @@ def _runtime_contract_readiness(
             cache_status="runtime_cache_missing_contract",
             market_data_status="Runtime cache missing contract",
             live_data_available=False,
+            quote_status="quote missing",
+            chart_status="chart missing",
+            quote_freshness_state="missing",
+            chart_freshness_state="missing",
             missing_live_fields=("runtime_cache_record",),
             blocked_reasons=(f"missing_cache_record:{contract}",),
+            chart_blocking_reasons=(f"chart_bars_missing:{contract}",),
             provider_status=provider_status,
             symbol=None,
             label=_contract_label(contract),
@@ -435,6 +468,13 @@ def _runtime_contract_readiness(
     quality = payload.get("quality")
     quality_map = quality if isinstance(quality, Mapping) else {}
     reasons = _dedupe(tuple(str(reason) for reason in quality_map.get("blocking_reasons", ()) if str(reason).strip()))
+    chart = payload.get("chart_bar")
+    chart_map = chart if isinstance(chart, Mapping) else {}
+    chart_reasons = _dedupe(tuple(str(reason) for reason in chart_map.get("blocking_reasons", ()) if str(reason).strip()))
+    quote_status = _quote_status(quality_map, reasons)
+    chart_status = _chart_status(chart_map, chart_reasons)
+    quote_freshness_state = _quote_freshness_state(quote_status)
+    chart_freshness_state = _chart_freshness_state(chart_status, chart_map)
     missing_fields = _missing_runtime_fields(contract, reasons)
     symbol = payload.get("symbol")
     symbol_text = str(symbol).strip().upper() if symbol is not None else None
@@ -470,6 +510,12 @@ def _runtime_contract_readiness(
         state = LIVE_RUNTIME_MISSING_CONTRACT
         status = "runtime_cache_symbol_mismatch"
         market_data_status = "Runtime cache symbol mismatch"
+    elif chart_map.get("available") is not True:
+        state = LIVE_RUNTIME_MISSING_REQUIRED_FIELDS if chart_status == "chart missing" else LIVE_RUNTIME_ERROR
+        status = "runtime_cache_chart_bars_blocked"
+        market_data_status = "Runtime cache chart bars blocked"
+        missing_fields = _dedupe(missing_fields + ("chart_bars",))
+        reasons = _dedupe(reasons + chart_reasons)
     elif reasons:
         state = LIVE_RUNTIME_ERROR
         status = "runtime_cache_blocked"
@@ -487,8 +533,13 @@ def _runtime_contract_readiness(
         cache_status=status,
         market_data_status=market_data_status,
         live_data_available=live_data_available,
+        quote_status=quote_status,
+        chart_status=chart_status,
+        quote_freshness_state=quote_freshness_state,
+        chart_freshness_state=chart_freshness_state,
         missing_live_fields=missing_fields,
         blocked_reasons=() if live_data_available else reasons,
+        chart_blocking_reasons=chart_reasons,
         provider_status=provider_status,
         symbol=symbol_text,
         label=label,
@@ -540,6 +591,18 @@ def _summary_runtime_blockers(
     if runtime_status == LIVE_RUNTIME_CONNECTED and not blockers:
         return ()
     return _dedupe(blockers or (runtime_status.lower(),))
+
+
+def _operator_runtime_state(runtime_bound: bool, readiness_state: RuntimeReadinessState) -> str:
+    if not runtime_bound:
+        return "fixture"
+    if readiness_state == LIVE_RUNTIME_CONNECTED:
+        return "live-ready"
+    if readiness_state in {LIVE_RUNTIME_NOT_REQUESTED, LIVE_RUNTIME_DISABLED}:
+        return "live-disabled"
+    if readiness_state == LIVE_RUNTIME_STALE:
+        return "live-error"
+    return "live-error"
 
 
 def _limitations_for_summary(summary: FiveContractReadinessSummary) -> tuple[str, ...]:
@@ -691,6 +754,64 @@ def _missing_runtime_fields(contract: str, reasons: tuple[str, ...]) -> tuple[st
 
 def _has_reason_prefix(reasons: tuple[str, ...], prefix: str) -> bool:
     return any(reason.startswith(prefix) for reason in reasons)
+
+
+def _quote_status(quality: Mapping[str, object], reasons: tuple[str, ...]) -> str:
+    if not quality:
+        return "quote missing"
+    if _has_reason_prefix(reasons, "missing_cache_record:"):
+        return "quote missing"
+    if quality.get("fresh") is not True:
+        return "quote stale"
+    if quality.get("required_fields_present") is not True:
+        return "quote missing"
+    if reasons:
+        return "quote blocked"
+    return "quote available"
+
+
+def _chart_status(chart: Mapping[str, object], reasons: tuple[str, ...]) -> str:
+    if not chart:
+        return "chart missing"
+    if _has_reason_prefix(reasons, "malformed_chart_event:") or _has_reason_prefix(
+        reasons,
+        "chart_bar_missing_required_fields:",
+    ):
+        return "malformed chart event"
+    state = str(chart.get("state") or "unavailable").strip().lower()
+    if chart.get("available") is True and chart.get("fresh") is True:
+        return "chart available"
+    if state == "unavailable":
+        return "chart missing"
+    if state == "stale" or chart.get("fresh") is False:
+        return "chart stale"
+    if state == "building" or chart.get("building") is True:
+        return "chart building"
+    if state == "blocked":
+        return "chart blocked"
+    return "chart missing"
+
+
+def _quote_freshness_state(quote_status: str) -> str:
+    if quote_status == "quote available":
+        return "fresh"
+    if quote_status == "quote stale":
+        return "stale"
+    if quote_status == "quote missing":
+        return "missing"
+    return "blocked"
+
+
+def _chart_freshness_state(chart_status: str, chart: Mapping[str, object]) -> str:
+    if chart_status == "chart available":
+        return "fresh"
+    if chart_status == "chart stale":
+        return "stale"
+    if chart_status in {"chart missing", "chart building"}:
+        return "missing"
+    if chart.get("fresh") is True:
+        return "fresh_blocked"
+    return "blocked"
 
 
 def _contract_label(contract: str) -> str | None:

@@ -97,11 +97,12 @@ class LiveObservableSnapshotBuilder:
         provider_status = normalize_provider_status(getattr(cache_snapshot, "provider_status", "disabled"))
         provider_reason = provider_blocking_reason(provider_status)
         cache_blocking_reasons = _cache_blocking_reasons(cache_snapshot)
-        records_by_contract = _records_by_contract(cache_snapshot)
+        quote_records_by_contract = _records_by_contract(cache_snapshot, message_type="quote")
+        chart_records_by_contract = _records_by_contract(cache_snapshot, message_type="bar")
 
         contracts: dict[str, ContractObservableV2] = {}
         for contract in final_target_contracts():
-            record = records_by_contract.get(contract)
+            record = quote_records_by_contract.get(contract)
             contracts[contract] = _contract_observable(
                 contract,
                 record=record,
@@ -110,6 +111,7 @@ class LiveObservableSnapshotBuilder:
                 provider_reason=provider_reason,
                 cache_blocking_reasons=cache_blocking_reasons,
                 bar_state=_bar_state(contract, self.bar_states),
+                bar_record=chart_records_by_contract.get(contract),
                 dependencies=_contract_dependencies(contract, self.dependency_states),
             )
 
@@ -202,9 +204,10 @@ def _contract_observable(
     provider_reason: str | None,
     cache_blocking_reasons: tuple[str, ...],
     bar_state: ContractBarState | None,
+    bar_record: object | None,
     dependencies: dict[str, DependencyObservableV2],
 ) -> ContractObservableV2:
-    chart_bar = _chart_bar_observable(contract, bar_state)
+    chart_bar = _chart_bar_observable(contract, bar_state, bar_record=bar_record)
     dependency_reasons = _dependency_blocking_reasons(contract, dependencies)
     if record is None:
         reasons = _dedupe(
@@ -308,8 +311,13 @@ def _bar_state(contract: str, bar_states: Mapping[str, ContractBarState] | None)
     return candidate if isinstance(candidate, ContractBarState) else None
 
 
-def _chart_bar_observable(contract: str, bar_state: ContractBarState | None) -> ChartBarObservableV2:
-    if bar_state is None:
+def _chart_bar_observable(
+    contract: str,
+    bar_state: ContractBarState | None,
+    *,
+    bar_record: object | None,
+) -> ChartBarObservableV2:
+    if bar_state is None and bar_record is None:
         return ChartBarObservableV2(
             state="unavailable",
             available=False,
@@ -318,6 +326,8 @@ def _chart_bar_observable(contract: str, bar_state: ContractBarState | None) -> 
             source_status="unavailable",
             blocking_reasons=(f"chart_bars_missing:{contract}",),
         )
+    if bar_state is None:
+        return _chart_bar_observable_from_record(contract, bar_record)
     readiness = bar_state.readiness()
     return ChartBarObservableV2(
         state=readiness.state,
@@ -334,6 +344,86 @@ def _chart_bar_observable(contract: str, bar_state: ContractBarState | None) -> 
         latest_completed_five_minute_end_time=readiness.latest_completed_five_minute_end_time,
         blocking_reasons=readiness.blocking_reasons,
     )
+
+
+def _chart_bar_observable_from_record(contract: str, bar_record: object | None) -> ChartBarObservableV2:
+    if bar_record is None:
+        return ChartBarObservableV2(
+            state="unavailable",
+            available=False,
+            fresh=False,
+            source="unavailable_until_chart_futures",
+            source_status="unavailable",
+            blocking_reasons=(f"chart_bars_missing:{contract}",),
+        )
+    fields = _record_fields(bar_record)
+    record_reasons = tuple(_record_blocking_reasons(bar_record))
+    fresh = _record_fresh(bar_record)
+    missing_fields = _missing_chart_record_fields(fields)
+    if missing_fields:
+        reasons = _dedupe(
+            record_reasons
+            + (
+                f"malformed_chart_event:{contract}",
+                f"chart_bar_missing_required_fields:{contract}:{','.join(missing_fields)}",
+            )
+        )
+        return ChartBarObservableV2(
+            state="blocked",
+            available=False,
+            fresh=fresh,
+            source="chart_futures",
+            source_status="blocked",
+            blocking_reasons=reasons,
+        )
+    if not fresh:
+        return ChartBarObservableV2(
+            state="stale",
+            available=False,
+            fresh=False,
+            source="chart_futures",
+            source_status="stale",
+            completed_one_minute_available=True,
+            completed_five_minute_available=False,
+            building=False,
+            completed_one_minute_count=1,
+            completed_five_minute_count=0,
+            latest_completed_one_minute_end_time=_timestamp_field(fields, "end_time", "end time", "7"),
+            blocking_reasons=_dedupe(record_reasons + (f"chart_bar_stale:{contract}",)),
+        )
+    completed = _bool_field(fields, "completed", "8") is not False
+    return ChartBarObservableV2(
+        state="building",
+        available=False,
+        fresh=True,
+        source="chart_futures",
+        source_status="building",
+        completed_one_minute_available=completed,
+        completed_five_minute_available=False,
+        building=True,
+        completed_one_minute_count=1 if completed else 0,
+        completed_five_minute_count=0,
+        latest_completed_one_minute_end_time=_timestamp_field(fields, "end_time", "end time", "7"),
+        blocking_reasons=_dedupe(
+            record_reasons
+            + (
+                "completed_five_minute_bars_unavailable",
+                "building_five_minute_bar_not_confirmation",
+            )
+        ),
+    )
+
+
+def _missing_chart_record_fields(fields: Mapping[str, object]) -> tuple[str, ...]:
+    required = ("start_time", "end_time", "open", "high", "low", "close")
+    missing: list[str] = []
+    for field_name in required:
+        if field_name in {"start_time", "end_time"}:
+            if _timestamp_field(fields, field_name, field_name.replace("_", " ")) is None:
+                missing.append(field_name)
+        elif _number_field(fields, field_name) is None:
+            missing.append(field_name)
+    return tuple(missing)
 
 
 def _contract_dependencies(
@@ -422,13 +512,13 @@ def _dependency_blocking_reasons(
     return _dedupe(tuple(reasons))
 
 
-def _records_by_contract(cache_snapshot: StreamCacheSnapshotLike | None) -> dict[str, object]:
+def _records_by_contract(cache_snapshot: StreamCacheSnapshotLike | None, *, message_type: str) -> dict[str, object]:
     records: dict[str, object] = {}
     if cache_snapshot is None:
         return records
     for record in getattr(cache_snapshot, "records", ()):
         contract = _record_contract(record)
-        if contract in final_target_contracts():
+        if contract in final_target_contracts() and _record_message_type(record) == message_type:
             records.setdefault(contract, record)
     return records
 
@@ -447,6 +537,10 @@ def _record_fields(record: object) -> dict[str, object]:
 
 def _record_contract(record: object) -> str:
     return str(getattr(record, "contract", "")).strip().upper()
+
+
+def _record_message_type(record: object) -> str:
+    return str(getattr(record, "message_type", "")).strip().lower()
 
 
 def _record_symbol(record: object) -> str | None:

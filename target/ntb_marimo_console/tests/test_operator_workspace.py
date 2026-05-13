@@ -990,6 +990,69 @@ def test_phase1_shell_exposes_r14_cockpit_contract_without_adding_layout_surface
     assert "r14_cockpit" not in shell["surfaces"]
 
 
+def test_r14_cockpit_exposes_five_contract_quote_chart_status_without_zn_gc() -> None:
+    cockpit = ready_cockpit("ES", live_observable=operator_status_snapshot())
+    statuses = {row["contract"]: row for row in cockpit["contract_statuses"]}
+
+    assert tuple(statuses) == ("ES", "NQ", "CL", "6E", "MGC")
+    assert "ZN" not in statuses
+    assert "GC" not in statuses
+    assert statuses["ES"]["quote_status"] == "quote available"
+    assert statuses["ES"]["chart_status"] == "chart available"
+    assert statuses["ES"]["query_evaluation_eligible"] is True
+    assert statuses["MGC"]["profile_label"] == "Micro Gold"
+    assert statuses["MGC"]["profile_label"] != "GC"
+
+
+def test_r14_cockpit_contract_status_blocks_missing_stale_and_malformed_chart_bars() -> None:
+    cockpit = ready_cockpit("ES", live_observable=operator_status_snapshot(chart_state="stale"))
+    statuses = {row["contract"]: row for row in cockpit["contract_statuses"]}
+    states = states_by_category(cockpit)
+
+    assert statuses["ES"]["chart_status"] == "chart stale"
+    assert statuses["ES"]["chart_freshness_state"] == "stale"
+    assert "Chart bars are stale" in statuses["ES"]["status_text"]
+    assert "stale_chart_bars" in states
+
+    missing = ready_cockpit("ES", live_observable=operator_status_snapshot(chart_state="missing"))
+    missing_status = {row["contract"]: row for row in missing["contract_statuses"]}["ES"]
+    assert missing_status["chart_status"] == "chart missing"
+    assert "query path remains blocked" in missing_status["status_text"]
+
+    malformed = ready_cockpit("ES", live_observable=operator_status_snapshot(chart_state="malformed"))
+    malformed_status = {row["contract"]: row for row in malformed["contract_statuses"]}["ES"]
+    assert malformed_status["chart_status"] == "malformed chart event"
+    assert "malformed_chart_event:ES" in malformed_status["blocking_reasons"]
+    assert "malformed_chart_event" in states_by_category(malformed)
+
+
+def test_contract_status_display_does_not_create_query_readiness_from_view_model() -> None:
+    fake_gate = {
+        "enabled": True,
+        "pipeline_query_authorized": True,
+        "contract": "ES",
+        "profile_id": "preserved_es_phase1",
+        "trigger_state": "QUERY_READY",
+        "trigger_state_from_real_producer": False,
+    }
+    cockpit = ready_cockpit("ES", gate=fake_gate, trigger_state={"state": "QUERY_READY"})
+    es = {row["contract"]: row for row in cockpit["contract_statuses"]}["ES"]
+
+    assert cockpit["query_readiness"]["query_ready"] is False
+    assert es["query_evaluation_eligible"] is False
+    assert "pipeline_gate_provenance_not_verified" in es["blocking_reasons"]
+
+
+def test_contract_statuses_are_fixture_explicit_and_exclude_raw_values() -> None:
+    cockpit = ready_cockpit("ES", live_observable=operator_status_snapshot(include_raw_values=True))
+    rendered = json.dumps(cockpit["contract_statuses"], sort_keys=True)
+
+    assert "fixture" in {row["runtime_state"] for row in cockpit["contract_statuses"]}
+    assert "7175.25" not in rendered
+    assert "raw streamer payload" not in rendered.lower()
+    assert "ACCESS_VALUE_PRIVATE" not in rendered
+
+
 def ready_workspace(
     contract: str,
     *,
@@ -1002,6 +1065,7 @@ def ready_workspace(
     audit_replay_record: dict[str, object] | None = None,
     trigger_transition_log: dict[str, object] | None = None,
     trigger_transition_log_status: str | None = None,
+    live_observable: dict[str, object] | None = None,
 ) -> object:
     selected_trigger = trigger_state or trigger_result(contract, TriggerState.QUERY_READY)
     selected_gate = gate or query_gate(contract, trigger_state=selected_trigger)
@@ -1013,7 +1077,7 @@ def ready_workspace(
             trigger_state=selected_trigger,
             pipeline_query_gate=selected_gate,
             premarket_brief=brief or globals()["brief"](contract),
-            live_observable=live_snapshot(contract),
+            live_observable=live_observable or live_snapshot(contract),
             provider_status=provider_status,
             stream_status=stream_status,
             quote_freshness="fresh",
@@ -1039,6 +1103,7 @@ def ready_cockpit(
     profile_id: str | None = None,
     provider_status: str = "connected",
     stream_status: str = "connected",
+    live_observable: dict[str, object] | None = None,
 ) -> dict[str, object]:
     selected_trigger = trigger_state if trigger_state is not None else trigger_result(contract, TriggerState.QUERY_READY)
     selected_gate = gate or query_gate(contract, trigger_state=selected_trigger)
@@ -1050,7 +1115,7 @@ def ready_cockpit(
             trigger_state=selected_trigger,  # type: ignore[arg-type]
             pipeline_query_gate=selected_gate,  # type: ignore[arg-type]
             premarket_brief=brief or globals()["brief"](contract),
-            live_observable=live_snapshot(contract),
+            live_observable=live_observable or live_snapshot(contract),
             provider_status=provider_status,
             stream_status=stream_status,
             quote_freshness="fresh",
@@ -1190,6 +1255,63 @@ def live_snapshot(contract: str) -> dict[str, object]:
             }
         },
         "data_quality": {"ready": True, "blocking_reasons": []},
+    }
+
+
+def operator_status_snapshot(*, chart_state: str = "available", include_raw_values: bool = False) -> dict[str, object]:
+    contracts: dict[str, object] = {}
+    for contract in ("ES", "NQ", "CL", "6E", "MGC"):
+        chart_bar = {
+            "state": "available",
+            "available": True,
+            "fresh": True,
+            "blocking_reasons": [],
+        }
+        if chart_state == "stale" and contract == "ES":
+            chart_bar = {
+                "state": "stale",
+                "available": False,
+                "fresh": False,
+                "blocking_reasons": ["chart_bar_stale:ES"],
+            }
+        elif chart_state == "missing" and contract == "ES":
+            chart_bar = {
+                "state": "unavailable",
+                "available": False,
+                "fresh": False,
+                "blocking_reasons": ["chart_bars_missing:ES"],
+            }
+        elif chart_state == "malformed" and contract == "ES":
+            chart_bar = {
+                "state": "blocked",
+                "available": False,
+                "fresh": True,
+                "blocking_reasons": ["malformed_chart_event:ES", "chart_bar_missing_required_fields:ES:open"],
+            }
+        contract_payload: dict[str, object] = {
+            "contract": contract,
+            "symbol": f"/{contract}M26",
+            "label": "Micro Gold" if contract == "MGC" else None,
+            "quality": {
+                "fresh": True,
+                "required_fields_present": True,
+                "blocking_reasons": [],
+            },
+            "chart_bar": chart_bar,
+        }
+        if include_raw_values:
+            contract_payload["quote"] = {
+                "last": 7175.25,
+                "raw_payload": "raw streamer payload ACCESS_VALUE_PRIVATE",
+            }
+        contracts[contract] = contract_payload
+    return {
+        "schema": "live_observable_snapshot_v2",
+        "generated_at": "2026-05-06T14:00:00+00:00",
+        "provider": "fixture",
+        "provider_status": "connected",
+        "contracts": contracts,
+        "data_quality": {"ready": chart_state == "available", "blocking_reasons": []},
     }
 
 
