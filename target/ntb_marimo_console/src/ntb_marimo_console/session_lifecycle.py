@@ -46,6 +46,14 @@ from .cockpit_manual_query import (
     operator_action_status_from_manual_query_result,
     submit_cockpit_manual_query,
 )
+from .cockpit_evidence import (
+    append_cockpit_evidence_events,
+    build_cockpit_event_replay_surface,
+    cockpit_evidence_timestamp,
+    cockpit_lifecycle_evidence_events,
+    cockpit_manual_query_evidence_events,
+    cockpit_operator_note_evidence_event,
+)
 from .contract_universe import normalize_contract_symbol
 from .runtime_modes import RuntimeAssembly, assemble_runtime_for_profile, build_phase1_artifacts_from_assembly
 from .session_evidence import (
@@ -106,6 +114,7 @@ class SessionLifecycle:
     operator_runtime_mode: OperatorRuntimeMode | str | None = None
     operator_action_timeline: tuple[CockpitOperatorActionTimelineEntry, ...] = ()
     cockpit_operator_notes: tuple[CockpitOperatorNote, ...] = ()
+    cockpit_evidence_events: tuple[EvidenceEvent, ...] = ()
     trigger_transition_replay_source: TriggerTransitionReplaySource = field(
         default_factory=lambda: TriggerTransitionReplaySource(source="session_lifecycle"),
         repr=False,
@@ -307,6 +316,7 @@ def request_query_action(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime_mode=operator_runtime.mode,
         operator_action_timeline=lifecycle.operator_action_timeline,
         cockpit_operator_notes=lifecycle.cockpit_operator_notes,
+        cockpit_evidence_events=lifecycle.cockpit_evidence_events,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
     observe_phase1_trigger_state_results(next_lifecycle, artifacts.trigger_state_results)
@@ -340,6 +350,20 @@ def request_cockpit_manual_query(lifecycle: SessionLifecycle, contract: str) -> 
         status=operator_action_status,
         recorded_at=result.submitted_at
         or _resolved_recorded_at(lifecycle.operator_runtime),
+    )
+    event_timestamp = result.submitted_at or cockpit_evidence_timestamp(
+        current_shell,
+        fallback=_resolved_recorded_at(lifecycle.operator_runtime),
+    )
+    cockpit_evidence_events = append_cockpit_evidence_events(
+        lifecycle.cockpit_evidence_events,
+        cockpit_manual_query_evidence_events(
+            result=result,
+            surface=_fixture_cockpit_surface(current_shell),
+            timestamp=event_timestamp,
+            sequence=operator_action_timeline[-1].sequence,
+            active_profile_id=_selected_profile_id(lifecycle),
+        ),
     )
     status_summary = _cockpit_manual_query_summary(result)
     next_action = _cockpit_manual_query_next_action(result)
@@ -378,6 +402,7 @@ def request_cockpit_manual_query(lifecycle: SessionLifecycle, contract: str) -> 
         operator_runtime_mode=lifecycle.operator_runtime_mode,
         operator_action_timeline=operator_action_timeline,
         cockpit_operator_notes=lifecycle.cockpit_operator_notes,
+        cockpit_evidence_events=cockpit_evidence_events,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
 
@@ -399,6 +424,21 @@ def refresh_runtime_snapshot(lifecycle: SessionLifecycle) -> SessionLifecycle:
         lifecycle.operator_action_timeline,
         status=runtime_refresh_status,
         recorded_at=_resolved_recorded_at(operator_runtime),
+    )
+    cockpit_evidence_events = append_cockpit_evidence_events(
+        lifecycle.cockpit_evidence_events,
+        cockpit_lifecycle_evidence_events(
+            event_type="cockpit_refreshed",
+            surface=_fixture_cockpit_surface(current_shell),
+            timestamp=cockpit_evidence_timestamp(
+                current_shell,
+                fallback=_resolved_recorded_at(operator_runtime),
+            ),
+            sequence=operator_action_timeline[-1].sequence,
+            action_status="REFRESHED",
+            summary="Runtime snapshot refresh completed; no manual query was submitted.",
+            active_profile_id=_selected_profile_id(lifecycle),
+        ),
     )
     lifecycle_history = _continue_history(
         lifecycle.lifecycle_history,
@@ -439,6 +479,7 @@ def refresh_runtime_snapshot(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime_mode=operator_runtime.mode,
         operator_action_timeline=operator_action_timeline,
         cockpit_operator_notes=lifecycle.cockpit_operator_notes,
+        cockpit_evidence_events=cockpit_evidence_events,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
     return next_lifecycle
@@ -471,12 +512,26 @@ def add_cockpit_operator_note(
             "Operator note rejected: text was empty or whitespace-only after sanitization."
         )
         next_action = "Re-enter a non-empty operator note before submitting."
+        cockpit_evidence_events = lifecycle.cockpit_evidence_events
     else:
         status_summary = (
             f"Operator note recorded (#{added.sequence}); cockpit query gating, runtime readiness, "
             "and preserved-engine authority are unchanged."
         )
         next_action = "Review the operator notes panel; the preserved engine remains the only decision authority."
+        cockpit_evidence_events = append_cockpit_evidence_events(
+            lifecycle.cockpit_evidence_events,
+            (
+                cockpit_operator_note_evidence_event(
+                    contract=added.contract,
+                    text=added.text,
+                    timestamp=recorded_at
+                    or cockpit_evidence_timestamp(current_shell),
+                    sequence=added.sequence,
+                    active_profile_id=profile_id,
+                ),
+            ),
+        )
     return _finalize_lifecycle(
         shell=current_shell,
         baseline_shell=deepcopy(lifecycle.baseline_shell) if lifecycle.baseline_shell is not None else None,
@@ -512,6 +567,7 @@ def add_cockpit_operator_note(
         operator_runtime_mode=lifecycle.operator_runtime_mode,
         operator_action_timeline=lifecycle.operator_action_timeline,
         cockpit_operator_notes=updated_notes,
+        cockpit_evidence_events=cockpit_evidence_events,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
 
@@ -542,6 +598,24 @@ def reset_session(lifecycle: SessionLifecycle) -> SessionLifecycle:
         lifecycle.operator_action_timeline,
         status=reset_status,
         recorded_at=_resolved_recorded_at(operator_runtime),
+    )
+    reset_summary = (
+        "Session reset completed; bounded query and manual-query display states were cleared."
+    )
+    cockpit_evidence_events = append_cockpit_evidence_events(
+        lifecycle.cockpit_evidence_events,
+        cockpit_lifecycle_evidence_events(
+            event_type="cockpit_reset",
+            surface=_fixture_cockpit_surface(current_shell),
+            timestamp=cockpit_evidence_timestamp(
+                current_shell,
+                fallback=_resolved_recorded_at(operator_runtime),
+            ),
+            sequence=operator_action_timeline[-1].sequence,
+            action_status="RESET",
+            summary=reset_summary,
+            active_profile_id=_selected_profile_id(lifecycle),
+        ),
     )
     lifecycle_history = _continue_history(
         lifecycle.lifecycle_history,
@@ -589,6 +663,7 @@ def reset_session(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime_mode=operator_runtime.mode,
         operator_action_timeline=operator_action_timeline,
         cockpit_operator_notes=lifecycle.cockpit_operator_notes,
+        cockpit_evidence_events=cockpit_evidence_events,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
     return next_lifecycle
@@ -664,6 +739,7 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
             operator_runtime_mode=startup.operator_runtime.mode,
             operator_action_timeline=lifecycle.operator_action_timeline,
             cockpit_operator_notes=lifecycle.cockpit_operator_notes,
+            cockpit_evidence_events=lifecycle.cockpit_evidence_events,
             trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
         )
 
@@ -681,6 +757,21 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
         lifecycle.operator_action_timeline,
         status=profile_refresh_status,
         recorded_at=_resolved_recorded_at(startup.operator_runtime),
+    )
+    cockpit_evidence_events = append_cockpit_evidence_events(
+        lifecycle.cockpit_evidence_events,
+        cockpit_lifecycle_evidence_events(
+            event_type="cockpit_refreshed",
+            surface=_fixture_cockpit_surface(current_shell),
+            timestamp=cockpit_evidence_timestamp(
+                current_shell,
+                fallback=_resolved_recorded_at(startup.operator_runtime),
+            ),
+            sequence=operator_action_timeline[-1].sequence,
+            action_status="REFRESHED",
+            summary="Current profile refresh completed; no manual query was submitted.",
+            active_profile_id=_selected_profile_id(lifecycle),
+        ),
     )
     lifecycle_history = _continue_history(
         lifecycle.lifecycle_history,
@@ -724,6 +815,7 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime_mode=startup.operator_runtime.mode,
         operator_action_timeline=operator_action_timeline,
         cockpit_operator_notes=lifecycle.cockpit_operator_notes,
+        cockpit_evidence_events=cockpit_evidence_events,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
     observe_phase1_trigger_state_results(next_lifecycle, startup.trigger_state_results)
@@ -789,6 +881,7 @@ def clear_retained_evidence(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime_mode=lifecycle.operator_runtime_mode,
         operator_action_timeline=lifecycle.operator_action_timeline,
         cockpit_operator_notes=lifecycle.cockpit_operator_notes,
+        cockpit_evidence_events=lifecycle.cockpit_evidence_events,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
 
@@ -843,6 +936,7 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
             operator_runtime_mode=lifecycle.operator_runtime_mode,
             operator_action_timeline=lifecycle.operator_action_timeline,
             cockpit_operator_notes=lifecycle.cockpit_operator_notes,
+            cockpit_evidence_events=lifecycle.cockpit_evidence_events,
             trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
         )
 
@@ -909,6 +1003,7 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
             operator_runtime_mode=lifecycle.operator_runtime_mode,
             operator_action_timeline=lifecycle.operator_action_timeline,
             cockpit_operator_notes=lifecycle.cockpit_operator_notes,
+            cockpit_evidence_events=lifecycle.cockpit_evidence_events,
             trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
         )
 
@@ -956,6 +1051,7 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
         operator_runtime_mode=startup.operator_runtime.mode,
         operator_action_timeline=(),
         cockpit_operator_notes=(),
+        cockpit_evidence_events=(),
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
     observe_phase1_trigger_state_results(next_lifecycle, startup.trigger_state_results)
@@ -1054,16 +1150,21 @@ def _manual_query_blocked_result(
 
 
 def _fixture_cockpit_rows(shell: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
-    surfaces = shell.get("surfaces")
-    if not isinstance(surfaces, Mapping):
-        return ()
-    cockpit = surfaces.get("fixture_cockpit_overview")
-    if not isinstance(cockpit, Mapping):
-        return ()
+    cockpit = _fixture_cockpit_surface(shell)
     rows = cockpit.get("rows")
     if not isinstance(rows, list):
         return ()
     return tuple(row for row in rows if isinstance(row, Mapping))
+
+
+def _fixture_cockpit_surface(shell: Mapping[str, object]) -> Mapping[str, object]:
+    surfaces = shell.get("surfaces")
+    if not isinstance(surfaces, Mapping):
+        return {}
+    cockpit = surfaces.get("fixture_cockpit_overview")
+    if not isinstance(cockpit, Mapping):
+        return {}
+    return cockpit
 
 
 def _attach_cockpit_manual_query_result(
@@ -1134,6 +1235,26 @@ def _attach_cockpit_current_state_summary(shell: dict[str, object]) -> None:
     cockpit["contract_readiness_detail"] = build_cockpit_contract_readiness_detail(
         cockpit
     )
+
+
+def _attach_cockpit_event_replay(
+    shell: dict[str, object],
+    events: tuple[EvidenceEvent, ...],
+) -> None:
+    surfaces = shell.get("surfaces")
+    if not isinstance(surfaces, dict):
+        return
+    cockpit = surfaces.get("fixture_cockpit_overview")
+    if not isinstance(cockpit, dict):
+        return
+    payload = build_cockpit_event_replay_surface(
+        events,
+        active_profile_id=_selected_profile_id_from_shell(shell),
+    )
+    cockpit["cockpit_event_replay"] = payload
+    workflow = shell.get("workflow")
+    if isinstance(workflow, dict):
+        workflow["cockpit_event_replay_event_count"] = payload["event_count"]
 
 
 def _attach_cockpit_operator_action_timeline(
@@ -1485,6 +1606,7 @@ def _blocked_action(lifecycle: SessionLifecycle, *, summary: str) -> SessionLife
         operator_runtime_mode=lifecycle.operator_runtime_mode,
         operator_action_timeline=lifecycle.operator_action_timeline,
         cockpit_operator_notes=lifecycle.cockpit_operator_notes,
+        cockpit_evidence_events=lifecycle.cockpit_evidence_events,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
 
@@ -1525,6 +1647,7 @@ def _finalize_lifecycle(
     operator_runtime_mode: OperatorRuntimeMode | str | None = None,
     operator_action_timeline: tuple[CockpitOperatorActionTimelineEntry, ...] = (),
     cockpit_operator_notes: tuple[CockpitOperatorNote, ...] = (),
+    cockpit_evidence_events: tuple[EvidenceEvent, ...] = (),
     trigger_transition_replay_source: TriggerTransitionReplaySource | None = None,
 ) -> SessionLifecycle:
     resolved_operator_runtime = operator_runtime or resolve_operator_runtime_snapshot(
@@ -1537,6 +1660,7 @@ def _finalize_lifecycle(
     _attach_cockpit_operator_action_timeline(shell, operator_action_timeline)
     _attach_cockpit_operator_notes(shell, cockpit_operator_notes)
     _attach_cockpit_current_state_summary(shell)
+    _attach_cockpit_event_replay(shell, cockpit_evidence_events)
     shell["lifecycle"] = _build_lifecycle_panel(
         shell=shell,
         lifecycle_state=lifecycle_state,
@@ -1613,6 +1737,7 @@ def _finalize_lifecycle(
         operator_runtime_mode=operator_runtime_mode or resolved_operator_runtime.mode,
         operator_action_timeline=operator_action_timeline,
         cockpit_operator_notes=cockpit_operator_notes,
+        cockpit_evidence_events=cockpit_evidence_events,
         trigger_transition_replay_source=resolved_transition_replay_source,
     )
 

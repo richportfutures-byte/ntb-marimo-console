@@ -186,7 +186,6 @@ class SessionLifecycleTests(unittest.TestCase):
                 self.assertTrue(trigger_table["rows"])
                 rendered = json.dumps(item.shell, sort_keys=True)
                 self.assertNotIn("trigger_transition_log", rendered)
-                self.assertNotIn("evidence_replay_v1", rendered)
                 self.assertIsNone(item.trigger_transition_log(contract="ES"))
 
     def test_cockpit_manual_query_is_not_auto_submitted_on_load_or_refresh(self) -> None:
@@ -266,7 +265,6 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertIsNone(lifecycle.trigger_transition_log(contract="ES"))
         rendered = json.dumps(lifecycle.shell, sort_keys=True)
         self.assertNotIn("trigger_transition_log", rendered)
-        self.assertNotIn("evidence_replay_v1", rendered)
 
     def test_lifecycle_refresh_observes_real_produced_transition_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -321,7 +319,6 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertIsNone(lifecycle.trigger_transition_log(contract="ES"))
         rendered = json.dumps(lifecycle.shell, sort_keys=True)
         self.assertNotIn("trigger_transition_log", rendered)
-        self.assertNotIn("evidence_replay_v1", rendered)
 
     def test_lifecycle_trigger_observation_material_transition_exposes_evidence_replay(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):

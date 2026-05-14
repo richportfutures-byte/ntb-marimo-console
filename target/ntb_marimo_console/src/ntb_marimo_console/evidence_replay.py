@@ -27,9 +27,14 @@ ALLOWED_EVIDENCE_EVENT_TYPES: Final[tuple[str, ...]] = (
     "trigger_armed",
     "trigger_query_ready",
     "trigger_invalidated",
+    "readiness_snapshot_observed",
     "query_submitted",
+    "query_blocked",
     "pipeline_result",
     "operator_note_added",
+    "cockpit_refreshed",
+    "cockpit_reset",
+    "latest_action_state_changed",
     "session_reset",
 )
 ALLOWED_EVIDENCE_SOURCES: Final[tuple[str, ...]] = ("live_stream", "fixture", "manual")
@@ -81,6 +86,16 @@ _SAFE_DATA_QUALITY_KEYS: Final[tuple[str, ...]] = (
     "contract_analysis_outcome",
     "proposed_setup_outcome",
     "manual_outcome",
+    "source_surface",
+    "summary",
+    "reason",
+    "request_status",
+    "query_action_state",
+    "runtime_readiness_status",
+    "runtime_readiness_preserved",
+    "replay_safety_classification",
+    "creates_query_ready",
+    "replay_can_authorize_trades",
 )
 _PIPELINE_SUMMARY_KEYS: Final[tuple[str, ...]] = (
     "contract",
@@ -208,6 +223,7 @@ class ReplaySummary:
     query_eligibility_events: tuple[dict[str, object], ...]
     pipeline_results: tuple[dict[str, object], ...]
     operator_notes: tuple[dict[str, object], ...]
+    cockpit_events: tuple[dict[str, object], ...]
     post_session_manual_outcome: dict[str, object]
     blocking_reasons: tuple[str, ...]
     incomplete_reasons: tuple[str, ...]
@@ -228,6 +244,7 @@ class ReplaySummary:
             "query_eligibility_events": list(self.query_eligibility_events),
             "pipeline_results": list(self.pipeline_results),
             "operator_notes": list(self.operator_notes),
+            "cockpit_events": list(self.cockpit_events),
             "post_session_manual_outcome": self.post_session_manual_outcome,
             "blocking_reasons": list(self.blocking_reasons),
             "incomplete_reasons": list(self.incomplete_reasons),
@@ -417,6 +434,11 @@ def build_replay_summary(
     query_eligibility = tuple(_query_event(event) for event in normalized_events if _is_query_eligibility_event(event))
     pipeline_results = tuple(_pipeline_result(event) for event in pipeline_events)
     operator_notes = tuple(_operator_note(event) for event in normalized_events if event.event_type == "operator_note_added" and event.operator_note)
+    cockpit_events = tuple(
+        _cockpit_event(event)
+        for event in normalized_events
+        if event.event_type in _COCKPIT_EVENT_TYPES
+    )
     manual_outcome = _manual_outcome(normalized_events)
     status = ReplayStatus.BLOCKED if blocking else ReplayStatus.INCOMPLETE if incomplete else ReplayStatus.COMPLETE
     return ReplaySummary(
@@ -430,6 +452,7 @@ def build_replay_summary(
         query_eligibility_events=query_eligibility,
         pipeline_results=pipeline_results,
         operator_notes=operator_notes,
+        cockpit_events=cockpit_events,
         post_session_manual_outcome=manual_outcome,
         blocking_reasons=_dedupe(blocking),
         incomplete_reasons=_dedupe(incomplete),
@@ -529,6 +552,41 @@ def _operator_note(event: EvidenceEvent) -> dict[str, object]:
         "timestamp": event.timestamp,
         "operator_note": event.operator_note,
         "source": event.source,
+    }
+
+
+_COCKPIT_EVENT_TYPES: Final[tuple[str, ...]] = (
+    "readiness_snapshot_observed",
+    "query_blocked",
+    "cockpit_refreshed",
+    "cockpit_reset",
+    "latest_action_state_changed",
+)
+
+
+def _cockpit_event(event: EvidenceEvent) -> dict[str, object]:
+    return {
+        "event_id": event.event_id,
+        "timestamp": event.timestamp,
+        "event_type": event.event_type,
+        "contract": event.contract,
+        "source": event.source,
+        "source_surface": event.data_quality.get("source_surface"),
+        "status": event.data_quality.get("status"),
+        "request_status": event.data_quality.get("request_status"),
+        "query_action_state": event.data_quality.get("query_action_state"),
+        "reason": event.data_quality.get("reason"),
+        "summary": event.data_quality.get("summary"),
+        "runtime_readiness_status": event.data_quality.get("runtime_readiness_status"),
+        "runtime_readiness_preserved": event.data_quality.get("runtime_readiness_preserved") is True,
+        "replay_safety_classification": event.data_quality.get(
+            "replay_safety_classification"
+        ),
+        "creates_query_ready": event.data_quality.get("creates_query_ready") is True,
+        "replay_can_authorize_trades": event.data_quality.get(
+            "replay_can_authorize_trades"
+        )
+        is True,
     }
 
 

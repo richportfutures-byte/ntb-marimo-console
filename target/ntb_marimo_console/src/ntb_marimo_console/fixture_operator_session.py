@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from .contract_universe import final_target_contracts
+from .cockpit_evidence import build_cockpit_event_replay_surface
 from .cockpit_manual_query import (
     COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES,
     COCKPIT_OPERATOR_NOTE_MAX_TEXT_LENGTH,
@@ -118,6 +119,7 @@ def build_fixture_operator_session_summary() -> dict[str, object]:
     summary["contract_readiness_detail"] = build_cockpit_contract_readiness_detail(
         summary
     )
+    summary["cockpit_event_replay"] = build_cockpit_event_replay_surface(())
     return summary
 
 

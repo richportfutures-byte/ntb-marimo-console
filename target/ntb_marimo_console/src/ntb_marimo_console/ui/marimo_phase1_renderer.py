@@ -321,6 +321,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
             "operator_notes": None,
             "current_state_summary": None,
             "contract_readiness_detail": None,
+            "cockpit_event_replay": None,
         }
     surface = surfaces_raw.get("fixture_cockpit_overview")
     if not isinstance(surface, Mapping):
@@ -340,6 +341,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
             "operator_notes": None,
             "current_state_summary": None,
             "contract_readiness_detail": None,
+            "cockpit_event_replay": None,
         }
     return {
         "present": True,
@@ -359,6 +361,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
         or build_cockpit_current_state_summary(surface),
         "contract_readiness_detail": surface.get("contract_readiness_detail")
         or build_cockpit_contract_readiness_detail(surface),
+        "cockpit_event_replay": surface.get("cockpit_event_replay"),
     }
 
 
@@ -2501,6 +2504,9 @@ def _render_fixture_cockpit_primary(
     contract_detail_html = _fixture_cockpit_contract_readiness_detail_html(
         contract_detail
     )
+    cockpit_event_replay_html = _fixture_cockpit_event_replay_html(
+        surface.get("cockpit_event_replay")
+    )
     last_query_html = _fixture_cockpit_last_query_html(surface.get("last_query_result"))
     action_status_html = _fixture_cockpit_operator_action_status_html(
         surface.get("operator_action_status")
@@ -2525,6 +2531,7 @@ def _render_fixture_cockpit_primary(
         + banner
         + current_state_strip_html
         + contract_detail_html
+        + cockpit_event_replay_html
         + action_status_html
         + table_html
         + last_query_html
@@ -2735,6 +2742,64 @@ def _fixture_cockpit_contract_readiness_detail_html(value: object) -> str:
         "<th>Contract</th><th>Support</th><th>Runtime / Readiness</th>"
         "<th>Manual Query</th><th>Blocked Reason</th><th>Latest Relevant Action</th>"
         "<th>Next Safe Operator Action</th>"
+        "</tr></thead>"
+        f"<tbody>{rows_html}</tbody>"
+        "</table></div>"
+    )
+
+
+def _fixture_cockpit_event_replay_html(value: object) -> str:
+    replay = value if isinstance(value, Mapping) else {}
+    records_raw = replay.get("records")
+    records = records_raw if isinstance(records_raw, list) else []
+    rows_html = ""
+    for record in records[-8:]:
+        if not isinstance(record, Mapping):
+            continue
+        data_quality = record.get("data_quality")
+        data = data_quality if isinstance(data_quality, Mapping) else {}
+        event_type = _as_str(record.get("event_type"), default="<unavailable>")
+        contract = _as_str(record.get("contract"), default="<unavailable>")
+        timestamp = _as_str(record.get("timestamp"), default="<unavailable>")
+        source_surface = _as_str(data.get("source_surface"), default="<unavailable>")
+        status = _as_str(
+            data.get("request_status") or data.get("status"),
+            default="<none>",
+        )
+        reason = _as_str(data.get("reason"), default="<none>")
+        summary = _as_str(data.get("summary"), default="<none>")
+        safety = _as_str(
+            data.get("replay_safety_classification"),
+            default="review_only_non_authoritative_non_signal",
+        )
+        rows_html += (
+            "<tr>"
+            f"<td>{_h(timestamp)}</td>"
+            f"<td>{_h(contract)}</td>"
+            f"<td>{_h(event_type)}</td>"
+            f"<td>{_h(source_surface)}</td>"
+            f"<td>{_ntb_chip_for_status(status)}</td>"
+            f"<td class='ntb-muted'>{_h(reason)}</td>"
+            f"<td>{_h(summary)}</td>"
+            f"<td>{_h(safety)}</td>"
+            "</tr>"
+        )
+    if not rows_html:
+        rows_html = (
+            "<tr><td colspan='8' class='ntb-muted'>"
+            "No cockpit evidence events have been recorded yet.</td></tr>"
+        )
+    event_count = _as_str(replay.get("event_count"), default=0)
+    max_events = _as_str(replay.get("max_events"), default="<unavailable>")
+    return (
+        '<div style="margin:12px 0">'
+        '<div class="ntb-stat__label" style="margin-bottom:6px">'
+        f"Cockpit Evidence Replay (recent {_h(event_count)} of bounded max {_h(max_events)}; "
+        "review-only, non-authoritative, non-signal)"
+        "</div>"
+        '<table class="ntb-table"><thead><tr>'
+        "<th>Timestamp</th><th>Contract</th><th>Event</th><th>Source Surface</th>"
+        "<th>Status</th><th>Reason</th><th>Summary</th><th>Safety</th>"
         "</tr></thead>"
         f"<tbody>{rows_html}</tbody>"
         "</table></div>"

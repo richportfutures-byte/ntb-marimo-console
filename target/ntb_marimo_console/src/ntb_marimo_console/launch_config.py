@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .adapters.contracts import RuntimeMode
 from .app import build_phase1_shell_from_artifacts
+from .cockpit_evidence import build_cockpit_event_replay_surface
 from .market_data import FuturesQuoteServiceConfig, resolve_futures_quote_service_config
 from .market_data.stream_manager import StreamManagerSnapshot
 from .cockpit_manual_query import (
@@ -484,6 +485,7 @@ def _attach_initial_cockpit_operator_action_status(shell: dict[str, object]) -> 
     cockpit["contract_readiness_detail"] = build_cockpit_contract_readiness_detail(
         cockpit
     )
+    cockpit.setdefault("cockpit_event_replay", build_cockpit_event_replay_surface(()))
 
 
 def _attach_five_contract_readiness_summary(
