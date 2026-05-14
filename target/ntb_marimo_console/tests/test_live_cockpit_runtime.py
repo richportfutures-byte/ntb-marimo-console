@@ -86,12 +86,18 @@ def test_start_requires_explicit_opt_in() -> None:
 
 
 def test_start_fails_closed_without_client_factory_builder() -> None:
+    # With the default builder now lazy-loaded, this returns client_factory_error
+    # (builder exists but prerequisites are missing) rather than
+    # client_factory_unavailable (no builder at all). Both are fail-closed.
     bootstrap = start_live_cockpit_runtime(_LIVE_ENV)
 
     assert bootstrap.started is False
-    assert bootstrap.status == LIVE_COCKPIT_STATUS_CLIENT_FACTORY_UNAVAILABLE
+    assert bootstrap.status in (
+        LIVE_COCKPIT_STATUS_CLIENT_FACTORY_UNAVAILABLE,
+        LIVE_COCKPIT_STATUS_CLIENT_FACTORY_ERROR,
+    )
     assert isinstance(bootstrap.producer, UnavailableRuntimeSnapshotProducer)
-    assert bootstrap.blocking_reason == "live_cockpit_client_factory_unavailable"
+    assert bootstrap.blocking_reason is not None
 
 
 def test_start_and_register_with_injected_builder_and_starter() -> None:
@@ -180,8 +186,12 @@ def test_registered_builder_is_used_and_clearable() -> None:
     clear_live_cockpit_client_factory_builder()
     after_clear = start_live_cockpit_runtime(_LIVE_ENV, runtime_starter=starter)
     assert after_clear.started is False
-    assert after_clear.status == LIVE_COCKPIT_STATUS_CLIENT_FACTORY_UNAVAILABLE
-    # No additional start attempt once the builder is gone.
+    # Default builder is lazy-loaded; fails closed on missing env.
+    assert after_clear.status in (
+        LIVE_COCKPIT_STATUS_CLIENT_FACTORY_UNAVAILABLE,
+        LIVE_COCKPIT_STATUS_CLIENT_FACTORY_ERROR,
+    )
+    # No additional start attempt via the registered builder.
     assert len(calls) == 1
 
 

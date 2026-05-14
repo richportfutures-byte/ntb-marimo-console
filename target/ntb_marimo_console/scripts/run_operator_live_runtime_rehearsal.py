@@ -74,6 +74,13 @@ from ntb_marimo_console.schwab_streamer_session import (
     build_operator_schwab_streamer_session_factory,
     default_schwab_websocket_factory,
 )
+from ntb_marimo_console.schwab_user_preference import (
+    SchwabUserPreferenceCredentialsProvider,
+    extract_streamer_credentials as extract_streamer_credentials_shared,
+)
+from ntb_marimo_console.schwab_client_factory_builder import (
+    DEFAULT_FRONT_MONTH_SYMBOLS as SHARED_FRONT_MONTH_SYMBOLS,
+)
 from ntb_marimo_console.schwab_token_lifecycle import (
     DEFAULT_TOKEN_URL,
     RefreshableAccessTokenProvider,
@@ -827,45 +834,6 @@ def _rejected_contracts(candidate_contracts: Sequence[str]) -> tuple[DryRunRejec
 
 
 @dataclass
-class _CachedStreamerCredentialsProvider:
-    """Fetches user-preference once via the existing probe helper, then caches."""
-
-    fetch_func: Callable[[], object]
-    extract_func: Callable[[object], object]
-    _credentials: StreamerCredentials | None = None
-
-    def load_streamer_credentials(self) -> StreamerCredentials:
-        if self._credentials is not None:
-            return self._credentials
-        try:
-            payload = self.fetch_func()
-        except Exception as exc:
-            raise OperatorSchwabStreamerSessionError(
-                f"user_preference_fetch_failed:{type(exc).__name__}"
-            ) from exc
-        try:
-            probe_credentials = self.extract_func(payload)
-        except Exception as exc:
-            raise OperatorSchwabStreamerSessionError(
-                f"streamer_credentials_extract_failed:{type(exc).__name__}"
-            ) from exc
-        try:
-            self._credentials = StreamerCredentials(
-                streamer_socket_url=str(probe_credentials.streamer_socket_url),
-                streamer_socket_host=str(probe_credentials.streamer_socket_host),
-                schwab_client_customer_id=str(probe_credentials.schwab_client_customer_id),
-                schwab_client_correl_id=str(probe_credentials.schwab_client_correl_id),
-                schwab_client_channel=str(probe_credentials.schwab_client_channel),
-                schwab_client_function_id=str(probe_credentials.schwab_client_function_id),
-            )
-        except AttributeError as exc:
-            raise OperatorSchwabStreamerSessionError(
-                f"streamer_credentials_shape_invalid:{type(exc).__name__}"
-            ) from exc
-        return self._credentials
-
-
-@dataclass
 class _OnceCachingCredentialsProvider:
     """Cache the streamer credentials so the harness probe and the session login share one fetch.
 
@@ -874,6 +842,10 @@ class _OnceCachingCredentialsProvider:
     ``load_streamer_credentials`` from inside ``login()``. This wrapper guarantees
     a single underlying fetch per rehearsal regardless of how many times the
     method is called.
+
+    Uses the shared :class:`SchwabUserPreferenceCredentialsProvider` from
+    ``src/`` to prevent credential-extraction drift between rehearsal and
+    cockpit paths.
     """
 
     inner: SchwabStreamerCredentialsProvider
@@ -887,40 +859,17 @@ class _OnceCachingCredentialsProvider:
 
 def _build_default_credentials_provider(
     *,
-    token_path: Path,
-    target_root: Path,
-    app_key: str,
-    app_secret: str,
-    token_url: str,
-) -> _CachedStreamerCredentialsProvider:
-    probe_config = levelone_probe.ProbeConfig(
-        app_key_present=True,
-        app_secret_present=True,
-        app_key=app_key,
-        app_secret=app_secret,
-        callback_url="",
-        token_path=token_path,
-        token_path_display="",
-        futures_symbol="/ESM26",
-        futures_root="ES",
-        futures_month_code="M",
-        futures_month_name="June",
-        futures_year="26",
-        stream_fields=DEFAULT_LEVELONE_FUTURES_FIELD_IDS,
-        timeout_seconds=10.0,
-        dry_run=False,
-        token_url=token_url or DEFAULT_TOKEN_URL,
-        repo_root=target_root.parent.parent,
-        target_root=target_root,
-    )
+    token_provider: SchwabAccessTokenProvider,
+) -> SchwabUserPreferenceCredentialsProvider:
+    """Build the shared credentials provider using the app-owned src/ module.
 
-    def _fetch() -> object:
-        payload, _access_token = levelone_probe.fetch_user_preference_with_refresh_retry(probe_config)
-        return payload
+    Uses :class:`SchwabUserPreferenceCredentialsProvider` — the same provider
+    that the live cockpit default builder uses — so rehearsal and cockpit
+    share the credential extraction contract.
+    """
 
-    return _CachedStreamerCredentialsProvider(
-        fetch_func=_fetch,
-        extract_func=levelone_probe.extract_streamer_credentials,
+    return SchwabUserPreferenceCredentialsProvider(
+        access_token_provider=token_provider,
     )
 
 
@@ -1283,11 +1232,7 @@ def run_with_dependencies(
         token_url=token_url,
     )
     raw_credentials_provider = deps.credentials_provider or _build_default_credentials_provider(
-        token_path=token_path,
-        target_root=target_root,
-        app_key=app_key,
-        app_secret=app_secret,
-        token_url=token_url,
+        token_provider=token_provider,
     )
     credentials_provider = _OnceCachingCredentialsProvider(inner=raw_credentials_provider)
     websocket_factory = deps.websocket_factory or default_schwab_websocket_factory()

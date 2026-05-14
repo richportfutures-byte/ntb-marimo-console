@@ -118,6 +118,23 @@ def _fail_closed(status: str, reason: str) -> LiveCockpitRuntimeBootstrap:
     )
 
 
+def _resolve_default_builder() -> LiveCockpitClientFactoryBuilder | None:
+    """Lazy-import the app-owned default builder if available.
+
+    Import-time inert: the ``schwab_client_factory_builder`` module is only
+    imported here — never at module level — and only when no injected or
+    registered builder is available. Returns ``None`` (preserving
+    fail-closed behavior) if the module is unavailable.
+    """
+
+    try:
+        from .schwab_client_factory_builder import build_default_live_client_factory
+
+        return build_default_live_client_factory
+    except ImportError:
+        return None
+
+
 def start_live_cockpit_runtime(
     values: dict[str, str] | None = None,
     *,
@@ -144,6 +161,8 @@ def start_live_cockpit_runtime(
         )
 
     builder = client_factory_builder or _REGISTERED_CLIENT_FACTORY_BUILDER
+    if builder is None:
+        builder = _resolve_default_builder()
     if builder is None:
         return _fail_closed(
             LIVE_COCKPIT_STATUS_CLIENT_FACTORY_UNAVAILABLE,
