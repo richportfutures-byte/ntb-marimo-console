@@ -784,6 +784,10 @@ class OperatorSchwabStreamerSessionSubscribeTests(unittest.TestCase):
         self.assertEqual(entries[0]["start_time"], NOW)
         self.assertEqual(entries[0]["completed"], True)
         self.assertEqual(entries[0]["source"], "chart_futures")
+        fields = entries[0]["fields"]
+        assert isinstance(fields, dict)
+        self.assertEqual(fields["start_time"], NOW)
+        self.assertEqual(fields["completed"], True)
 
     def test_chart_futures_data_entry_missing_required_bar_fields_remains_fail_closed_for_builder(self) -> None:
         raw_message = json.dumps(
@@ -807,6 +811,10 @@ class OperatorSchwabStreamerSessionSubscribeTests(unittest.TestCase):
         self.assertEqual(entries[0]["message_type"], "bar")
         self.assertNotIn("completed", entries[0])
         self.assertNotIn("close", entries[0])
+        fields = entries[0]["fields"]
+        assert isinstance(fields, dict)
+        self.assertNotIn("completed", fields)
+        self.assertNotIn("close", fields)
 
     def test_subscribe_blocks_zn_and_returns_redacted_failure_without_send(self) -> None:
         session, _, _, wf = _build_session()
@@ -1001,6 +1009,9 @@ class OperatorSchwabStreamerSessionDispatchTests(unittest.TestCase):
         self.assertEqual(entry["message_type"], "bar")
         self.assertEqual(entry["contract"], "ES")
         self.assertEqual(entry["source"], "chart_futures")
+        fields = entry["fields"]
+        assert isinstance(fields, dict)
+        self.assertIn("close", fields)
 
     def test_dispatch_one_refreshes_token_without_new_connection_login_or_subscribe(self) -> None:
         token_provider = RefreshingTokenProvider()

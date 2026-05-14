@@ -86,6 +86,27 @@ def quote_message(**overrides: object) -> dict[str, object]:
     return values
 
 
+def chart_message(**overrides: object) -> dict[str, object]:
+    values: dict[str, object] = {
+        "service": "CHART_FUTURES",
+        "symbol": "ES_TEST",
+        "contract": "ES",
+        "message_type": "bar",
+        "fields": {
+            "start_time": "2026-05-06T12:59:00+00:00",
+            "end_time": "2026-05-06T13:00:00+00:00",
+            "open": 7170,
+            "high": 7176,
+            "low": 7168,
+            "close": 7175,
+            "completed": True,
+        },
+        "received_at": "2026-05-06T13:00:00+00:00",
+    }
+    values.update(overrides)
+    return values
+
+
 def sensitive_reason() -> str:
     endpoint = "".join(("wss", "://", "stream-redaction.invalid", "/ws?", "credential=hidden"))
     return (
@@ -345,6 +366,69 @@ def test_contract_heartbeat_status_appears_in_snapshot_dict() -> None:
             "status": "active",
         }
     }
+
+
+def test_cache_tracks_levelone_and_chart_futures_separately_for_same_contract_symbol() -> None:
+    manager = SchwabStreamManager(
+        live_config(services_requested=("LEVELONE_FUTURES", "CHART_FUTURES")),
+        client=FakeStreamClient(),
+        clock=FakeClock(),
+    )
+    manager.start()
+    manager.ingest_message(quote_message())
+
+    snapshot = manager.ingest_message(chart_message())
+
+    records = {(record.service, record.message_type): record for record in snapshot.cache.records}
+    assert tuple(records) == (
+        ("CHART_FUTURES", "bar"),
+        ("LEVELONE_FUTURES", "quote"),
+    )
+    assert records[("LEVELONE_FUTURES", "quote")].contract == "ES"
+    assert records[("CHART_FUTURES", "bar")].contract == "ES"
+    assert snapshot.contract_service_status is not None
+    assert snapshot.contract_service_status["ES"]["LEVELONE_FUTURES"]["status"] == "active"
+    assert snapshot.contract_service_status["ES"]["CHART_FUTURES"]["status"] == "active"
+    assert snapshot.ready is True
+
+
+def test_unrequested_stream_service_blocks_and_does_not_seed_cache() -> None:
+    manager = SchwabStreamManager(live_config(), client=FakeStreamClient(), clock=FakeClock())
+    manager.start()
+
+    snapshot = manager.ingest_message(chart_message())
+
+    assert snapshot.state == "blocked"
+    assert "service_mismatch:ES:CHART_FUTURES" in snapshot.blocking_reasons
+    assert snapshot.cache.records == ()
+    assert snapshot.ready is False
+
+
+def test_contract_service_heartbeat_marks_missing_chart_service_stale_fail_closed() -> None:
+    clock = FakeClock()
+    manager = SchwabStreamManager(
+        live_config(services_requested=("LEVELONE_FUTURES", "CHART_FUTURES")),
+        client=FakeStreamClient(),
+        clock=clock,
+    )
+    manager.start()
+    snapshot = manager.ingest_message(quote_message())
+
+    assert snapshot.contract_service_status is not None
+    assert snapshot.contract_service_status["ES"]["LEVELONE_FUTURES"]["status"] == "active"
+    assert snapshot.contract_service_status["ES"]["CHART_FUTURES"]["status"] == "no_data"
+    assert snapshot.ready is False
+    assert snapshot.cache.ready is True
+
+    clock.advance((2 * MIN_STREAM_REFRESH_FLOOR_SECONDS) + 1)
+    stale_snapshot = manager.check_contract_heartbeats()
+
+    assert stale_snapshot.state == "stale"
+    assert stale_snapshot.contract_service_status is not None
+    assert stale_snapshot.contract_service_status["ES"]["LEVELONE_FUTURES"]["status"] == "stale"
+    assert stale_snapshot.contract_service_status["ES"]["CHART_FUTURES"]["status"] == "no_data"
+    assert "contract_service_stale:ES:LEVELONE_FUTURES" in stale_snapshot.blocking_reasons
+    assert "contract_service_no_data:ES:CHART_FUTURES" in stale_snapshot.blocking_reasons
 
 
 def test_contract_watchdog_threshold_defaults_to_twice_cache_max_age_seconds() -> None:

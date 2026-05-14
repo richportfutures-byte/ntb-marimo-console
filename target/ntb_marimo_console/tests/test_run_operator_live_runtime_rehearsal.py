@@ -638,6 +638,50 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertIn("chart_futures_delivery_not_proven", assessment["blocking_reasons"])
         self.assertIn("full_live_session_marimo_usability_not_proven", assessment["blocking_reasons"])
 
+    def test_live_rehearsal_with_levelone_and_chart_data_remains_review_only(self) -> None:
+        report = rehearsal.RehearsalReport(
+            mode="live",
+            status="ok",
+            repo_check=True,
+            live_flag=True,
+            operator_live_runtime_env=True,
+            env_keys_present=True,
+            token_path_under_target_state=True,
+            token_file_present=True,
+            token_file_parseable=True,
+            token_contract_valid=True,
+            access_token_present=True,
+            refresh_token_present=True,
+            token_fresh="yes",
+            streamer_credentials_obtained=True,
+            runtime_start_attempted=True,
+            live_login_succeeded=True,
+            live_subscribe_succeeded=True,
+            subscribed_contracts_count=5,
+            market_data_received=True,
+            received_contracts_count=5,
+            market_data_diagnostic="levelone_futures_updates_received",
+            chart_data_received=True,
+            chart_received_contracts_count=5,
+            chart_completed_five_minute_contracts_count=5,
+            chart_data_diagnostic="chart_futures_completed_five_minute_bars_received",
+            repeated_login_on_refresh=False,
+            cleanup_status="ok",
+            duration_seconds=30.0,
+        )
+
+        assessment = rehearsal.assess_rehearsal_readiness(report).to_dict()
+
+        self.assertEqual(
+            assessment["classification"],
+            "live_levelone_and_chart_market_data_delivery_proven",
+        )
+        self.assertEqual(assessment["market_data_delivery_proven"], "yes")
+        self.assertEqual(assessment["production_live_ready"], "no")
+        self.assertEqual(assessment["query_ready_allowed"], "no")
+        self.assertNotIn("chart_futures_delivery_not_proven", assessment["blocking_reasons"])
+        self.assertIn("rehearsal_result_is_review_only_not_query_authority", assessment["blocking_reasons"])
+
     def test_receive_pump_continues_after_initial_quiet_dispatch_until_duration(self) -> None:
         config = rehearsal._build_stream_config(symbol_overrides={})
         manager = FakeStartingManager(config=config, client=None)

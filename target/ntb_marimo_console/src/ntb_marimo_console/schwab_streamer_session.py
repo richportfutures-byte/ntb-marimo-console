@@ -383,6 +383,7 @@ def _chart_futures_bar_entry(
     start_time = _timestamp_value(content, "start_time", "start", "chart_time", "time", "0")
     end_time = _timestamp_value(content, "end_time", "end", "1")
     completed = _bool_value(content, "completed", "complete", "is_complete", "closed", "8")
+    fields: dict[str, object] = {}
     payload: dict[str, object] = {
         "provider": "schwab",
         "service": CHART_FUTURES_SERVICE,
@@ -395,8 +396,10 @@ def _chart_futures_bar_entry(
     }
     if start_time:
         payload["start_time"] = start_time
+        fields["start_time"] = start_time
     if end_time:
         payload["end_time"] = end_time
+        fields["end_time"] = end_time
     for field_name, aliases in {
         "open": ("open", "open_price", "2"),
         "high": ("high", "high_price", "3"),
@@ -407,8 +410,11 @@ def _chart_futures_bar_entry(
         value = _number_value(content, *aliases)
         if value is not None:
             payload[field_name] = value
+            fields[field_name] = value
     if completed is not None:
         payload["completed"] = completed
+        fields["completed"] = completed
+    payload["fields"] = fields
     return payload
 
 

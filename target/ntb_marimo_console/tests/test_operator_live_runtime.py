@@ -200,6 +200,47 @@ class OperatorLiveRuntimeTests(unittest.TestCase):
         self.assertIs(result.snapshot, snapshot)
         self.assertEqual(result.status, OPERATOR_LIVE_RUNTIME)
 
+    def test_stream_manager_snapshot_ready_requires_each_requested_service(self) -> None:
+        snapshot = StreamManagerSnapshot(
+            state="active",
+            config=SchwabStreamManagerConfig(
+                provider="schwab",
+                services_requested=("LEVELONE_FUTURES", "CHART_FUTURES"),
+                symbols_requested=(RUNTIME_SYMBOL_BY_CONTRACT["ES"],),
+                fields_requested=(0, 1, 2, 3, 4, 5),
+                contracts_requested=("ES",),
+                explicit_live_opt_in=True,
+            ),
+            cache=runtime_cache_snapshot(contracts=("ES",)),
+            events=(),
+            blocking_reasons=(),
+            login_count=1,
+            subscription_count=1,
+            contract_service_status={
+                "ES": {
+                    "LEVELONE_FUTURES": {
+                        "last_seen": NOW,
+                        "age_seconds": 0.0,
+                        "status": "active",
+                    },
+                    "CHART_FUTURES": {
+                        "last_seen": None,
+                        "age_seconds": None,
+                        "status": "no_data",
+                    },
+                }
+            },
+        )
+
+        result = resolve_operator_runtime_snapshot(
+            mode=OPERATOR_LIVE_RUNTIME,
+            runtime_snapshot=snapshot,
+        )
+
+        self.assertFalse(snapshot.ready)
+        self.assertTrue(snapshot.cache.ready)
+        self.assertFalse(result.cache_snapshot_ready)
+
     def test_operator_live_runtime_unavailable_blocks_without_fixture_fallback(self) -> None:
         result = resolve_operator_runtime_snapshot(mode=OPERATOR_LIVE_RUNTIME)
 

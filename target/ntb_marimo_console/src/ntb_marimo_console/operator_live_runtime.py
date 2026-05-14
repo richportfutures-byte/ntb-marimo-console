@@ -293,6 +293,7 @@ def _result_from_snapshot(snapshot: RuntimeReadinessSnapshot) -> OperatorRuntime
     elif reasons:
         status = LIVE_RUNTIME_ERROR
 
+    snapshot_ready = snapshot.ready if isinstance(snapshot, StreamManagerSnapshot) else cache.ready
     return OperatorRuntimeSnapshotResult(
         mode=OPERATOR_LIVE_RUNTIME,
         status=status,
@@ -304,7 +305,7 @@ def _result_from_snapshot(snapshot: RuntimeReadinessSnapshot) -> OperatorRuntime
         blocking_reasons=reasons,
         cache_provider_status=provider_status,
         cache_generated_at=cache.generated_at,
-        cache_snapshot_ready=cache.ready and not reasons,
+        cache_snapshot_ready=snapshot_ready and not reasons,
     )
 
 

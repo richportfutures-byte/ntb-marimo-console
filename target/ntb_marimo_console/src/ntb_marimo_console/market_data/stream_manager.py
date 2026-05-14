@@ -29,6 +29,9 @@ class ContractHeartbeatStatus(TypedDict):
     status: ContractHeartbeatState
 
 
+ContractServiceHeartbeatStatus = dict[str, dict[str, ContractHeartbeatStatus]]
+
+
 @dataclass(frozen=True)
 class SchwabStreamManagerConfig:
     provider: StreamProvider = "disabled"
@@ -140,6 +143,7 @@ class StreamManagerSnapshot:
     current_backoff_delay: float | None = None
     stale_contracts: tuple[str, ...] = ()
     contract_heartbeat_status: dict[str, ContractHeartbeatStatus] | None = None
+    contract_service_status: ContractServiceHeartbeatStatus | None = None
 
     @property
     def operator_state(self) -> StreamLifecycleState:
@@ -147,7 +151,26 @@ class StreamManagerSnapshot:
 
     @property
     def ready(self) -> bool:
-        return self.state == "active" and self.cache.ready and not self.blocking_reasons
+        return (
+            self.state == "active"
+            and self.cache.ready
+            and not self.blocking_reasons
+            and self._all_requested_contract_services_active()
+        )
+
+    def _all_requested_contract_services_active(self) -> bool:
+        if not self.config.services_requested:
+            return False
+        raw_status = self.contract_service_status or {}
+        for contract in self.config.contracts_requested:
+            service_status = raw_status.get(contract)
+            if not isinstance(service_status, Mapping):
+                return False
+            for service in self.config.services_requested:
+                entry = service_status.get(service)
+                if not isinstance(entry, Mapping) or entry.get("status") != "active":
+                    return False
+        return True
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -183,6 +206,7 @@ class StreamManagerSnapshot:
             "current_backoff_delay": self.current_backoff_delay,
             "stale_contracts": list(self.stale_contracts),
             "contract_heartbeat_status": dict(self.contract_heartbeat_status or {}),
+            "contract_service_status": dict(self.contract_service_status or {}),
             "ready": self.ready,
         }
 
@@ -216,6 +240,7 @@ class SchwabStreamManager:
         self._last_reconnect_at: datetime | None = None
         self._current_backoff_delay: float | None = None
         self._contract_last_seen_at: dict[str, datetime] = {}
+        self._contract_service_last_seen_at: dict[tuple[str, str], datetime] = {}
         self._contract_watchdog_started_at: datetime | None = None
 
     @property
@@ -344,6 +369,14 @@ class SchwabStreamManager:
                 symbol=normalized.symbol,
             )
             return self.snapshot()
+        if normalized.service not in self._config.services_requested:
+            self._block(
+                event_type="malformed_message",
+                summary="service_mismatch",
+                blocking_reason=f"service_mismatch:{normalized.contract}:{normalized.service}",
+                symbol=normalized.symbol,
+            )
+            return self.snapshot()
         if normalized.symbol not in self._config.symbols_requested:
             self._block(
                 event_type="malformed_message",
@@ -363,6 +396,7 @@ class SchwabStreamManager:
 
         self._cache.put_message(normalized)
         self._contract_last_seen_at[normalized.contract] = self._clock()
+        self._contract_service_last_seen_at[(normalized.contract, normalized.service)] = self._clock()
         self._record_event("data_received", summary="data_received", state=self._state, symbol=normalized.symbol)
         return self.snapshot()
 
@@ -404,6 +438,15 @@ class SchwabStreamManager:
             age_seconds = _age_seconds_since(last_seen, now=now)
             if age_seconds > threshold:
                 self._mark_stale(f"contract_stale:{contract}")
+            for service in self._config.services_requested:
+                service_last_seen = self._contract_service_last_seen_at.get((contract, service))
+                if service_last_seen is None:
+                    if watchdog_age > threshold:
+                        self._mark_stale(f"contract_service_no_data:{contract}:{service}")
+                    continue
+                service_age_seconds = _age_seconds_since(service_last_seen, now=now)
+                if service_age_seconds > threshold:
+                    self._mark_stale(f"contract_service_stale:{contract}:{service}")
         return self.snapshot()
 
     def mark_connection_lost(self, reason: object = "connection_lost") -> StreamManagerSnapshot:
@@ -512,6 +555,7 @@ class SchwabStreamManager:
             current_backoff_delay=self._current_backoff_delay,
             stale_contracts=self._stale_contracts(),
             contract_heartbeat_status=self._contract_heartbeat_status(),
+            contract_service_status=self._contract_service_status(),
         )
 
     def _startup_blocking_reasons(self) -> tuple[str, ...]:
@@ -602,6 +646,30 @@ class SchwabStreamManager:
                 "age_seconds": age_seconds,
                 "status": "stale" if age_seconds > threshold else "active",
             }
+        return statuses
+
+    def _contract_service_status(self) -> ContractServiceHeartbeatStatus:
+        now = self._clock()
+        threshold = self._contract_heartbeat_threshold_seconds()
+        statuses: ContractServiceHeartbeatStatus = {}
+        for contract in self._config.contracts_requested:
+            service_statuses: dict[str, ContractHeartbeatStatus] = {}
+            for service in self._config.services_requested:
+                last_seen = self._contract_service_last_seen_at.get((contract, service))
+                if last_seen is None:
+                    service_statuses[service] = {
+                        "last_seen": None,
+                        "age_seconds": None,
+                        "status": "no_data",
+                    }
+                    continue
+                age_seconds = _age_seconds_since(last_seen, now=now)
+                service_statuses[service] = {
+                    "last_seen": _isoformat(last_seen),
+                    "age_seconds": age_seconds,
+                    "status": "stale" if age_seconds > threshold else "active",
+                }
+            statuses[contract] = service_statuses
         return statuses
 
     def _stale_contracts(self) -> tuple[str, ...]:

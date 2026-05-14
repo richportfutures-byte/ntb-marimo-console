@@ -96,7 +96,7 @@ class StreamCache:
         self._cache_max_age_seconds = cache_max_age_seconds
         self._clock = clock or _utc_now
         self._provider_status: ProviderStatus = "disabled"
-        self._records: dict[tuple[str, str], NormalizedStreamMessage] = {}
+        self._records: dict[tuple[str, str, str], NormalizedStreamMessage] = {}
         self._blocking_reasons: list[str] = []
         self._symbol_blocking_reasons: dict[str, list[str]] = {}
 
@@ -108,7 +108,11 @@ class StreamCache:
         self._provider_status = status
 
     def put_message(self, message: NormalizedStreamMessage) -> None:
-        key = (message.contract.strip().upper(), message.symbol.strip().upper())
+        key = (
+            message.contract.strip().upper(),
+            message.symbol.strip().upper(),
+            message.service.strip().upper(),
+        )
         self._records[key] = message
 
     def add_blocking_reason(self, reason: object, *, symbol: str | None = None) -> None:

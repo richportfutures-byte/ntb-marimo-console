@@ -374,12 +374,24 @@ def assess_rehearsal_readiness(report: RehearsalReport) -> RehearsalReadinessAss
         and report.cleanup_status == "ok"
         and not report.repeated_login_on_refresh
     )
-    market_data_proven = (
+    levelone_data_proven = (
         plumbing_proven
         and report.market_data_received
         and report.received_contracts_count == len(final_target_contracts())
     )
-    if market_data_proven:
+    chart_data_proven = (
+        plumbing_proven
+        and report.chart_data_received
+        and report.chart_completed_five_minute_contracts_count == len(final_target_contracts())
+    )
+    if levelone_data_proven and chart_data_proven:
+        classification = "live_levelone_and_chart_market_data_delivery_proven"
+        blocking_reasons = (
+            "full_live_session_marimo_usability_not_proven",
+            "production_readiness_requires_non_levelone_predicates",
+            "rehearsal_result_is_review_only_not_query_authority",
+        )
+    elif levelone_data_proven:
         classification = "live_levelone_market_data_delivery_proven"
         blocking_reasons: tuple[str, ...] = (
             "chart_futures_delivery_not_proven",
@@ -402,7 +414,7 @@ def assess_rehearsal_readiness(report: RehearsalReport) -> RehearsalReadinessAss
     return RehearsalReadinessAssessment(
         classification=classification,
         login_subscription_plumbing_proven=plumbing_proven,
-        market_data_delivery_proven=market_data_proven,
+        market_data_delivery_proven=levelone_data_proven,
         production_live_ready=False,
         query_ready_allowed=False,
         blocking_reasons=blocking_reasons,
@@ -944,6 +956,10 @@ def _pump_receive_loop(
         nonlocal chart_received_at_least_one, received_at_least_one
         service = str(message.get("service", "")).strip().upper()
         if service == "CHART_FUTURES":
+            try:
+                manager.ingest_message(message)
+            except Exception:
+                pass
             if chart_bar_builder is None:
                 chart_blocking_reasons.append("chart_bar_builder_unavailable")
                 return

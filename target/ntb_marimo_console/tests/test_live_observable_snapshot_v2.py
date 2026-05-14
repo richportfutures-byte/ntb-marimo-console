@@ -674,6 +674,46 @@ def test_builder_accepts_stream_cache_snapshot_without_network_side_effects() ->
     assert payload["contracts"]["ES"]["quality"]["fresh"] is True
 
 
+def test_stream_cache_snapshot_keeps_levelone_and_chart_records_separate_for_observables() -> None:
+    cache = StreamCache(provider="schwab", cache_max_age_seconds=15.0, clock=lambda: NOW)
+    cache.set_provider_status("active")
+    cache.put_message(
+        NormalizedStreamMessage(
+            provider="schwab",
+            service="LEVELONE_FUTURES",
+            symbol="/ESM26",
+            contract="ES",
+            message_type="quote",
+            fields=dict(record().fields),
+            received_at="2026-05-06T13:59:58+00:00",
+        )
+    )
+    cache.put_message(
+        NormalizedStreamMessage(
+            provider="schwab",
+            service="CHART_FUTURES",
+            symbol="/ESM26",
+            contract="ES",
+            message_type="bar",
+            fields=dict(chart_record().fields),
+            received_at="2026-05-06T14:00:00+00:00",
+        )
+    )
+
+    snapshot = cache.snapshot()
+    payload = build_live_observable_snapshot_v2(snapshot, expected_symbols={"ES": "/ESM26"}).to_dict()
+    es = payload["contracts"]["ES"]
+
+    assert [(item.service, item.message_type) for item in snapshot.records] == [
+        ("CHART_FUTURES", "bar"),
+        ("LEVELONE_FUTURES", "quote"),
+    ]
+    assert es["quote"]["bid"] == 7175.0
+    assert es["quality"]["required_fields_present"] is True
+    assert es["chart_bar"]["source"] == "chart_futures"
+    assert es["chart_bar"]["state"] == "building"
+
+
 def test_mixed_quote_and_chart_records_keep_quote_status_and_surface_chart_building() -> None:
     payload = build_live_observable_snapshot_v2(
         cache_snapshot(records=(chart_record(), record())),
