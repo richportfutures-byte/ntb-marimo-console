@@ -9,6 +9,7 @@ from .cockpit_manual_query import (
     COCKPIT_OPERATOR_NOTE_MAX_TEXT_LENGTH,
     COCKPIT_OPERATOR_NOTES_MAX_ENTRIES,
     COCKPIT_OPERATOR_NOTES_SURFACE_SCHEMA,
+    build_cockpit_contract_readiness_detail,
     build_cockpit_current_state_summary,
     no_cockpit_manual_query_result,
     no_cockpit_operator_action_status,
@@ -114,6 +115,9 @@ def build_fixture_operator_session_summary() -> dict[str, object]:
         },
     }
     summary["current_state_summary"] = build_cockpit_current_state_summary(summary)
+    summary["contract_readiness_detail"] = build_cockpit_contract_readiness_detail(
+        summary
+    )
     return summary
 
 

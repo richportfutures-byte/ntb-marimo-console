@@ -34,13 +34,12 @@ from .runtime_diagnostics import (
 from .app import build_phase1_shell_from_artifacts
 from .cockpit_manual_query import (
     COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES,
-    COCKPIT_OPERATOR_NOTE_MAX_TEXT_LENGTH,
-    COCKPIT_OPERATOR_NOTES_MAX_ENTRIES,
     CockpitManualQueryResult,
     CockpitOperatorActionTimelineEntry,
     CockpitOperatorNote,
     append_cockpit_operator_note,
     append_operator_action_timeline_entry,
+    build_cockpit_contract_readiness_detail,
     build_cockpit_current_state_summary,
     build_cockpit_operator_notes_payload,
     operator_action_status_for_lifecycle_action,
@@ -1132,6 +1131,9 @@ def _attach_cockpit_current_state_summary(shell: dict[str, object]) -> None:
     if not isinstance(cockpit, dict):
         return
     cockpit["current_state_summary"] = build_cockpit_current_state_summary(cockpit)
+    cockpit["contract_readiness_detail"] = build_cockpit_contract_readiness_detail(
+        cockpit
+    )
 
 
 def _attach_cockpit_operator_action_timeline(

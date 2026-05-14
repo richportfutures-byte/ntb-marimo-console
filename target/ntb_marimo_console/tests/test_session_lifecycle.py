@@ -232,6 +232,7 @@ class SessionLifecycleTests(unittest.TestCase):
 
         result = queried.shell["surfaces"]["fixture_cockpit_overview"]["last_query_result"]
         action = queried.shell["surfaces"]["fixture_cockpit_overview"]["operator_action_status"]
+        detail = queried.shell["surfaces"]["fixture_cockpit_overview"]["contract_readiness_detail"]
         rows = {
             row["contract"]: row
             for row in queried.shell["surfaces"]["fixture_cockpit_overview"]["rows"]
@@ -248,6 +249,13 @@ class SessionLifecycleTests(unittest.TestCase):
             "No bounded pipeline result is available because the query was not submitted.",
         )
         self.assertEqual(rows["NQ"]["last_query_status"], "BLOCKED")
+        detail_rows = {row["contract"]: row for row in detail["rows"]}
+        self.assertEqual(detail_rows["NQ"]["latest_operator_action_state"], "BLOCKED")
+        self.assertEqual(
+            detail_rows["NQ"]["latest_operator_action_blocked_reason"],
+            result["blocked_reason"],
+        )
+        self.assertIn("Wait", detail_rows["NQ"]["next_safe_operator_action"])
 
     def test_lifecycle_observes_produced_trigger_state_results_without_first_replay(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):

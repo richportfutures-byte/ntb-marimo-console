@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from ntb_marimo_console.cockpit_manual_query import (
     COCKPIT_CURRENT_STATE_SUMMARY_MAX_TEXT_LENGTH,
+    build_cockpit_contract_readiness_detail,
     build_cockpit_current_state_summary,
 )
 from ntb_marimo_console.contract_universe import (
@@ -30,6 +31,7 @@ from ntb_marimo_console.session_lifecycle import (
     reset_session,
 )
 from ntb_marimo_console.ui.marimo_phase1_renderer import (
+    _fixture_cockpit_contract_readiness_detail_html,
     _fixture_cockpit_current_state_strip_html,
     build_primary_cockpit_plan,
 )
@@ -169,12 +171,92 @@ class CockpitCurrentStateSummaryUnitTests(unittest.TestCase):
         self.assertEqual(summary["query_blocked_count"], 1)
 
 
+class CockpitContractReadinessDetailUnitTests(unittest.TestCase):
+    def test_builder_on_empty_surface_is_exact_universe_fail_closed(self) -> None:
+        detail = build_cockpit_contract_readiness_detail({})
+
+        self.assertEqual(
+            detail["schema"], "cockpit_contract_readiness_detail_v1"
+        )
+        self.assertEqual(tuple(detail["supported_contracts"]), final_target_contracts())
+        self.assertEqual(detail["excluded_contracts"], ["ZN", "GC"])
+        self.assertFalse(detail["creates_query_ready"])
+        rows = {row["contract"]: row for row in detail["rows"]}
+        self.assertEqual(set(rows), {"ES", "NQ", "CL", "6E", "MGC"})
+        self.assertNotIn("ZN", rows)
+        self.assertNotIn("GC", rows)
+        for row in rows.values():
+            self.assertFalse(row["query_enabled"])
+            self.assertEqual(row["query_action_state"], "DISABLED")
+            self.assertIn("blocked", row["query_state_text"].lower())
+            self.assertIn("no cockpit gate row", row["blocked_reason"])
+            self.assertEqual(row["latest_operator_action_state"], "NOT_SUBMITTED")
+            self.assertEqual(
+                row["latest_operator_action_text"],
+                "No manual query has been submitted from the primary cockpit.",
+            )
+            self.assertIn("Do not submit", row["next_safe_operator_action"])
+
+    def test_builder_does_not_treat_notes_as_readiness_or_provenance(self) -> None:
+        surface = {
+            "supported_contracts": list(final_target_contracts()),
+            "rows": [
+                {
+                    "contract": "ES",
+                    "profile_label": "ES",
+                    "query_action_state": "DISABLED",
+                    "query_enabled": False,
+                    "query_disabled_reason": "Manual query blocked: chart bars are missing for ES.",
+                    "query_ready_provenance": "unavailable_not_inferred_from_display_or_raw_enabled_mapping",
+                }
+            ],
+            "operator_notes": {
+                "entries": [
+                    {
+                        "contract": "ES",
+                        "text": "operator thinks this is ready",
+                    }
+                ]
+            },
+        }
+
+        detail = build_cockpit_contract_readiness_detail(surface)
+        es = next(row for row in detail["rows"] if row["contract"] == "ES")
+        self.assertFalse(es["query_enabled"])
+        self.assertIn("chart bars are missing", es["blocked_reason"])
+        self.assertFalse(detail["creates_query_ready"])
+        self.assertNotIn("operator thinks", json.dumps(detail).lower())
+
+
 class CockpitCurrentStateSummarySurfaceTests(unittest.TestCase):
     def test_fixture_shell_surface_includes_current_state_summary(self) -> None:
         surface = build_fixture_cockpit_shell_surface()
         summary = surface["current_state_summary"]
         self.assertEqual(summary["schema"], "cockpit_current_state_summary_v1")
         _assert_plain_english_and_bounded(self, summary)
+
+    def test_fixture_shell_surface_includes_contract_readiness_detail(self) -> None:
+        surface = build_fixture_cockpit_shell_surface()
+        detail = surface["contract_readiness_detail"]
+        self.assertEqual(
+            detail["schema"], "cockpit_contract_readiness_detail_v1"
+        )
+        rows = {row["contract"]: row for row in detail["rows"]}
+        self.assertEqual(tuple(rows), final_target_contracts())
+        self.assertEqual(rows["MGC"]["display_name"], "Micro Gold")
+        self.assertNotIn("ZN", rows)
+        self.assertNotIn("GC", rows)
+        for contract, row in rows.items():
+            with self.subTest(contract=contract):
+                self.assertIsInstance(row["runtime_readiness_text"], str)
+                self.assertTrue(row["runtime_readiness_text"])
+                self.assertIn("Manual query", row["query_state_text"])
+                self.assertIsInstance(row["next_safe_operator_action"], str)
+                self.assertTrue(row["next_safe_operator_action"])
+        self.assertIsNone(rows["ES"]["blocked_reason"])
+        self.assertIn("missing", rows["NQ"]["blocked_reason"])
+        self.assertIn("stale", rows["CL"]["blocked_reason"])
+        self.assertIn("dependency", rows["6E"]["blocked_reason"])
 
     def test_initial_lifecycle_summary_present_and_plain_english(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):
@@ -202,6 +284,21 @@ class CockpitCurrentStateSummarySurfaceTests(unittest.TestCase):
         self.assertIsInstance(summary, dict)
         self.assertEqual(summary["schema"], "cockpit_current_state_summary_v1")
 
+    def test_contract_readiness_detail_present_in_primary_cockpit_plan(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+
+        plan = build_primary_cockpit_plan(lifecycle.shell)
+        detail = plan["contract_readiness_detail"]
+        self.assertIsInstance(detail, dict)
+        self.assertEqual(
+            detail["schema"], "cockpit_contract_readiness_detail_v1"
+        )
+        self.assertEqual(
+            [row["contract"] for row in detail["rows"]],
+            ["ES", "NQ", "CL", "6E", "MGC"],
+        )
+
     def test_summary_renders_in_primary_cockpit_strip_html(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):
             lifecycle = load_session_lifecycle_from_env()
@@ -216,6 +313,24 @@ class CockpitCurrentStateSummarySurfaceTests(unittest.TestCase):
         self.assertIn("Contract universe", html)
         # No raw JSON braces dumped into the strip.
         self.assertNotIn("{", html)
+
+    def test_contract_readiness_detail_renders_plain_html(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+
+        detail = _cockpit_surface(lifecycle)["contract_readiness_detail"]
+        html = _fixture_cockpit_contract_readiness_detail_html(detail)
+        self.assertIn("Contract Readiness Detail", html)
+        for contract in ("ES", "NQ", "CL", "6E", "MGC"):
+            self.assertIn(contract, html)
+        self.assertIn("Micro Gold", html)
+        self.assertNotIn("<strong>ZN</strong>", html)
+        self.assertNotIn("<strong>GC</strong>", html)
+        self.assertNotIn("{", html)
+        self.assertNotIn("1.125", html)
+        self.assertNotIn("100.0", html)
+        for phrase in ("take trade", "buy", "sell", "strongest", "ranking"):
+            self.assertNotIn(phrase, html.lower())
 
     def test_summary_does_not_create_query_ready(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):
@@ -251,6 +366,13 @@ class CockpitCurrentStateSummarySurfaceTests(unittest.TestCase):
         # Per-row block reason is surfaced in plain English.
         self.assertIsNotNone(summary["query_blocked_reason_text"])
         _assert_plain_english_and_bounded(self, summary)
+
+        detail = _cockpit_surface(blocked)["contract_readiness_detail"]
+        nq = next(row for row in detail["rows"] if row["contract"] == "NQ")
+        self.assertEqual(nq["latest_operator_action_state"], "BLOCKED")
+        self.assertIn("blocked", nq["latest_operator_action_text"].lower())
+        self.assertIn("blocked", nq["latest_operator_action_blocked_reason"].lower())
+        self.assertIn("Wait", nq["next_safe_operator_action"])
 
     def test_summary_reflects_submitted_action_and_timeline(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):
@@ -304,6 +426,12 @@ class CockpitCurrentStateSummarySurfaceTests(unittest.TestCase):
                 self.assertTrue(summary["runtime_readiness_preserved"])
                 self.assertIn("preserved", summary["runtime_state_text"].lower())
                 self.assertIs(item.runtime_snapshot, snapshot)
+                detail = _cockpit_surface(item)["contract_readiness_detail"]
+                self.assertEqual(
+                    [row["contract"] for row in detail["rows"]],
+                    ["ES", "NQ", "CL", "6E", "MGC"],
+                )
+                self.assertFalse(detail["creates_query_ready"])
 
     def test_missing_required_fields_still_fail_closed_in_summary(self) -> None:
         # CL fixture has stale quote + stale bar; 6E has a missing dependency;
@@ -321,6 +449,13 @@ class CockpitCurrentStateSummarySurfaceTests(unittest.TestCase):
         self.assertEqual(rows["6E"]["query_action_state"], "DISABLED")
         self.assertEqual(summary["query_blocked_count"], 3)
         self.assertIn("fail-closed", summary["query_state_text"].lower())
+        detail_rows = {
+            r["contract"]: r
+            for r in _cockpit_surface(lifecycle)["contract_readiness_detail"]["rows"]
+        }
+        self.assertIn("chart", detail_rows["NQ"]["blocked_reason"])
+        self.assertIn("stale", detail_rows["CL"]["blocked_reason"])
+        self.assertIn("dependency", detail_rows["6E"]["blocked_reason"])
 
     def test_zn_and_gc_remain_excluded_from_summary_universe(self) -> None:
         self.assertEqual(excluded_final_target_contracts(), ("ZN", "GC"))
@@ -367,6 +502,10 @@ class CockpitCurrentStateSummarySurfaceTests(unittest.TestCase):
             noted = add_cockpit_operator_note(submitted, "context note")
 
         rendered = json.dumps(_summary(noted), sort_keys=True).lower()
+        rendered += json.dumps(
+            _cockpit_surface(noted)["contract_readiness_detail"],
+            sort_keys=True,
+        ).lower()
         for forbidden in (
             "broker",
             "order",

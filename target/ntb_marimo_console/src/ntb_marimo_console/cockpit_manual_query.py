@@ -22,6 +22,10 @@ COCKPIT_OPERATOR_NOTES_MAX_ENTRIES: Final[int] = 10
 COCKPIT_OPERATOR_NOTE_MAX_TEXT_LENGTH: Final[int] = 500
 COCKPIT_CURRENT_STATE_SUMMARY_SCHEMA: Final[str] = "cockpit_current_state_summary_v1"
 COCKPIT_CURRENT_STATE_SUMMARY_MAX_TEXT_LENGTH: Final[int] = 240
+COCKPIT_CONTRACT_READINESS_DETAIL_SCHEMA: Final[str] = (
+    "cockpit_contract_readiness_detail_v1"
+)
+COCKPIT_CONTRACT_READINESS_DETAIL_MAX_TEXT_LENGTH: Final[int] = 280
 NO_QUERY_SUBMITTED_TEXT: Final[str] = "No manual query has been submitted from the primary cockpit."
 MANUAL_QUERY_DECISION_AUTHORITY: Final[str] = "preserved_engine_only"
 MANUAL_QUERY_SOURCE: Final[str] = "primary_cockpit_manual_action"
@@ -355,6 +359,245 @@ def _runtime_state_text(runtime_readiness_status: str, runtime_readiness_preserv
     if status in {"LIVE_RUNTIME_NOT_REQUESTED", "SAFE_NON_LIVE"}:
         return "Fixture / non-live; live runtime not requested."
     return f"Runtime readiness status: {status}."
+
+
+def build_cockpit_contract_readiness_detail(surface: Mapping[str, object]) -> dict[str, object]:
+    """Build a plain-English per-contract readiness detail panel payload.
+
+    This is display/view-model derivation only. It reads existing cockpit rows,
+    action status, and timeline entries; it never creates QUERY_READY and never
+    treats notes, labels, or renderer text as readiness evidence.
+    """
+    rows = surface.get("rows")
+    row_maps = [row for row in rows if isinstance(row, Mapping)] if isinstance(rows, list) else []
+    rows_by_contract = {
+        normalize_contract_symbol(str(row.get("contract") or "")): row
+        for row in row_maps
+        if _optional_text(row.get("contract"))
+    }
+
+    action_status = surface.get("operator_action_status")
+    action_status_map = action_status if isinstance(action_status, Mapping) else {}
+    timeline = surface.get("operator_action_timeline")
+    timeline_map = timeline if isinstance(timeline, Mapping) else {}
+    entries_raw = timeline_map.get("entries")
+    timeline_entries = (
+        [entry for entry in entries_raw if isinstance(entry, Mapping)]
+        if isinstance(entries_raw, list)
+        else []
+    )
+
+    detail_rows = [
+        _contract_readiness_detail_row(
+            contract=contract,
+            row=rows_by_contract.get(contract),
+            action_status=action_status_map,
+            timeline_entries=timeline_entries,
+        )
+        for contract in final_target_contracts()
+    ]
+    enabled_count = sum(1 for row in detail_rows if row["query_enabled"] is True)
+    blocked_count = len(detail_rows) - enabled_count
+    return {
+        "schema": COCKPIT_CONTRACT_READINESS_DETAIL_SCHEMA,
+        "title": "Contract Readiness Detail",
+        "summary_text": (
+            f"{enabled_count} of {len(detail_rows)} contracts are enabled by the existing "
+            f"manual-query gate; {blocked_count} remain blocked fail-closed."
+        ),
+        "supported_contracts": list(final_target_contracts()),
+        "excluded_contracts": ["ZN", "GC"],
+        "rows": detail_rows,
+        "decision_authority": MANUAL_QUERY_DECISION_AUTHORITY,
+        "manual_query_only": True,
+        "manual_execution_only": True,
+        "creates_query_ready": False,
+        "raw_quote_values_included": False,
+        "raw_bar_values_included": False,
+        "raw_streamer_payloads_included": False,
+    }
+
+
+def _contract_readiness_detail_row(
+    *,
+    contract: str,
+    row: Mapping[str, object] | None,
+    action_status: Mapping[str, object],
+    timeline_entries: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    row_map = row or {}
+    display_name = _contract_display_name(contract, row_map)
+    query_action_state = _optional_text(row_map.get("query_action_state")) or "DISABLED"
+    query_enabled = row_map.get("query_enabled") is True and query_action_state == "ENABLED"
+    support_status = _optional_text(row_map.get("support_state")) or "unavailable"
+    runtime_text = _contract_runtime_readiness_text(contract, row_map)
+    block_reason = _contract_block_reason(contract, row_map, query_enabled=query_enabled)
+    query_state_text = _contract_query_state_text(
+        query_action_state=query_action_state,
+        query_enabled=query_enabled,
+        block_reason=block_reason,
+    )
+    latest_action = _latest_action_for_contract(
+        contract=contract,
+        action_status=action_status,
+        timeline_entries=timeline_entries,
+    )
+    next_action = _next_safe_operator_action(
+        query_enabled=query_enabled,
+        block_reason=block_reason,
+        latest_action=latest_action,
+    )
+    return {
+        "schema": COCKPIT_CONTRACT_READINESS_DETAIL_SCHEMA,
+        "contract": contract,
+        "display_name": display_name,
+        "support_status": support_status,
+        "runtime_readiness_text": runtime_text,
+        "query_action_state": query_action_state,
+        "query_action_text": _bounded_detail_text(
+            row_map.get("query_action_text")
+            or ("Manual query available." if query_enabled else "Manual query blocked.")
+        ),
+        "query_enabled": query_enabled,
+        "query_state_text": query_state_text,
+        "blocked_reason": block_reason,
+        "latest_operator_action_state": latest_action["state"],
+        "latest_operator_action_text": latest_action["text"],
+        "latest_operator_action_blocked_reason": latest_action["blocked_reason"],
+        "next_safe_operator_action": next_action,
+        "query_ready_provenance": _optional_text(row_map.get("query_ready_provenance"))
+        or "unavailable_not_inferred_from_display_or_raw_enabled_mapping",
+        "creates_query_ready": False,
+        "raw_quote_values_included": False,
+        "raw_bar_values_included": False,
+        "raw_streamer_payloads_included": False,
+    }
+
+
+def _contract_display_name(contract: str, row: Mapping[str, object]) -> str:
+    label = _optional_text(row.get("profile_label"))
+    if label:
+        return label
+    if contract == "MGC":
+        return "Micro Gold"
+    return contract
+
+
+def _contract_runtime_readiness_text(contract: str, row: Mapping[str, object]) -> str:
+    if not row:
+        return _bounded_detail_text(
+            f"{contract} cockpit row is missing; runtime and readiness are unavailable."
+        )
+    quote = _optional_text(row.get("quote_status")) or "quote unavailable"
+    chart = _optional_text(row.get("chart_status")) or "chart unavailable"
+    runtime = _optional_text(row.get("runtime_state")) or "runtime unavailable"
+    gate = _optional_text(row.get("query_gate_state")) or "DISABLED"
+    status_text = _optional_text(row.get("status_text"))
+    if status_text:
+        return _bounded_detail_text(
+            f"{status_text} Runtime: {runtime}; quote: {quote}; chart: {chart}; gate: {gate}."
+        )
+    return _bounded_detail_text(
+        f"Runtime: {runtime}; quote: {quote}; chart: {chart}; gate: {gate}."
+    )
+
+
+def _contract_block_reason(
+    contract: str,
+    row: Mapping[str, object],
+    *,
+    query_enabled: bool,
+) -> str | None:
+    if query_enabled:
+        return None
+    if not row:
+        return f"Manual query blocked: no cockpit gate row is available for {contract}."
+    reason = (
+        _optional_text(row.get("query_disabled_reason"))
+        or _optional_text(row.get("query_reason"))
+    )
+    if reason:
+        return _bounded_detail_text(reason)
+    blocking = row.get("blocking_reasons")
+    if isinstance(blocking, list) and blocking:
+        return _bounded_detail_text(
+            "Manual query blocked: " + ", ".join(str(item) for item in blocking)
+        )
+    return f"Manual query blocked: {contract} is not enabled by the existing gate."
+
+
+def _contract_query_state_text(
+    *,
+    query_action_state: str,
+    query_enabled: bool,
+    block_reason: str | None,
+) -> str:
+    if query_enabled:
+        return "Manual query is enabled by the existing cockpit gate."
+    if block_reason:
+        return _bounded_detail_text(f"Manual query is blocked. {block_reason}")
+    return _bounded_detail_text(f"Manual query is {query_action_state.lower()} fail-closed.")
+
+
+def _latest_action_for_contract(
+    *,
+    contract: str,
+    action_status: Mapping[str, object],
+    timeline_entries: Sequence[Mapping[str, object]],
+) -> dict[str, str | None]:
+    for entry in reversed(timeline_entries):
+        if normalize_contract_symbol(str(entry.get("contract") or "")) != contract:
+            continue
+        state = _optional_text(entry.get("action_status")) or "UNKNOWN"
+        text = _optional_text(entry.get("action_text")) or "Operator action recorded."
+        return {
+            "state": state,
+            "text": _bounded_detail_text(text),
+            "blocked_reason": _bounded_detail_text(entry.get("blocked_reason")),
+        }
+    if normalize_contract_symbol(str(action_status.get("contract") or "")) == contract:
+        state = _optional_text(action_status.get("action_status")) or "UNKNOWN"
+        text = _optional_text(action_status.get("action_text")) or "Operator action recorded."
+        return {
+            "state": state,
+            "text": _bounded_detail_text(text),
+            "blocked_reason": _bounded_detail_text(action_status.get("blocked_reason")),
+        }
+    return {
+        "state": "NOT_SUBMITTED",
+        "text": NO_QUERY_SUBMITTED_TEXT,
+        "blocked_reason": None,
+    }
+
+
+def _next_safe_operator_action(
+    *,
+    query_enabled: bool,
+    block_reason: str | None,
+    latest_action: Mapping[str, object],
+) -> str:
+    latest_state = str(latest_action.get("state") or "")
+    latest_block = _optional_text(latest_action.get("blocked_reason"))
+    if latest_state == "BLOCKED" and latest_block:
+        return _bounded_detail_text(
+            f"Wait; resolve the blocker before retrying a manual query: {latest_block}"
+        )
+    if query_enabled:
+        return "Operator may submit a manual preserved-pipeline query for this contract."
+    if block_reason:
+        return _bounded_detail_text(
+            f"Do not submit a manual query yet; wait for the blocker to clear: {block_reason}"
+        )
+    return "Do not submit a manual query yet; wait for an enabled cockpit gate state."
+
+
+def _bounded_detail_text(value: object) -> str | None:
+    text = _optional_text(value)
+    if text is None:
+        return None
+    if len(text) > COCKPIT_CONTRACT_READINESS_DETAIL_MAX_TEXT_LENGTH:
+        return text[: COCKPIT_CONTRACT_READINESS_DETAIL_MAX_TEXT_LENGTH - 1].rstrip() + "…"
+    return text
 
 
 def build_cockpit_current_state_summary(surface: Mapping[str, object]) -> dict[str, object]:

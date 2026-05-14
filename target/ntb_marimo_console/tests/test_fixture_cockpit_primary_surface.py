@@ -216,6 +216,32 @@ def test_primary_cockpit_plan_starts_with_no_manual_query_submitted() -> None:
     assert action["raw_streamer_payloads_included"] is False
 
 
+def test_primary_cockpit_plan_includes_contract_readiness_detail() -> None:
+    shell = _fixture_shell()
+    plan = build_primary_cockpit_plan(shell)
+    detail = plan["contract_readiness_detail"]
+
+    assert detail["schema"] == "cockpit_contract_readiness_detail_v1"
+    rows = {row["contract"]: row for row in detail["rows"]}
+    assert list(rows) == ["ES", "NQ", "CL", "6E", "MGC"]
+    assert "ZN" not in rows
+    assert "GC" not in rows
+    assert rows["MGC"]["display_name"] == "Micro Gold"
+    assert rows["MGC"]["display_name"] != "GC"
+    assert detail["creates_query_ready"] is False
+
+    for contract, row in rows.items():
+        assert row["runtime_readiness_text"], contract
+        assert row["query_action_state"] in {"ENABLED", "DISABLED"}
+        assert "Manual query" in row["query_state_text"]
+        assert row["next_safe_operator_action"], contract
+
+    assert rows["NQ"]["query_enabled"] is False
+    assert "chart" in rows["NQ"]["blocked_reason"]
+    assert "stale" in rows["CL"]["blocked_reason"]
+    assert "dependency" in rows["6E"]["blocked_reason"]
+
+
 def test_primary_cockpit_plan_absent_when_no_surface() -> None:
     """build_primary_cockpit_plan() returns present=False when shell has no surfaces."""
     plan = build_primary_cockpit_plan({})

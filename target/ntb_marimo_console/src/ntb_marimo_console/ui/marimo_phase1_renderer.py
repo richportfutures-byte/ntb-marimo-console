@@ -15,7 +15,10 @@ except ModuleNotFoundError:
 
     mo = _MissingMarimo()
 
-from ..cockpit_manual_query import build_cockpit_current_state_summary
+from ..cockpit_manual_query import (
+    build_cockpit_contract_readiness_detail,
+    build_cockpit_current_state_summary,
+)
 from ..session_evidence import NO_RECENT_SESSION_EVIDENCE
 from ..watchman_gate import build_watchman_gate_markdown, watchman_gate_requires_stop
 
@@ -317,6 +320,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
             "operator_action_timeline": None,
             "operator_notes": None,
             "current_state_summary": None,
+            "contract_readiness_detail": None,
         }
     surface = surfaces_raw.get("fixture_cockpit_overview")
     if not isinstance(surface, Mapping):
@@ -335,6 +339,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
             "operator_action_timeline": None,
             "operator_notes": None,
             "current_state_summary": None,
+            "contract_readiness_detail": None,
         }
     return {
         "present": True,
@@ -352,6 +357,8 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
         "operator_notes": surface.get("operator_notes"),
         "current_state_summary": surface.get("current_state_summary")
         or build_cockpit_current_state_summary(surface),
+        "contract_readiness_detail": surface.get("contract_readiness_detail")
+        or build_cockpit_contract_readiness_detail(surface),
     }
 
 
@@ -2488,6 +2495,12 @@ def _render_fixture_cockpit_primary(
     current_state_strip_html = _fixture_cockpit_current_state_strip_html(
         current_state_summary
     )
+    contract_detail = surface.get("contract_readiness_detail")
+    if not isinstance(contract_detail, Mapping):
+        contract_detail = build_cockpit_contract_readiness_detail(surface)
+    contract_detail_html = _fixture_cockpit_contract_readiness_detail_html(
+        contract_detail
+    )
     last_query_html = _fixture_cockpit_last_query_html(surface.get("last_query_result"))
     action_status_html = _fixture_cockpit_operator_action_status_html(
         surface.get("operator_action_status")
@@ -2511,6 +2524,7 @@ def _render_fixture_cockpit_primary(
         + '<div class="ntb-card">'
         + banner
         + current_state_strip_html
+        + contract_detail_html
         + action_status_html
         + table_html
         + last_query_html
@@ -2653,6 +2667,77 @@ def _fixture_cockpit_current_state_strip_html(value: object) -> str:
         "</div>"
         f'<table class="ntb-table"><tbody>{items_html}</tbody></table>'
         "</div>"
+    )
+
+
+def _fixture_cockpit_contract_readiness_detail_html(value: object) -> str:
+    detail = value if isinstance(value, Mapping) else {}
+    rows_raw = detail.get("rows")
+    rows = rows_raw if isinstance(rows_raw, list) else []
+    rows_html = ""
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        contract = _as_str(row.get("contract"), default="<unavailable>")
+        display_name = _as_str(row.get("display_name"), default=contract)
+        support = _as_str(row.get("support_status"), default="unavailable")
+        runtime = _as_str(
+            row.get("runtime_readiness_text"),
+            default="Runtime and readiness are unavailable.",
+        )
+        query_state = _as_str(row.get("query_action_state"), default="DISABLED")
+        query_text = _as_str(row.get("query_state_text"), default="Manual query is blocked.")
+        blocked_reason = _as_str(row.get("blocked_reason"), default="<none>")
+        latest_state = _as_str(
+            row.get("latest_operator_action_state"),
+            default="NOT_SUBMITTED",
+        )
+        latest_text = _as_str(
+            row.get("latest_operator_action_text"),
+            default="No manual query has been submitted from the primary cockpit.",
+        )
+        latest_block = _as_str(
+            row.get("latest_operator_action_blocked_reason"),
+            default="<none>",
+        )
+        next_action = _as_str(
+            row.get("next_safe_operator_action"),
+            default="Do not submit a manual query yet; wait for an enabled cockpit gate state.",
+        )
+        rows_html += (
+            "<tr>"
+            f"<td><strong>{_h(contract)}</strong><br><span class='ntb-muted'>{_h(display_name)}</span></td>"
+            f"<td>{_ntb_chip_for_status(support)}</td>"
+            f"<td>{_h(runtime)}</td>"
+            f"<td>{_ntb_chip_for_status(query_state)}<br>{_h(query_text)}</td>"
+            f"<td class='ntb-muted'>{_h(blocked_reason)}</td>"
+            f"<td>{_ntb_chip_for_status(latest_state)}<br>{_h(latest_text)}"
+            f"<br><span class='ntb-muted'>{_h(latest_block)}</span></td>"
+            f"<td>{_h(next_action)}</td>"
+            "</tr>"
+        )
+    if not rows_html:
+        rows_html = (
+            "<tr><td colspan='7' class='ntb-muted'>"
+            "Contract readiness detail is unavailable; manual query remains fail-closed.</td></tr>"
+        )
+    summary_text = _as_str(
+        detail.get("summary_text"),
+        default="Contract readiness detail is display-only and does not create query readiness.",
+    )
+    return (
+        '<div style="margin:12px 0">'
+        '<div class="ntb-stat__label" style="margin-bottom:6px">'
+        "Contract Readiness Detail (plain-English read; display only — does not create query readiness)"
+        "</div>"
+        f'<div class="ntb-muted" style="margin-bottom:8px">{_h(summary_text)}</div>'
+        '<table class="ntb-table"><thead><tr>'
+        "<th>Contract</th><th>Support</th><th>Runtime / Readiness</th>"
+        "<th>Manual Query</th><th>Blocked Reason</th><th>Latest Relevant Action</th>"
+        "<th>Next Safe Operator Action</th>"
+        "</tr></thead>"
+        f"<tbody>{rows_html}</tbody>"
+        "</table></div>"
     )
 
 
