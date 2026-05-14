@@ -280,6 +280,64 @@ _DEBUG_CARD_STYLE = {
 }
 
 
+def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]:
+    """Return the primary operator cockpit plan from the fixture cockpit overview surface.
+
+    This is the testable anchor for the first-position landing surface.  The
+    returned dict is plain Python (no Marimo objects) so tests can assert on
+    it without needing a Marimo runtime.
+
+    Keys
+    ----
+    present        – True when the surface is available and populated
+    position       – "primary" when present; "unavailable" otherwise
+    key            – always "fixture_cockpit_overview"
+    mode           – surface mode string (e.g. "fixture_dry_run_non_live")
+    live_credentials_required – bool
+    default_launch_live       – bool
+    decision_authority        – str
+    supported_contracts       – list[str]
+    rows                      – list of per-contract row dicts
+    """
+    surfaces_raw = shell.get("surfaces")
+    if not isinstance(surfaces_raw, Mapping):
+        return {
+            "present": False,
+            "position": "unavailable",
+            "key": "fixture_cockpit_overview",
+            "mode": None,
+            "live_credentials_required": None,
+            "default_launch_live": None,
+            "decision_authority": None,
+            "supported_contracts": [],
+            "rows": [],
+        }
+    surface = surfaces_raw.get("fixture_cockpit_overview")
+    if not isinstance(surface, Mapping):
+        return {
+            "present": False,
+            "position": "unavailable",
+            "key": "fixture_cockpit_overview",
+            "mode": None,
+            "live_credentials_required": None,
+            "default_launch_live": None,
+            "decision_authority": None,
+            "supported_contracts": [],
+            "rows": [],
+        }
+    return {
+        "present": True,
+        "position": "primary",
+        "key": "fixture_cockpit_overview",
+        "mode": surface.get("mode"),
+        "live_credentials_required": surface.get("live_credentials_required"),
+        "default_launch_live": surface.get("default_launch_live"),
+        "decision_authority": surface.get("decision_authority"),
+        "supported_contracts": list(surface.get("supported_contracts") or []),
+        "rows": list(surface.get("rows") or []),
+    }
+
+
 def build_phase1_render_plan(shell: Mapping[str, object]) -> dict[str, object]:
     warnings: list[str] = []
 
@@ -341,6 +399,15 @@ def render_phase1_console(
         _ntb_css_style_element(),
         _render_console_header(shell, heading=heading, mode_summary=mode_summary),
     ]
+
+    # PRIMARY LANDING SURFACE — fixture cockpit renders immediately after the header,
+    # before pre-market brief, stream health, anchors, notes, and all metadata sections.
+    surfaces_raw = shell.get("surfaces")
+    if isinstance(surfaces_raw, Mapping):
+        fixture_cockpit_surface = surfaces_raw.get("fixture_cockpit_overview")
+        if operator_ready and isinstance(fixture_cockpit_surface, Mapping):
+            elements.append(_render_fixture_cockpit_primary(fixture_cockpit_surface))
+
     elements.append(
         render_premarket_brief_panel(shell, control_panel=premarket_brief_control_panel)
     )
@@ -365,12 +432,6 @@ def render_phase1_console(
     cockpit = shell.get("r14_cockpit")
     if operator_ready and isinstance(cockpit, Mapping):
         elements.append(render_r14_cockpit_shell(cockpit))
-
-    surfaces_raw = shell.get("surfaces")
-    if isinstance(surfaces_raw, Mapping):
-        fixture_cockpit_surface = surfaces_raw.get("fixture_cockpit_overview")
-        if operator_ready and isinstance(fixture_cockpit_surface, Mapping):
-            elements.append(_render_fixture_cockpit_overview(fixture_cockpit_surface))
 
     if isinstance(startup, Mapping):
         elements.append(_render_startup_status_html(startup))
@@ -2334,25 +2395,28 @@ def _render_surface_section(
     return _render_surface_card(mo.md(f"## {key}\n- unavailable"))
 
 
-def _render_fixture_cockpit_overview(surface: Mapping[str, object]) -> Any:
-    """Render the fixture cockpit overview surface as a Marimo markdown card.
+def _render_fixture_cockpit_primary(surface: Mapping[str, object]) -> Any:
+    """Render the fixture cockpit as the primary operator landing surface.
 
-    Shows mode metadata and per-contract gate/query state without exposing
-    any raw market values (no bid/ask/last/OHLC numbers).
+    This is the first operator-visible section in the console, positioned
+    before all metadata, profile, and debug sections.  It renders an HTML
+    table of per-contract status — no raw quote/bar/streamer values.
     """
     mode = _as_str(surface.get("mode"), default="<unavailable>")
-    live_creds = _as_str(surface.get("live_credentials_required"), default="False")
-    default_live = _as_str(surface.get("default_launch_live"), default="False")
     authority = _as_str(surface.get("decision_authority"), default="<unavailable>")
-    lines: list[str] = [
-        "## Fixture Cockpit Overview",
-        f"- Mode: `{mode}`",
-        f"- Live Credentials Required: `{live_creds}`",
-        f"- Default Launch Live: `{default_live}`",
-        f"- Decision Authority: `{authority}`",
-        "- Contract States:",
-    ]
+    error = surface.get("error")
+
+    # Mode banner
+    banner = _ntb_severity_banner(
+        "FIXTURE",
+        "Non-Live Fixture Cockpit — Credential-Free",
+        f"Mode: {mode} | Decision authority: {authority} | Manual query only | No credentials required",
+        tier="ready",
+    )
+
+    # Per-contract table rows
     rows = surface.get("rows")
+    tbody_html = ""
     if isinstance(rows, list):
         for row in rows:
             if not isinstance(row, Mapping):
@@ -2362,19 +2426,55 @@ def _render_fixture_cockpit_overview(surface: Mapping[str, object]) -> Any:
             quote = _as_str(row.get("quote_status"))
             chart = _as_str(row.get("chart_status"))
             gate = _as_str(row.get("query_gate_state"))
-            enabled = _as_str(row.get("query_enabled"))
+            query_enabled = row.get("query_enabled")
+            enabled_str = "True" if query_enabled is True else "False"
             reason = _as_str(row.get("query_reason"))
-            lines.append(
-                f"  - **{contract}** ({label}): "
-                f"quote=`{quote}`, chart=`{chart}`, "
-                f"gate=`{gate}`, query={enabled}, reason=`{reason}`"
+            tbody_html += (
+                "<tr>"
+                f"<td><strong>{_h(contract)}</strong></td>"
+                f"<td>{_h(label)}</td>"
+                f"<td>{_ntb_chip_for_status(quote)}</td>"
+                f"<td>{_ntb_chip_for_status(chart)}</td>"
+                f"<td>{_ntb_chip_for_status(gate)}</td>"
+                f"<td>{_ntb_chip_for_status(enabled_str)}</td>"
+                f"<td class='ntb-muted'>{_h(reason)}</td>"
+                "</tr>"
             )
-    else:
-        lines.append("  - <unavailable>")
-    error = surface.get("error")
+    if not tbody_html:
+        tbody_html = (
+            "<tr><td colspan='7' class='ntb-muted'>&lt;unavailable&gt;</td></tr>"
+        )
+
+    table_html = (
+        "<table class='ntb-table'>"
+        "<thead><tr>"
+        "<th>Contract</th><th>Label</th><th>Quote</th><th>Chart</th>"
+        "<th>Gate</th><th>Query</th><th>Block / Eligible Reason</th>"
+        "</tr></thead>"
+        f"<tbody>{tbody_html}</tbody>"
+        "</table>"
+    )
+
+    error_html = ""
     if error is not None:
-        lines.append(f"\n_Build error: {_as_str(error)}_")
-    return _render_surface_card(mo.md("\n".join(lines)))
+        error_html = (
+            f'<div class="ntb-muted" style="margin-top:8px">'
+            f"Build error: {_h(_as_str(error))}</div>"
+        )
+
+    full_html = (
+        _ntb_section_divider("FIVE-CONTRACT FIXTURE COCKPIT")
+        + '<div class="ntb-card">'
+        + banner
+        + table_html
+        + error_html
+        + "</div>"
+    )
+    return mo.Html(full_html)
+
+
+# Backward-compatible alias (kept for any external callers; use the primary variant in new code)
+_render_fixture_cockpit_overview = _render_fixture_cockpit_primary
 
 
 def _render_console_header(
