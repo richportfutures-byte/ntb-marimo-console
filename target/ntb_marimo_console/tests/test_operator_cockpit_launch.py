@@ -594,3 +594,79 @@ def test_main_live_print_command_is_secret_free(capsys) -> None:
     assert "marimo run src/ntb_marimo_console/operator_console_app.py" in out
     for fragment in _FORBIDDEN_OUTPUT_FRAGMENTS:
         assert fragment not in out
+
+
+# ---------------------------------------------------------------------------
+# Valid Marimo launch target recognition
+# ---------------------------------------------------------------------------
+
+
+def test_operator_app_entrypoint_is_a_marimo_recognized_notebook() -> None:
+    """`marimo run` rejected the prior app module as "not a marimo notebook".
+
+    The default and live launch commands both target the same file, so it must
+    statically parse as a valid marimo notebook with cells — not merely import
+    as a Python module.
+    """
+    from marimo._ast.load import load_app
+    from marimo._ast.parse import parse_notebook
+
+    target = PROJECT_ROOT / APP_ENTRYPOINT_RELATIVE
+    notebook = parse_notebook(target.read_text(encoding="utf-8"), str(target))
+    assert notebook is not None
+    assert notebook.valid is True
+    assert notebook.violations == []
+
+    app = load_app(str(target))
+    assert app is not None
+    cell_names = list(app._cell_manager.names())
+    assert cell_names, "marimo notebook target must define at least one cell"
+
+
+def test_default_and_live_launch_commands_share_the_valid_notebook_target() -> None:
+    from marimo._ast.load import load_app
+
+    default_command = build_marimo_launch_command(
+        python_executable="python", project_root=PROJECT_ROOT
+    )
+    target = default_command[-1]
+    assert target == APP_ENTRYPOINT_RELATIVE.as_posix()
+
+    safe_text = format_marimo_launch_command(project_root=PROJECT_ROOT)
+    live_text = format_live_marimo_launch_command(project_root=PROJECT_ROOT)
+    assert f"marimo run {target}" in safe_text
+    assert f"marimo run {target}" in live_text
+
+    # The shared target loads as a real marimo notebook.
+    assert load_app(str(PROJECT_ROOT / target)) is not None
+
+
+def test_operator_app_target_imports_without_starting_live_or_reading_secrets(
+    monkeypatch,
+) -> None:
+    """Importing / statically loading the notebook target must not start the
+    live runtime, log in to Schwab, or touch secret/token paths."""
+    import importlib
+
+    original_read_text = Path.read_text
+
+    def guarded_read_text(self: Path, *args, **kwargs):  # type: ignore[no-untyped-def]
+        text = str(self)
+        assert ".state/secrets" not in text
+        assert "schwab_live.env" not in text
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", guarded_read_text)
+
+    app_mod = importlib.import_module("ntb_marimo_console.operator_console_app")
+    importlib.reload(app_mod)
+
+    assert getattr(app_mod, "app", None) is not None
+    # Helper functions remain importable for the cockpit cells and tests.
+    assert callable(app_mod.optional_thesis_reference_from_form)
+    assert callable(app_mod.resolve_cockpit_runtime_snapshot_producer)
+
+    from marimo._ast.load import load_app
+
+    target = PROJECT_ROOT / APP_ENTRYPOINT_RELATIVE
+    assert load_app(str(target)) is not None

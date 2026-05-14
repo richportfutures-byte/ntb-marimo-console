@@ -1,98 +1,77 @@
-try:
-    import marimo
-except ModuleNotFoundError:
-    class _MissingMarimoApp:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def cell(self, func=None, **kwargs):
-            if func is not None:
-                return func
-
-            def decorator(inner):
-                return inner
-
-            return decorator
-
-        def run(self):
-            raise RuntimeError("marimo is required to run operator_console_app.")
-
-    class _MissingMarimoModule:
-        App = _MissingMarimoApp
-
-    marimo = _MissingMarimoModule()
+import marimo
 
 __generated_with = "0.23.5"
 app = marimo.App(width="full")
 
 
-def optional_thesis_reference_from_form(submitted, thesis_cls):
-    def _blank_string_to_none(value):
-        if value is None:
-            return None
-        text = str(value).strip()
-        return text if text else None
+with app.setup:
+    def optional_thesis_reference_from_form(submitted, thesis_cls):
+        def _blank_string_to_none(value):
+            if value is None:
+                return None
+            text = str(value).strip()
+            return text if text else None
 
-    result_id = _blank_string_to_none(submitted.get("pipeline_result_id"))
-    trigger_name = _blank_string_to_none(submitted.get("trigger_name"))
-    trigger_state = _blank_string_to_none(submitted.get("trigger_state"))
-    supplied = (result_id, trigger_name, trigger_state)
-    if not any(supplied):
-        return None, None
-    if not all(supplied):
-        return None, "Thesis reference requires result id, trigger name, and trigger state."
-    try:
-        return (
-            thesis_cls(
-                pipeline_result_id=result_id,
-                trigger_name=trigger_name,
-                trigger_state=trigger_state,
-            ),
-            None,
+        result_id = _blank_string_to_none(submitted.get("pipeline_result_id"))
+        trigger_name = _blank_string_to_none(submitted.get("trigger_name"))
+        trigger_state = _blank_string_to_none(submitted.get("trigger_state"))
+        supplied = (result_id, trigger_name, trigger_state)
+        if not any(supplied):
+            return None, None
+        if not all(supplied):
+            return None, "Thesis reference requires result id, trigger name, and trigger state."
+        try:
+            return (
+                thesis_cls(
+                    pipeline_result_id=result_id,
+                    trigger_name=trigger_name,
+                    trigger_state=trigger_state,
+                ),
+                None,
+            )
+        except ValueError as exc:
+            return None, str(exc)
+
+
+    def resolve_cockpit_runtime_snapshot_producer(
+        cached_producer,
+        *,
+        operator_runtime_mode,
+        live_runtime_starter=None,
+        non_live_producer_builder=None,
+    ):
+        """Resolve the read-only runtime snapshot producer for a cockpit session.
+
+        Called once per session with the Marimo-state-cached producer:
+
+        * If a producer is already cached, it is returned unchanged — the live
+          runtime is NOT started again on refresh/render and there is no repeated
+          Schwab login per refresh.
+        * On first resolution (``cached_producer is None``) in explicit
+          ``OPERATOR_LIVE_RUNTIME`` mode, the operator-owned live runtime is started
+          and registered exactly once; the returned producer reads that runtime's
+          cache read-only. If the live start fails the producer is fail-closed
+          (live unavailable/error), never fixture data.
+        * Otherwise the non-live producer is built (default fixture/non-live path).
+        """
+
+        if cached_producer is not None:
+            return cached_producer
+
+        from ntb_marimo_console.live_cockpit_runtime import start_live_cockpit_runtime
+        from ntb_marimo_console.operator_live_runtime import (
+            OPERATOR_LIVE_RUNTIME,
+            build_operator_runtime_snapshot_producer_from_env,
         )
-    except ValueError as exc:
-        return None, str(exc)
 
+        if live_runtime_starter is None:
+            live_runtime_starter = start_live_cockpit_runtime
+        if non_live_producer_builder is None:
+            non_live_producer_builder = build_operator_runtime_snapshot_producer_from_env
 
-def resolve_cockpit_runtime_snapshot_producer(
-    cached_producer,
-    *,
-    operator_runtime_mode,
-    live_runtime_starter=None,
-    non_live_producer_builder=None,
-):
-    """Resolve the read-only runtime snapshot producer for a cockpit session.
-
-    Called once per session with the Marimo-state-cached producer:
-
-    * If a producer is already cached, it is returned unchanged — the live
-      runtime is NOT started again on refresh/render and there is no repeated
-      Schwab login per refresh.
-    * On first resolution (``cached_producer is None``) in explicit
-      ``OPERATOR_LIVE_RUNTIME`` mode, the operator-owned live runtime is started
-      and registered exactly once; the returned producer reads that runtime's
-      cache read-only. If the live start fails the producer is fail-closed
-      (live unavailable/error), never fixture data.
-    * Otherwise the non-live producer is built (default fixture/non-live path).
-    """
-
-    if cached_producer is not None:
-        return cached_producer
-
-    from ntb_marimo_console.live_cockpit_runtime import start_live_cockpit_runtime
-    from ntb_marimo_console.operator_live_runtime import (
-        OPERATOR_LIVE_RUNTIME,
-        build_operator_runtime_snapshot_producer_from_env,
-    )
-
-    if live_runtime_starter is None:
-        live_runtime_starter = start_live_cockpit_runtime
-    if non_live_producer_builder is None:
-        non_live_producer_builder = build_operator_runtime_snapshot_producer_from_env
-
-    if operator_runtime_mode == OPERATOR_LIVE_RUNTIME:
-        return live_runtime_starter().producer
-    return non_live_producer_builder()
+        if operator_runtime_mode == OPERATOR_LIVE_RUNTIME:
+            return live_runtime_starter().producer
+        return non_live_producer_builder()
 
 
 @app.cell
@@ -249,9 +228,9 @@ def _(
     switch_available = bool(profile_options) and pending_profile_id is not None and pending_profile_id != selected_profile_id
 
     cockpit_rows: dict[str, dict] = {}
-    surfaces = controls_shell.get("surfaces")
-    if isinstance(surfaces, _Mapping):
-        cockpit_surface = surfaces.get("fixture_cockpit_overview")
+    _surfaces = controls_shell.get("surfaces")
+    if isinstance(_surfaces, _Mapping):
+        cockpit_surface = _surfaces.get("fixture_cockpit_overview")
         if isinstance(cockpit_surface, _Mapping):
             raw_rows = cockpit_surface.get("rows")
             if isinstance(raw_rows, list):
@@ -993,12 +972,12 @@ def _(
         manual_sections=_premarket_manual_sections,
     )
     shell["premarket_brief_enrichment"] = premarket_brief.to_dict()
-    surfaces = shell.get("surfaces")
-    if isinstance(surfaces, dict):
-        premarket_panel = surfaces.get("pre_market_brief")
+    _surfaces = shell.get("surfaces")
+    if isinstance(_surfaces, dict):
+        premarket_panel = _surfaces.get("pre_market_brief")
         if isinstance(premarket_panel, dict):
             premarket_panel["enrichment"] = premarket_brief.to_dict()
-        audit_panel = surfaces.get("audit_replay")
+        audit_panel = _surfaces.get("audit_replay")
         if isinstance(audit_panel, dict):
             existing_rows = audit_panel.get("timeline_events")
             existing_timeline_rows = existing_rows if isinstance(existing_rows, list) else []
