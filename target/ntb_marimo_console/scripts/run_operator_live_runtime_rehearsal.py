@@ -126,6 +126,17 @@ CONTRACT_DISPLAY_NAMES: dict[str, str] = {
     "6E": "Euro FX",
     "MGC": "Micro Gold",
 }
+CHART_DIAGNOSTIC_CATEGORIES: tuple[str, ...] = (
+    "not_evaluated",
+    "chart_futures_completed_five_minute_bars_received",
+    "chart_futures_partial_only_bars_received",
+    "chart_futures_no_completed_five_minute_bars",
+    "no_chart_futures_events_received",
+    "chart_futures_subscribe_failed",
+    "chart_futures_provider_or_entitlement_block",
+    "chart_futures_unsupported_response",
+    "chart_futures_malformed_or_unparseable_events",
+)
 
 
 _FORBIDDEN_FRAGMENT_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -296,6 +307,9 @@ class RehearsalReport:
     chart_received_contracts_count: int = 0
     chart_completed_five_minute_contracts_count: int = 0
     chart_data_diagnostic: str = "not_evaluated"
+    chart_blocking_reasons: tuple[str, ...] = ()
+    chart_dispatch_parse_error_count: int = 0
+    chart_unsupported_response_count: int = 0
     per_contract_status: dict[str, dict[str, str]] = field(default_factory=dict)
     repeated_login_on_refresh: bool = False
     cleanup_status: str = "skipped"  # "ok" | "skipped" | "error"
@@ -330,6 +344,9 @@ class RehearsalReport:
             "chart_received_contracts_count": int(self.chart_received_contracts_count),
             "chart_completed_five_minute_contracts_count": int(self.chart_completed_five_minute_contracts_count),
             "chart_data_diagnostic": self.chart_data_diagnostic,
+            "chart_blocking_reasons": list(self.chart_blocking_reasons),
+            "chart_dispatch_parse_error_count": int(self.chart_dispatch_parse_error_count),
+            "chart_unsupported_response_count": int(self.chart_unsupported_response_count),
             "per_contract_status": self.per_contract_status,
             "repeated_login_on_refresh": "no",
             "cleanup_status": self.cleanup_status,
@@ -354,6 +371,8 @@ class ReceiveLoopObservation:
     quote_contracts: tuple[str, ...] = ()
     chart_contracts: tuple[str, ...] = ()
     chart_completed_contracts: tuple[str, ...] = ()
+    chart_dispatch_parse_error_count: int = 0
+    chart_unsupported_response_count: int = 0
 
     def __iter__(self):
         yield self.market_data_received
@@ -487,12 +506,18 @@ def render_text(report: RehearsalReport) -> str:
         "chart_received_contracts_count",
         "chart_completed_five_minute_contracts_count",
         "chart_data_diagnostic",
+        "chart_dispatch_parse_error_count",
+        "chart_unsupported_response_count",
         "repeated_login_on_refresh",
         "cleanup_status",
         "duration_seconds",
         "values_printed",
     )
     body = "\n".join(f"{key}={payload[key]}" for key in keys_in_order)
+    chart_reasons = payload.get("chart_blocking_reasons", ())
+    if isinstance(chart_reasons, list):
+        for reason in chart_reasons:
+            body += f"\nchart_blocking_reason={reason}"
     if report.blocking_reason:
         body += f"\nblocking_reason={payload['blocking_reason']}"
     return body
@@ -949,6 +974,8 @@ def _pump_receive_loop(
     chart_contracts_seen: set[str] = set()
     chart_completed_contracts_seen: set[str] = set()
     chart_blocking_reasons: list[str] = []
+    chart_dispatch_parse_error_count = 0
+    chart_unsupported_response_count = 0
     received_at_least_one = False
     chart_received_at_least_one = False
 
@@ -986,7 +1013,13 @@ def _pump_receive_loop(
     active_session = session
     deadline = clock() + max(0.0, duration_seconds)
     while clock() < deadline:
-        if not active_session.dispatch_one(handler=_handler):
+        received_message = active_session.dispatch_one(handler=_handler)
+        dispatch_status = _dispatch_status(active_session)
+        if dispatch_status == "parse_error":
+            chart_dispatch_parse_error_count += 1
+        elif dispatch_status == "unsupported_response":
+            chart_unsupported_response_count += 1
+        if not received_message:
             token_refresh_reason = _token_refresh_blocking_reason(active_session)
             if token_refresh_reason:
                 marker = getattr(manager, "mark_connection_lost", None)
@@ -1020,7 +1053,20 @@ def _pump_receive_loop(
         quote_contracts=tuple(sorted(contracts_seen)),
         chart_contracts=tuple(sorted(chart_contracts_seen)),
         chart_completed_contracts=tuple(sorted(chart_completed_contracts_seen)),
+        chart_dispatch_parse_error_count=chart_dispatch_parse_error_count,
+        chart_unsupported_response_count=chart_unsupported_response_count,
     )
+
+
+def _dispatch_status(session: object) -> str:
+    status_func = getattr(session, "dispatch_status", None)
+    if not callable(status_func):
+        return "unavailable"
+    try:
+        status = status_func()
+    except Exception:
+        return "unavailable"
+    return str(status).strip().lower() or "unavailable"
 
 
 def _token_refresh_blocking_reason(session: object) -> str | None:
@@ -1058,6 +1104,41 @@ def _per_contract_runtime_status(observation: ReceiveLoopObservation) -> dict[st
             "last_chart_event_status": last_chart_event_status,
         }
     return statuses
+
+
+def _chart_data_diagnostic(observation: ReceiveLoopObservation) -> str:
+    if observation.chart_completed_five_minute_contracts_count == len(final_target_contracts()):
+        return "chart_futures_completed_five_minute_bars_received"
+    if observation.chart_unsupported_response_count > 0:
+        return "chart_futures_unsupported_response"
+    if observation.chart_dispatch_parse_error_count > 0 or observation.chart_blocking_reasons:
+        return "chart_futures_malformed_or_unparseable_events"
+    if observation.chart_data_received:
+        if observation.chart_received_contracts_count == len(final_target_contracts()):
+            return "chart_futures_no_completed_five_minute_bars"
+        return "chart_futures_partial_only_bars_received"
+    return "no_chart_futures_events_received"
+
+
+def _chart_start_failure_diagnostic(reason: object) -> str:
+    text = _sanitize_text(str(reason))
+    if "CHART_FUTURES" not in text:
+        return "not_evaluated"
+    lowered = text.lower()
+    if "subscribe_denied:chart_futures" in lowered:
+        return "chart_futures_provider_or_entitlement_block"
+    if "subscribe_malformed_response" in lowered or "unsupported" in lowered:
+        return "chart_futures_unsupported_response"
+    if "subscribe_" in lowered:
+        return "chart_futures_subscribe_failed"
+    return "not_evaluated"
+
+
+def _chart_start_failure_reasons(reason: object) -> tuple[str, ...]:
+    text = _sanitize_text(str(reason))
+    if "CHART_FUTURES" not in text:
+        return ()
+    return (text[:160],)
 
 
 # ---------------------------------------------------------------------------
@@ -1247,10 +1328,12 @@ def run_with_dependencies(
             report.blocking_reason = "client_factory_error"
             report.checks.append(RehearsalCheck("live_login_succeeded", "blocked"))
             return report
-        except OperatorLiveRuntimeStartError:
+        except OperatorLiveRuntimeStartError as exc:
             report.mode = "blocked"
             report.status = "blocked"
             report.blocking_reason = "live_login_or_subscribe_failed"
+            report.chart_data_diagnostic = _chart_start_failure_diagnostic(exc)
+            report.chart_blocking_reasons = _chart_start_failure_reasons(exc)
             report.checks.append(RehearsalCheck("live_login_succeeded", "blocked"))
             return report
 
@@ -1288,6 +1371,9 @@ def run_with_dependencies(
         report.chart_completed_five_minute_contracts_count = (
             receive_observation.chart_completed_five_minute_contracts_count
         )
+        report.chart_blocking_reasons = tuple(_sanitize_text(reason)[:160] for reason in receive_observation.chart_blocking_reasons)
+        report.chart_dispatch_parse_error_count = receive_observation.chart_dispatch_parse_error_count
+        report.chart_unsupported_response_count = receive_observation.chart_unsupported_response_count
         report.per_contract_status = _per_contract_runtime_status(receive_observation)
         report.checks.append(
             RehearsalCheck(
@@ -1312,14 +1398,7 @@ def run_with_dependencies(
             report.market_data_diagnostic = "stream_blocked_after_subscription"
         else:
             report.market_data_diagnostic = "no_levelone_futures_updates_received_during_bounded_window"
-        if receive_observation.chart_completed_five_minute_contracts_count == len(final_target_contracts()):
-            report.chart_data_diagnostic = "chart_futures_completed_five_minute_bars_received"
-        elif receive_observation.chart_data_received:
-            report.chart_data_diagnostic = "chart_futures_building_or_partial_bars_received"
-        elif receive_observation.chart_blocking_reasons:
-            report.chart_data_diagnostic = "chart_futures_malformed_or_blocked"
-        else:
-            report.chart_data_diagnostic = "no_chart_futures_updates_received_during_bounded_window"
+        report.chart_data_diagnostic = _chart_data_diagnostic(receive_observation)
         if isinstance(post_receive_snapshot, StreamManagerSnapshot) and post_receive_snapshot.state in {
             "blocked",
             "disconnected",

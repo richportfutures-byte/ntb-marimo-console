@@ -1013,7 +1013,7 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
             clock=_make_clock(),
         )
         report = rehearsal.run_with_dependencies(
-            args=_make_args(live=True, duration=1),
+            args=_make_args(live=True, duration=2),
             env=_full_env(self.target_root),
             target_root=self.target_root,
             deps=deps,
@@ -1029,12 +1029,149 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
             report.market_data_diagnostic,
             "no_levelone_futures_updates_received_during_bounded_window",
         )
+        self.assertEqual(report.chart_data_diagnostic, "no_chart_futures_events_received")
         self.assertEqual(credentials_provider.call_count, 1)
         self.assertEqual(websocket_factory.call_count, 1)
         self.assertEqual(len(managers), 1)
         self.assertEqual(managers[0].start_count, 1)
         self.assertEqual(managers[0].shutdown_count, 1)
         self.assertEqual(report.cleanup_status, "ok")
+
+    def test_chart_subscription_denial_is_provider_or_entitlement_diagnostic(self) -> None:
+        websocket_factory = FakeWebsocketFactory()
+        websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=5, service="CHART_FUTURES"))
+
+        deps = rehearsal.RehearsalDependencies(
+            token_provider=FakeTokenProvider(),
+            credentials_provider=FakeCredentialsProvider(),
+            websocket_factory=websocket_factory,
+            manager_builder=lambda cfg, c: FakeStartingManager(cfg, c),
+            clock=_make_clock(),
+        )
+        report = rehearsal.run_with_dependencies(
+            args=_make_args(live=True, duration=2),
+            env=_full_env(self.target_root),
+            target_root=self.target_root,
+            deps=deps,
+        )
+
+        self.assertEqual(report.mode, "blocked")
+        self.assertEqual(report.status, "blocked")
+        self.assertEqual(report.chart_data_diagnostic, "chart_futures_provider_or_entitlement_block")
+        self.assertTrue(report.chart_blocking_reasons)
+        self.assertNotIn(SECRET_MARKER, rehearsal.render_json(report))
+
+    def test_chart_parse_error_is_malformed_or_unparseable_diagnostic(self) -> None:
+        websocket_factory = FakeWebsocketFactory()
+        websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
+        websocket_factory.connection.recv_queue.append("{not-json")
+
+        deps = rehearsal.RehearsalDependencies(
+            token_provider=FakeTokenProvider(),
+            credentials_provider=FakeCredentialsProvider(),
+            websocket_factory=websocket_factory,
+            manager_builder=lambda cfg, c: FakeStartingManager(cfg, c),
+            clock=_make_clock(),
+        )
+        report = rehearsal.run_with_dependencies(
+            args=_make_args(live=True, duration=1),
+            env=_full_env(self.target_root),
+            target_root=self.target_root,
+            deps=deps,
+        )
+
+        self.assertEqual(report.chart_data_diagnostic, "chart_futures_malformed_or_unparseable_events")
+        self.assertEqual(report.chart_dispatch_parse_error_count, 1)
+
+    def test_unsupported_chart_response_is_separate_diagnostic(self) -> None:
+        websocket_factory = FakeWebsocketFactory()
+        websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
+        websocket_factory.connection.recv_queue.append(
+            json.dumps(
+                {
+                    "data": [
+                        {
+                            "service": "UNSUPPORTED_FUTURES",
+                            "content": [{"key": "/ESM26", "1": 4321.5}],
+                        }
+                    ]
+                }
+            )
+        )
+
+        deps = rehearsal.RehearsalDependencies(
+            token_provider=FakeTokenProvider(),
+            credentials_provider=FakeCredentialsProvider(),
+            websocket_factory=websocket_factory,
+            manager_builder=lambda cfg, c: FakeStartingManager(cfg, c),
+            clock=_make_clock(),
+        )
+        report = rehearsal.run_with_dependencies(
+            args=_make_args(live=True, duration=1),
+            env=_full_env(self.target_root),
+            target_root=self.target_root,
+            deps=deps,
+        )
+
+        self.assertEqual(report.chart_data_diagnostic, "chart_futures_unsupported_response")
+        self.assertEqual(report.chart_unsupported_response_count, 1)
+
+    def test_partial_chart_bars_are_not_completed_five_minute_proof(self) -> None:
+        websocket_factory = FakeWebsocketFactory()
+        websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
+        websocket_factory.connection.recv_queue.append(_chart_frame("/ESM26", minute=0))
+
+        deps = rehearsal.RehearsalDependencies(
+            token_provider=FakeTokenProvider(),
+            credentials_provider=FakeCredentialsProvider(),
+            websocket_factory=websocket_factory,
+            manager_builder=lambda cfg, c: FakeStartingManager(cfg, c),
+            clock=_make_clock(),
+        )
+        report = rehearsal.run_with_dependencies(
+            args=_make_args(live=True, duration=1),
+            env=_full_env(self.target_root),
+            target_root=self.target_root,
+            deps=deps,
+        )
+
+        self.assertEqual(report.chart_data_diagnostic, "chart_futures_partial_only_bars_received")
+        self.assertEqual(report.chart_received_contracts_count, 1)
+        self.assertEqual(report.chart_completed_five_minute_contracts_count, 0)
+
+    def test_all_contract_chart_events_without_five_minute_completion_are_separate_diagnostic(self) -> None:
+        websocket_factory = FakeWebsocketFactory()
+        websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
+        for symbol in ("/ESM26", "/NQM26", "/CLM26", "/6EM26", "/MGCM26"):
+            websocket_factory.connection.recv_queue.append(_chart_frame(symbol, minute=0))
+
+        deps = rehearsal.RehearsalDependencies(
+            token_provider=FakeTokenProvider(),
+            credentials_provider=FakeCredentialsProvider(),
+            websocket_factory=websocket_factory,
+            manager_builder=lambda cfg, c: FakeStartingManager(cfg, c),
+            clock=_make_clock(),
+        )
+        report = rehearsal.run_with_dependencies(
+            args=_make_args(live=True, duration=2),
+            env=_full_env(self.target_root),
+            target_root=self.target_root,
+            deps=deps,
+        )
+
+        self.assertEqual(report.chart_data_diagnostic, "chart_futures_no_completed_five_minute_bars")
+        self.assertEqual(report.chart_received_contracts_count, 5)
+        self.assertEqual(report.chart_completed_five_minute_contracts_count, 0)
 
     def test_dispatch_records_market_data_received_without_printing_values(self) -> None:
         token_provider = FakeTokenProvider()

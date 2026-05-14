@@ -1013,6 +1013,38 @@ class OperatorSchwabStreamerSessionDispatchTests(unittest.TestCase):
         assert isinstance(fields, dict)
         self.assertIn("close", fields)
 
+    def test_dispatch_one_marks_unsupported_data_service_without_payload_output(self) -> None:
+        session, _, _, wf = _build_session()
+        wf.connection.recv_queue.append(_admin_login_ack(code=0))
+        self.assertTrue(session.login(_live_config()).succeeded)
+        wf.connection.recv_queue.append(_subs_ack(code=0))
+        request = StreamSubscriptionRequest(
+            provider="schwab",
+            services=(LEVELONE_FUTURES_SERVICE,),
+            symbols=("/ESM26",),
+            fields=(0, 1, 2, 3, 4, 5),
+            contracts=("ES",),
+        )
+        self.assertTrue(session.subscribe(request).succeeded)
+        wf.connection.recv_queue.append(
+            json.dumps(
+                {
+                    "data": [
+                        {
+                            "service": "UNSUPPORTED_FUTURES",
+                            "content": [{"key": "/ESM26", "1": 4321.5}],
+                        }
+                    ]
+                }
+            )
+        )
+
+        captured: list[dict[str, object]] = []
+        self.assertTrue(session.dispatch_one(handler=lambda message: captured.append(dict(message))))
+
+        self.assertEqual(captured, [])
+        self.assertEqual(session.dispatch_status(), "unsupported_response")
+
     def test_dispatch_one_refreshes_token_without_new_connection_login_or_subscribe(self) -> None:
         token_provider = RefreshingTokenProvider()
         session, _, _, wf = _build_session(token_provider=token_provider)

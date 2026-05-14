@@ -98,6 +98,7 @@ DispatchStatus = Literal[
     "timeout",
     "connection_lost",
     "parse_error",
+    "unsupported_response",
     "token_refresh_failed",
 ]
 
@@ -328,6 +329,30 @@ def extract_supported_data_entries(raw_message: str) -> list[Mapping[str, object
     for service in SUPPORTED_FUTURES_SERVICES:
         entries.extend(extract_data_entries(raw_message, service=service))
     return entries
+
+
+def extract_data_services(raw_message: str) -> tuple[str, ...]:
+    """Return service labels observed in a streamer data frame, without payload values."""
+
+    try:
+        message = json.loads(raw_message)
+    except (TypeError, ValueError):
+        raise OperatorSchwabStreamerSessionError("malformed_data_json")
+    if not isinstance(message, dict):
+        raise OperatorSchwabStreamerSessionError("malformed_data_object")
+    data_items = message.get("data")
+    if data_items is None:
+        return ()
+    if not isinstance(data_items, list):
+        raise OperatorSchwabStreamerSessionError("malformed_data_field")
+    services: list[str] = []
+    for item in data_items:
+        if not isinstance(item, dict):
+            raise OperatorSchwabStreamerSessionError("malformed_data_entry")
+        service = item.get("service")
+        if isinstance(service, str) and service.strip():
+            services.append(service.strip().upper())
+    return tuple(dict.fromkeys(services))
 
 
 def _extract_data_item_entries(
@@ -924,6 +949,13 @@ class OperatorSchwabStreamerSession:
             entries = extract_supported_data_entries(str(raw_message))
         except OperatorSchwabStreamerSessionError:
             self._last_dispatch_status = "parse_error"
+            return True
+        try:
+            services = extract_data_services(str(raw_message))
+        except OperatorSchwabStreamerSessionError:
+            services = ()
+        if not entries and any(service not in SUPPORTED_FUTURES_SERVICES for service in services):
+            self._last_dispatch_status = "unsupported_response"
             return True
 
         for entry in entries:
