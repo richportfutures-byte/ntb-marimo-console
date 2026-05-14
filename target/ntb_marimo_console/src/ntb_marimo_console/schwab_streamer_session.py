@@ -58,7 +58,7 @@ import re
 from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
@@ -78,7 +78,7 @@ from .market_data.stream_events import redact_sensitive_text
 
 
 DEFAULT_LEVELONE_FUTURES_FIELD_IDS: tuple[int, ...] = (0, 1, 2, 3, 4, 5)
-DEFAULT_CHART_FUTURES_FIELD_IDS: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 6, 7, 8)
+DEFAULT_CHART_FUTURES_FIELD_IDS: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 6)
 DEFAULT_RECV_TIMEOUT_SECONDS: float = 10.0
 DEFAULT_LOGIN_REQUESTID: str = "0"
 DEFAULT_SUBSCRIBE_REQUESTID: str = "1"
@@ -230,7 +230,7 @@ def _subscription_payload_for_service(
         return build_chart_futures_subscription_payload(
             credentials,
             symbols=symbols,
-            fields=fields,
+            fields=DEFAULT_CHART_FUTURES_FIELD_IDS,
             requestid=requestid,
         )
     return build_levelone_futures_subscription_payload(
@@ -405,9 +405,27 @@ def _chart_futures_bar_entry(
     contract: str,
     received_at: str,
 ) -> Mapping[str, object]:
-    start_time = _timestamp_value(content, "start_time", "start", "chart_time", "time", "0")
-    end_time = _timestamp_value(content, "end_time", "end", "1")
-    completed = _bool_value(content, "completed", "complete", "is_complete", "closed", "8")
+    start_time = _timestamp_value(
+        content,
+        "start_time",
+        "start",
+        "chart_time",
+        "chartTime",
+        "chart_time_millis",
+        "CHART_TIME_MILLIS",
+        "time",
+        "1",
+    )
+    end_time = _timestamp_value(content, "end_time", "end")
+    if end_time is None and start_time is not None:
+        end_time = _one_minute_end_time(start_time)
+    completed = _bool_value(content, "completed", "complete", "is_complete", "closed", "COMPLETED")
+    if completed is None:
+        completed = _derived_chart_bar_completed(
+            start_time=start_time,
+            end_time=end_time,
+            observed_at=received_at,
+        )
     fields: dict[str, object] = {}
     payload: dict[str, object] = {
         "provider": "schwab",
@@ -426,19 +444,18 @@ def _chart_futures_bar_entry(
         payload["end_time"] = end_time
         fields["end_time"] = end_time
     for field_name, aliases in {
-        "open": ("open", "open_price", "2"),
-        "high": ("high", "high_price", "3"),
-        "low": ("low", "low_price", "4"),
-        "close": ("close", "close_price", "5"),
-        "volume": ("volume", "total_volume", "6"),
+        "open": ("open", "open_price", "OPEN_PRICE", "2"),
+        "high": ("high", "high_price", "HIGH_PRICE", "3"),
+        "low": ("low", "low_price", "LOW_PRICE", "4"),
+        "close": ("close", "close_price", "CLOSE_PRICE", "5"),
+        "volume": ("volume", "total_volume", "VOLUME", "6"),
     }.items():
         value = _number_value(content, *aliases)
         if value is not None:
             payload[field_name] = value
             fields[field_name] = value
-    if completed is not None:
-        payload["completed"] = completed
-        fields["completed"] = completed
+    payload["completed"] = completed
+    fields["completed"] = completed
     payload["fields"] = fields
     return payload
 
@@ -475,6 +492,41 @@ def _timestamp_value(content: Mapping[str, object], *aliases: str) -> str | None
         if rendered:
             return rendered
     return None
+
+
+def _one_minute_end_time(start_time: str) -> str | None:
+    parsed = _aware_datetime_from_iso(start_time)
+    if parsed is None:
+        return None
+    return (parsed + timedelta(minutes=1)).isoformat()
+
+
+def _derived_chart_bar_completed(
+    *,
+    start_time: str | None,
+    end_time: str | None,
+    observed_at: str,
+) -> bool:
+    start = _aware_datetime_from_iso(start_time)
+    end = _aware_datetime_from_iso(end_time)
+    observed = _aware_datetime_from_iso(observed_at)
+    if start is None or end is None or observed is None:
+        return False
+    if end <= start:
+        return False
+    return observed >= end
+
+
+def _aware_datetime_from_iso(value: str | None) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
 
 
 def _number_value(content: Mapping[str, object], *aliases: str) -> int | float | None:

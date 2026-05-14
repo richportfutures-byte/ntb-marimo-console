@@ -56,6 +56,7 @@ PLACEHOLDER_SOCKET_HOST = "example.invalid"
 SECRET_MARKER = "should_not_print"
 
 NOW = "2026-05-09T14:00:00+00:00"
+NOW_EPOCH_MILLIS = 1_778_335_200_000
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +305,34 @@ def _chart_frame(symbol: str = "/ESM26", *, minute: int = 0, completed: bool = T
                             "close": 100.5 + minute,
                             "volume": 100 + minute,
                             "completed": completed,
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+
+
+def _chart_numeric_frame(symbol: str = "/ESM26", *, minute: int = 0) -> str:
+    start_epoch_millis = NOW_EPOCH_MILLIS + (minute * 60_000)
+    observed_epoch_millis = start_epoch_millis + 60_000
+    return json.dumps(
+        {
+            "data": [
+                {
+                    "service": "CHART_FUTURES",
+                    "command": "SUBS",
+                    "timestamp": observed_epoch_millis,
+                    "content": [
+                        {
+                            "key": symbol,
+                            "0": symbol,
+                            "1": start_epoch_millis,
+                            "2": 100.0 + minute,
+                            "3": 100.75 + minute,
+                            "4": 99.75 + minute,
+                            "5": 100.5 + minute,
+                            "6": 100 + minute,
                         }
                     ],
                 }
@@ -1265,6 +1294,37 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
         self.assertIn("chart_data_received=yes", text_output)
         self.assertNotIn("100.5", text_output)
         self.assertNotIn("100.5", json_output)
+
+    def test_dispatch_accepts_numeric_chart_futures_bars_without_provider_completed_flag(self) -> None:
+        token_provider = FakeTokenProvider()
+        credentials_provider = FakeCredentialsProvider()
+        websocket_factory = FakeWebsocketFactory()
+        websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
+        for symbol in ("/ESM26", "/NQM26", "/CLM26", "/6EM26", "/MGCM26"):
+            for minute in range(5):
+                websocket_factory.connection.recv_queue.append(_chart_numeric_frame(symbol, minute=minute))
+
+        deps = rehearsal.RehearsalDependencies(
+            token_provider=token_provider,
+            credentials_provider=credentials_provider,
+            websocket_factory=websocket_factory,
+            manager_builder=lambda cfg, c: FakeStartingManager(cfg, c),
+            clock=_make_clock(),
+        )
+        report = rehearsal.run_with_dependencies(
+            args=_make_args(live=True, duration=10),
+            env=_full_env(self.target_root),
+            target_root=self.target_root,
+            deps=deps,
+        )
+
+        self.assertTrue(report.chart_data_received)
+        self.assertEqual(report.chart_received_contracts_count, 5)
+        self.assertEqual(report.chart_completed_five_minute_contracts_count, 5)
+        self.assertEqual(report.chart_blocking_reasons, ())
+        self.assertEqual(report.chart_data_diagnostic, "chart_futures_completed_five_minute_bars_received")
 
     def test_dispatch_counts_numeric_schwab_epoch_millis_timestamps_with_real_manager(self) -> None:
         token_provider = FakeTokenProvider()

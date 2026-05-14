@@ -11,6 +11,7 @@ from typing import Any
 from unittest.mock import patch
 
 from ntb_marimo_console.contract_universe import final_target_contracts
+from ntb_marimo_console.market_data import ChartFuturesBarBuilder
 from ntb_marimo_console.market_data.stream_cache import StreamCacheRecord, StreamCacheSnapshot
 from ntb_marimo_console.market_data.stream_manager import (
     SchwabStreamManagerConfig,
@@ -37,6 +38,7 @@ from ntb_marimo_console.schwab_stream_client import (
 from ntb_marimo_console.schwab_streamer_session import (
     ADMIN_SERVICE,
     CHART_FUTURES_SERVICE,
+    DEFAULT_CHART_FUTURES_FIELD_IDS,
     LEVELONE_FUTURES_SERVICE,
     LOGIN_COMMAND,
     SUBS_COMMAND,
@@ -56,6 +58,9 @@ from ntb_marimo_console.session_lifecycle import (
 
 
 NOW = "2026-05-09T14:00:00+00:00"
+NOW_PLUS_ONE_MINUTE = "2026-05-09T14:01:00+00:00"
+NOW_PLUS_30_SECONDS = "2026-05-09T14:00:30+00:00"
+NOW_EPOCH_MILLIS = 1_778_335_200_000
 PLACEHOLDER_TOKEN = "redacted-placeholder-token-value"
 PLACEHOLDER_CUSTOMER_ID = "redacted-placeholder-customer-id"
 PLACEHOLDER_CORREL_ID = "redacted-placeholder-correl-id"
@@ -356,6 +361,37 @@ def _chart_frame(
                             "close": 100.5,
                             "volume": 100,
                             "completed": completed,
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+
+
+def _chart_numeric_frame(
+    *,
+    symbol: str = "/ESM26",
+    chart_epoch_millis: int = NOW_EPOCH_MILLIS,
+    observed_epoch_millis: int = NOW_EPOCH_MILLIS + 60_000,
+) -> str:
+    return json.dumps(
+        {
+            "data": [
+                {
+                    "service": CHART_FUTURES_SERVICE,
+                    "command": SUBS_COMMAND,
+                    "timestamp": observed_epoch_millis,
+                    "content": [
+                        {
+                            "key": symbol,
+                            "0": symbol,
+                            "1": chart_epoch_millis,
+                            "2": 100.0,
+                            "3": 101.0,
+                            "4": 99.5,
+                            "5": 100.5,
+                            "6": 100,
                         }
                     ],
                 }
@@ -712,6 +748,10 @@ class OperatorSchwabStreamerSessionSubscribeTests(unittest.TestCase):
         self.assertEqual(sent_request["service"], CHART_FUTURES_SERVICE)
         self.assertEqual(sent_request["command"], SUBS_COMMAND)
         self.assertEqual(sent_request["parameters"]["keys"], "/ESM26,/NQM26,/CLM26,/6EM26,/MGCM26")
+        self.assertEqual(
+            sent_request["parameters"]["fields"],
+            ",".join(str(field_id) for field_id in DEFAULT_CHART_FUTURES_FIELD_IDS),
+        )
 
     def test_combined_levelone_and_chart_request_sends_one_subscription_per_service(self) -> None:
         session, _, _, wf = _build_session()
@@ -729,8 +769,14 @@ class OperatorSchwabStreamerSessionSubscribeTests(unittest.TestCase):
         result = session.subscribe(request)
 
         self.assertTrue(result.succeeded)
-        services = [json.loads(payload)["requests"][0]["service"] for payload in wf.connection.sent]
+        sent_requests = [json.loads(payload)["requests"][0] for payload in wf.connection.sent]
+        services = [request["service"] for request in sent_requests]
         self.assertEqual(services, [LEVELONE_FUTURES_SERVICE, CHART_FUTURES_SERVICE])
+        self.assertEqual(sent_requests[0]["parameters"]["fields"], "0,1,2,3,4,5")
+        self.assertEqual(
+            sent_requests[1]["parameters"]["fields"],
+            ",".join(str(field_id) for field_id in DEFAULT_CHART_FUTURES_FIELD_IDS),
+        )
 
     def test_subscribe_preserves_data_frame_received_before_ack_for_dispatch(self) -> None:
         session, _, _, wf = _build_session()
@@ -789,6 +835,60 @@ class OperatorSchwabStreamerSessionSubscribeTests(unittest.TestCase):
         self.assertEqual(fields["start_time"], NOW)
         self.assertEqual(fields["completed"], True)
 
+    def test_chart_futures_numeric_field_ids_are_normalized_for_builder_contract(self) -> None:
+        entries = schwab_streamer_session_module.extract_data_entries(
+            _chart_numeric_frame(symbol="/ESM26"),
+            service=CHART_FUTURES_SERVICE,
+        )
+
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertEqual(entry["service"], CHART_FUTURES_SERVICE)
+        self.assertEqual(entry["message_type"], "bar")
+        self.assertEqual(entry["contract"], "ES")
+        self.assertEqual(entry["symbol"], "/ESM26")
+        self.assertEqual(entry["start_time"], NOW)
+        self.assertEqual(entry["end_time"], NOW_PLUS_ONE_MINUTE)
+        self.assertEqual(entry["observed_at"], NOW_PLUS_ONE_MINUTE)
+        self.assertEqual(entry["received_at"], NOW_PLUS_ONE_MINUTE)
+        self.assertEqual(entry["completed"], True)
+        fields = entry["fields"]
+        assert isinstance(fields, dict)
+        self.assertEqual(fields["start_time"], NOW)
+        self.assertEqual(fields["end_time"], NOW_PLUS_ONE_MINUTE)
+        self.assertEqual(fields["completed"], True)
+
+        builder = ChartFuturesBarBuilder(expected_symbols={"ES": "/ESM26"})
+        result = builder.ingest(entry)
+
+        self.assertTrue(result.accepted)
+        self.assertEqual(result.blocking_reasons, ())
+        assert result.one_minute_bar is not None
+        self.assertTrue(result.one_minute_bar.completed)
+
+    def test_chart_futures_numeric_event_before_bar_end_remains_incomplete(self) -> None:
+        entries = schwab_streamer_session_module.extract_data_entries(
+            _chart_numeric_frame(
+                symbol="/ESM26",
+                observed_epoch_millis=NOW_EPOCH_MILLIS + 30_000,
+            ),
+            service=CHART_FUTURES_SERVICE,
+        )
+
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertEqual(entry["observed_at"], NOW_PLUS_30_SECONDS)
+        self.assertEqual(entry["completed"], False)
+
+        builder = ChartFuturesBarBuilder(expected_symbols={"ES": "/ESM26"})
+        result = builder.ingest(entry)
+        state = builder.state("ES")
+
+        self.assertTrue(result.accepted)
+        self.assertEqual(result.blocking_reasons, ())
+        self.assertEqual(state.completed_one_minute_bars, ())
+        self.assertIsNotNone(state.building_five_minute_bar)
+
     def test_chart_futures_data_entry_missing_required_bar_fields_remains_fail_closed_for_builder(self) -> None:
         raw_message = json.dumps(
             {
@@ -809,11 +909,11 @@ class OperatorSchwabStreamerSessionSubscribeTests(unittest.TestCase):
 
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["message_type"], "bar")
-        self.assertNotIn("completed", entries[0])
+        self.assertEqual(entries[0]["completed"], False)
         self.assertNotIn("close", entries[0])
         fields = entries[0]["fields"]
         assert isinstance(fields, dict)
-        self.assertNotIn("completed", fields)
+        self.assertEqual(fields["completed"], False)
         self.assertNotIn("close", fields)
 
     def test_subscribe_blocks_zn_and_returns_redacted_failure_without_send(self) -> None:
