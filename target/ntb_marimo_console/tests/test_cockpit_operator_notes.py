@@ -21,6 +21,7 @@ from ntb_marimo_console.market_data.stream_cache import (
     StreamCacheRecord,
     StreamCacheSnapshot,
 )
+from ntb_marimo_console.primary_cockpit import primary_cockpit_surface
 from ntb_marimo_console.session_lifecycle import (
     add_cockpit_operator_note,
     load_session_lifecycle_from_env,
@@ -94,7 +95,7 @@ def _runtime_cache_snapshot() -> StreamCacheSnapshot:
 
 
 def _cockpit_notes(lifecycle) -> dict:
-    surface = lifecycle.shell["surfaces"]["fixture_cockpit_overview"]
+    surface = primary_cockpit_surface(lifecycle.shell)
     return surface["operator_notes"]
 
 
@@ -276,7 +277,7 @@ class CockpitOperatorNotesLifecycleTests(unittest.TestCase):
             before["runtime_cache_bound_to_operator_launch"],
         )
         self.assertIs(noted.runtime_snapshot, snapshot)
-        action = noted.shell["surfaces"]["fixture_cockpit_overview"]["operator_action_status"]
+        action = primary_cockpit_surface(noted.shell)["operator_action_status"]
         # Operator action status (timeline-driven) is untouched by a note
         self.assertEqual(action["action_kind"], "IDLE")
 
@@ -340,7 +341,7 @@ class CockpitOperatorNotesLifecycleTests(unittest.TestCase):
             noted = add_cockpit_operator_note(lifecycle, "NQ note")
             blocked = request_cockpit_manual_query(noted, "NQ")
 
-        rows = blocked.shell["surfaces"]["fixture_cockpit_overview"]["rows"]
+        rows = primary_cockpit_surface(blocked.shell)["rows"]
         nq_row = next(r for r in rows if r["contract"] == "NQ")
         self.assertEqual(nq_row["chart_status"], "chart missing")
         self.assertEqual(nq_row["query_action_state"], "DISABLED")

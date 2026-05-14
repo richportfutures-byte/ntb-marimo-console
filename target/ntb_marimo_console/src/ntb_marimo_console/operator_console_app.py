@@ -176,6 +176,8 @@ def _(
 ):
     from collections.abc import Mapping as _Mapping
 
+    from ntb_marimo_console.primary_cockpit import primary_cockpit_surface_key
+
     controls_shell = lifecycle.shell
     controls_startup_panel = controls_shell.get("startup")
     controls_runtime_panel = controls_shell.get("runtime")
@@ -230,7 +232,7 @@ def _(
     cockpit_rows: dict[str, dict] = {}
     _surfaces = controls_shell.get("surfaces")
     if isinstance(_surfaces, _Mapping):
-        cockpit_surface = _surfaces.get("fixture_cockpit_overview")
+        cockpit_surface = _surfaces.get(primary_cockpit_surface_key(controls_shell))
         if isinstance(cockpit_surface, _Mapping):
             raw_rows = cockpit_surface.get("rows")
             if isinstance(raw_rows, list):
@@ -1016,9 +1018,21 @@ def _(
         )
         workflow["operator_anchor_inputs_integration"] = anchor_payload["integration_status"]
         workflow["operator_notes_status"] = "available" if note_rows else "empty"
-    mode = str(controls_startup_panel.get("runtime_mode", "<unresolved>"))
+    _runtime_panel = controls_shell.get("runtime")
+    if not isinstance(_runtime_panel, _Mapping):
+        _runtime_panel = {}
+    # Under the explicit OPERATOR_LIVE_RUNTIME opt-in the runtime panel carries
+    # live-observation console identity labels; prefer them so the console
+    # context summary never reports fixture/demo identity in live mode.
+    mode = str(
+        _runtime_panel.get("console_identity_mode_label")
+        or controls_startup_panel.get("runtime_mode", "<unresolved>")
+    )
     profile_id = selected_profile_id
-    running_as = str(controls_startup_panel.get("running_as", "<unresolved>"))
+    running_as = str(
+        _runtime_panel.get("console_identity_running_as")
+        or controls_startup_panel.get("running_as", "<unresolved>")
+    )
     return mode, profile_id, running_as, shell
 
 

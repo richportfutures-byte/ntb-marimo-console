@@ -10,6 +10,7 @@ from ntb_marimo_console.market_data.stream_cache import (
     StreamCacheRecord,
     StreamCacheSnapshot,
 )
+from ntb_marimo_console.primary_cockpit import primary_cockpit_surface
 from ntb_marimo_console.session_lifecycle import (
     add_cockpit_operator_note,
     load_session_lifecycle_from_env,
@@ -81,7 +82,9 @@ def _runtime_cache_snapshot() -> StreamCacheSnapshot:
 
 
 def _cockpit(lifecycle) -> dict:
-    return lifecycle.shell["surfaces"]["fixture_cockpit_overview"]
+    # Resolves to the fixture cockpit by default and the live-observation
+    # cockpit when the lifecycle was loaded under a live runtime snapshot.
+    return primary_cockpit_surface(lifecycle.shell)
 
 
 def _replay(lifecycle) -> dict:

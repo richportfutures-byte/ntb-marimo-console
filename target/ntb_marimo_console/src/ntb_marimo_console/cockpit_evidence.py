@@ -7,6 +7,7 @@ from typing import Final
 from .cockpit_manual_query import CockpitManualQueryResult
 from .contract_universe import final_target_contracts, is_final_target_contract, normalize_contract_symbol
 from .evidence_replay import EvidenceEvent, build_replay_summary, create_evidence_event
+from .primary_cockpit import primary_cockpit_surface_key
 
 
 COCKPIT_EVENT_REPLAY_SURFACE_SCHEMA: Final[str] = "cockpit_event_replay_surface_v1"
@@ -275,7 +276,7 @@ def cockpit_evidence_timestamp(
 ) -> str:
     surfaces = shell.get("surfaces")
     if isinstance(surfaces, Mapping):
-        cockpit = surfaces.get("fixture_cockpit_overview")
+        cockpit = surfaces.get(primary_cockpit_surface_key(shell))
         if isinstance(cockpit, Mapping):
             generated = _optional_text(cockpit.get("generated_at"))
             if generated:

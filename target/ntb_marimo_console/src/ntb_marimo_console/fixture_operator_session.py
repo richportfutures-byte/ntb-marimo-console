@@ -175,12 +175,18 @@ def render_fixture_operator_session_text(summary: dict[str, object]) -> str:
 def build_fixture_cockpit_shell_surface() -> dict[str, object]:
     """Build the fixture cockpit overview surface dict for injection into the Marimo shell.
 
-    Returns the session summary enriched with a ``surface`` discriminator key.
+    Returns the session summary enriched with a ``surface`` discriminator key
+    plus a ``cockpit_identity`` so the renderer frames it as the non-live
+    fixture cockpit (the live-observation cockpit declares its own identity).
     The surface is credential-free, network-free, and safe to attach on every
     launch regardless of live-provider status.
     """
     summary = build_fixture_operator_session_summary()
-    surface: dict[str, object] = {"surface": "fixture_cockpit_overview"}
+    surface: dict[str, object] = {
+        "surface": "fixture_cockpit_overview",
+        "cockpit_identity": "fixture_demo",
+        "cockpit_title": "FIVE-CONTRACT FIXTURE COCKPIT",
+    }
     surface.update(summary)
     return surface
 

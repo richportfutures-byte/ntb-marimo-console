@@ -19,11 +19,22 @@ from .cockpit_manual_query import (
     operator_action_status_for_lifecycle_action,
 )
 from .operator_live_runtime import (
+    OPERATOR_LIVE_RUNTIME,
     OperatorRuntimeMode,
     OperatorRuntimeSnapshotResult,
     RuntimeSnapshotProducer,
     operator_runtime_mode_from_env,
     resolve_operator_runtime_snapshot,
+)
+from .primary_cockpit import (
+    FIXTURE_COCKPIT_SURFACE_KEY,
+    LIVE_OBSERVATION_COCKPIT_IDENTITY,
+    LIVE_OBSERVATION_COCKPIT_SURFACE_KEY,
+    LIVE_OBSERVATION_CONSOLE_MODE_LABEL,
+    LIVE_OBSERVATION_CONSOLE_RUNNING_AS,
+    PRIMARY_COCKPIT_SURFACE_KEY_FIELD,
+    build_live_observation_cockpit_surface,
+    primary_cockpit_surface_mutable,
 )
 from .readiness_summary import (
     RuntimeReadinessSnapshot,
@@ -403,31 +414,52 @@ def attach_launch_metadata(
     _attach_runtime_identity(shell, report)
     _attach_operator_live_runtime_metadata(shell, resolved_operator_runtime)
     _attach_startup_payload(shell, report)
-    _attach_fixture_cockpit_overview(shell)
+    _attach_primary_cockpit_overview(shell, resolved_operator_runtime)
     _attach_initial_cockpit_operator_action_status(shell)
     return shell
 
 
-def _attach_fixture_cockpit_overview(shell: dict[str, object]) -> None:
-    """Attach the credential-free fixture cockpit overview surface to the shell.
+def _attach_primary_cockpit_overview(
+    shell: dict[str, object],
+    operator_runtime: OperatorRuntimeSnapshotResult,
+) -> None:
+    """Attach the single primary cockpit landing surface for the launch mode.
 
-    The surface is always computed regardless of launch mode because
-    ``build_fixture_cockpit_shell_surface`` is network- and credential-free.
-    A try/except guards against unexpected build failures so they never
-    block the main shell assembly path.
+    Default / non-live: the credential-free fixture cockpit overview.
+    Explicit ``OPERATOR_LIVE_RUNTIME``: the live-observation cockpit, built
+    read-only from the operator runtime cache (the five-contract readiness
+    summary). Under live opt-in the fixture surface is intentionally NOT
+    attached — there is no fixture fallback after a live failure; a fail-closed
+    live runtime produces a fail-closed live-observation cockpit.
+
+    ``shell[primary_cockpit_surface_key]`` records which surface is primary so
+    the renderer, session lifecycle, and Marimo app all resolve the same one.
     """
     surfaces = shell.get("surfaces")
     if not isinstance(surfaces, dict):
         return
+
+    if operator_runtime.mode == OPERATOR_LIVE_RUNTIME:
+        surfaces[LIVE_OBSERVATION_COCKPIT_SURFACE_KEY] = (
+            build_live_observation_cockpit_surface(
+                readiness_summary=surfaces.get("five_contract_readiness_summary"),
+                operator_live_runtime=operator_runtime.to_dict(),
+            )
+        )
+        surfaces.pop(FIXTURE_COCKPIT_SURFACE_KEY, None)
+        shell[PRIMARY_COCKPIT_SURFACE_KEY_FIELD] = LIVE_OBSERVATION_COCKPIT_SURFACE_KEY
+        return
+
+    shell[PRIMARY_COCKPIT_SURFACE_KEY_FIELD] = FIXTURE_COCKPIT_SURFACE_KEY
     try:
         from .fixture_operator_session import (
             build_fixture_cockpit_shell_surface,  # noqa: PLC0415
         )
 
-        surfaces["fixture_cockpit_overview"] = build_fixture_cockpit_shell_surface()
+        surfaces[FIXTURE_COCKPIT_SURFACE_KEY] = build_fixture_cockpit_shell_surface()
     except Exception as exc:  # noqa: BLE001
-        surfaces["fixture_cockpit_overview"] = {
-            "surface": "fixture_cockpit_overview",
+        surfaces[FIXTURE_COCKPIT_SURFACE_KEY] = {
+            "surface": FIXTURE_COCKPIT_SURFACE_KEY,
             "error": str(exc),
             "mode": "fixture_build_failed",
         }
@@ -437,7 +469,7 @@ def _attach_initial_cockpit_operator_action_status(shell: dict[str, object]) -> 
     surfaces = shell.get("surfaces")
     if not isinstance(surfaces, dict):
         return
-    cockpit = surfaces.get("fixture_cockpit_overview")
+    cockpit = primary_cockpit_surface_mutable(shell)
     if not isinstance(cockpit, dict):
         return
     summary = surfaces.get("five_contract_readiness_summary")
@@ -539,6 +571,14 @@ def _attach_operator_live_runtime_metadata(
             "operator_live_runtime_cache_snapshot_ready": operator_runtime.cache_snapshot_ready,
         }
     )
+    if operator_runtime.mode == OPERATOR_LIVE_RUNTIME:
+        runtime.update(
+            {
+                "console_identity_kind": LIVE_OBSERVATION_COCKPIT_IDENTITY,
+                "console_identity_mode_label": LIVE_OBSERVATION_CONSOLE_MODE_LABEL,
+                "console_identity_running_as": LIVE_OBSERVATION_CONSOLE_RUNNING_AS,
+            }
+        )
 
 
 def _stream_health_payload(

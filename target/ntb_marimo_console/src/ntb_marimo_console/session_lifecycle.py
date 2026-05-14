@@ -55,6 +55,7 @@ from .cockpit_evidence import (
     cockpit_operator_note_evidence_event,
 )
 from .contract_universe import normalize_contract_symbol
+from .primary_cockpit import primary_cockpit_surface_key
 from .runtime_modes import RuntimeAssembly, assemble_runtime_for_profile, build_phase1_artifacts_from_assembly
 from .session_evidence import (
     SessionEvidenceRecord,
@@ -1161,7 +1162,7 @@ def _fixture_cockpit_surface(shell: Mapping[str, object]) -> Mapping[str, object
     surfaces = shell.get("surfaces")
     if not isinstance(surfaces, Mapping):
         return {}
-    cockpit = surfaces.get("fixture_cockpit_overview")
+    cockpit = surfaces.get(primary_cockpit_surface_key(shell))
     if not isinstance(cockpit, Mapping):
         return {}
     return cockpit
@@ -1173,7 +1174,7 @@ def _attach_cockpit_manual_query_result(
 ) -> None:
     surfaces = shell.get("surfaces")
     if isinstance(surfaces, dict):
-        cockpit = surfaces.get("fixture_cockpit_overview")
+        cockpit = surfaces.get(primary_cockpit_surface_key(shell))
         if isinstance(cockpit, dict):
             cockpit["last_query_result"] = dict(result)
             rows = cockpit.get("rows")
@@ -1198,7 +1199,7 @@ def _attach_cockpit_operator_action_status(
 ) -> None:
     surfaces = shell.get("surfaces")
     if isinstance(surfaces, dict):
-        cockpit = surfaces.get("fixture_cockpit_overview")
+        cockpit = surfaces.get(primary_cockpit_surface_key(shell))
         if isinstance(cockpit, dict):
             cockpit["operator_action_status"] = dict(status)
     workflow = shell.get("workflow")
@@ -1213,7 +1214,7 @@ def _attach_cockpit_operator_notes(
     payload = build_cockpit_operator_notes_payload(notes)
     surfaces = shell.get("surfaces")
     if isinstance(surfaces, dict):
-        cockpit = surfaces.get("fixture_cockpit_overview")
+        cockpit = surfaces.get(primary_cockpit_surface_key(shell))
         if isinstance(cockpit, dict):
             cockpit["operator_notes"] = dict(payload)
             cockpit["operator_notes"]["entries"] = [
@@ -1228,7 +1229,7 @@ def _attach_cockpit_current_state_summary(shell: dict[str, object]) -> None:
     surfaces = shell.get("surfaces")
     if not isinstance(surfaces, dict):
         return
-    cockpit = surfaces.get("fixture_cockpit_overview")
+    cockpit = surfaces.get(primary_cockpit_surface_key(shell))
     if not isinstance(cockpit, dict):
         return
     cockpit["current_state_summary"] = build_cockpit_current_state_summary(cockpit)
@@ -1244,7 +1245,7 @@ def _attach_cockpit_event_replay(
     surfaces = shell.get("surfaces")
     if not isinstance(surfaces, dict):
         return
-    cockpit = surfaces.get("fixture_cockpit_overview")
+    cockpit = surfaces.get(primary_cockpit_surface_key(shell))
     if not isinstance(cockpit, dict):
         return
     payload = build_cockpit_event_replay_surface(
@@ -1269,7 +1270,7 @@ def _attach_cockpit_operator_action_timeline(
     }
     surfaces = shell.get("surfaces")
     if isinstance(surfaces, dict):
-        cockpit = surfaces.get("fixture_cockpit_overview")
+        cockpit = surfaces.get(primary_cockpit_surface_key(shell))
         if isinstance(cockpit, dict):
             cockpit["operator_action_timeline"] = dict(payload)
             cockpit["operator_action_timeline"]["entries"] = [

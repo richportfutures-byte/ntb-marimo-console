@@ -20,6 +20,7 @@ from ntb_marimo_console.market_data.stream_cache import (
     StreamCacheRecord,
     StreamCacheSnapshot,
 )
+from ntb_marimo_console.primary_cockpit import primary_cockpit_surface
 from ntb_marimo_console.session_lifecycle import (
     load_session_lifecycle_from_env,
     refresh_runtime_snapshot,
@@ -89,7 +90,7 @@ def _runtime_cache_snapshot() -> StreamCacheSnapshot:
 
 
 def _cockpit_timeline(lifecycle) -> dict:
-    surface = lifecycle.shell["surfaces"]["fixture_cockpit_overview"]
+    surface = primary_cockpit_surface(lifecycle.shell)
     return surface["operator_action_timeline"]
 
 
@@ -292,7 +293,7 @@ class CockpitOperatorActionTimelineTests(unittest.TestCase):
             lifecycle = load_session_lifecycle_from_env(runtime_snapshot=snapshot)
             blocked = request_cockpit_manual_query(lifecycle, "NQ")
 
-        rows = blocked.shell["surfaces"]["fixture_cockpit_overview"]["rows"]
+        rows = primary_cockpit_surface(blocked.shell)["rows"]
         nq_row = next(row for row in rows if row["contract"] == "NQ")
         self.assertEqual(nq_row["chart_status"], "chart missing")
         self.assertEqual(nq_row["query_action_state"], "DISABLED")

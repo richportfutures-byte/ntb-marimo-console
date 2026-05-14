@@ -15,6 +15,7 @@ from ntb_marimo_console.contract_universe import (
 )
 from ntb_marimo_console.evidence_replay import EVIDENCE_REPLAY_SCHEMA
 from ntb_marimo_console.market_data.stream_cache import StreamCacheRecord, StreamCacheSnapshot
+from ntb_marimo_console.primary_cockpit import primary_cockpit_surface
 from ntb_marimo_console.session_lifecycle import (
     load_session_lifecycle_from_env,
     observe_phase1_trigger_state_results,
@@ -483,12 +484,12 @@ class SessionLifecycleTests(unittest.TestCase):
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
             lifecycle = load_session_lifecycle_from_env(runtime_snapshot=snapshot)
             queried = request_query_action(lifecycle)
-            submitted_manual_query = request_cockpit_manual_query(lifecycle, "ES")
-            blocked_manual_query = request_cockpit_manual_query(lifecycle, "NQ")
+            es_manual_query = request_cockpit_manual_query(lifecycle, "ES")
+            nq_manual_query = request_cockpit_manual_query(lifecycle, "NQ")
             refreshed = reload_current_profile(queried)
             reset = reset_session(queried)
 
-        for item in (lifecycle, queried, submitted_manual_query, blocked_manual_query, refreshed, reset):
+        for item in (lifecycle, queried, es_manual_query, nq_manual_query, refreshed, reset):
             with self.subTest(action=item.last_action):
                 summary = item.shell["surfaces"]["five_contract_readiness_summary"]
                 self.assertEqual(summary["readiness_source"], "runtime_cache_derived")
@@ -497,28 +498,34 @@ class SessionLifecycleTests(unittest.TestCase):
                 self.assertTrue(summary["runtime_cache_snapshot_ready"])
                 self.assertIs(item.runtime_snapshot, snapshot)
                 self.assertFalse(summary["rows"][0]["query_ready"])
-                action = item.shell["surfaces"]["fixture_cockpit_overview"]["operator_action_status"]
+                # Under a live runtime snapshot the primary cockpit is the
+                # live-observation cockpit, not the fixture cockpit.
+                action = primary_cockpit_surface(item.shell)["operator_action_status"]
                 self.assertEqual(action["runtime_readiness_status"], "LIVE_RUNTIME_CONNECTED")
                 self.assertTrue(action["runtime_readiness_preserved"])
 
+        # The runtime cache here has live quotes but no completed chart bars, so
+        # the live-observation cockpit fail-closes every contract — including ES.
+        # There is no fixture fallback: the fixture cockpit would have shown ES
+        # query-ready, but the live cockpit reflects the real live gate only.
         self.assertEqual(
-            submitted_manual_query.shell["surfaces"]["fixture_cockpit_overview"]["last_query_result"][
-                "request_status"
-            ],
-            "SUBMITTED",
-        )
-        self.assertEqual(
-            blocked_manual_query.shell["surfaces"]["fixture_cockpit_overview"]["last_query_result"][
+            primary_cockpit_surface(es_manual_query.shell)["last_query_result"][
                 "request_status"
             ],
             "BLOCKED",
         )
         self.assertEqual(
-            refreshed.shell["surfaces"]["fixture_cockpit_overview"]["operator_action_status"]["action_status"],
+            primary_cockpit_surface(nq_manual_query.shell)["last_query_result"][
+                "request_status"
+            ],
+            "BLOCKED",
+        )
+        self.assertEqual(
+            primary_cockpit_surface(refreshed.shell)["operator_action_status"]["action_status"],
             "REFRESHED",
         )
         self.assertEqual(
-            reset.shell["surfaces"]["fixture_cockpit_overview"]["operator_action_status"]["action_status"],
+            primary_cockpit_surface(reset.shell)["operator_action_status"]["action_status"],
             "RESET",
         )
 

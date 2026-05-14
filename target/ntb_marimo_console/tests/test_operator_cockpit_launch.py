@@ -670,3 +670,37 @@ def test_operator_app_target_imports_without_starting_live_or_reading_secrets(
 
     target = PROJECT_ROOT / APP_ENTRYPOINT_RELATIVE
     assert load_app(str(target)) is not None
+
+
+# ---------------------------------------------------------------------------
+# Live launch no longer injects the fixture console identity
+# ---------------------------------------------------------------------------
+
+
+def test_live_launch_env_does_not_inject_fixture_console_identity() -> None:
+    """Injecting NTB_CONSOLE_MODE/PROFILE=fixture was what made --live render
+    Fixture/Demo. The live env must not carry the fixture console identity."""
+    live_env = build_live_launch_environment(_live_opt_in_env(), project_root=PROJECT_ROOT)
+
+    assert "NTB_CONSOLE_MODE" not in live_env
+    assert "NTB_CONSOLE_PROFILE" not in live_env
+    # The explicit live runtime opt-in IS the live console identity.
+    assert live_env["NTB_OPERATOR_RUNTIME_MODE"] == LIVE_OPERATOR_RUNTIME_MODE
+    assert live_env["NTB_OPERATOR_LIVE_RUNTIME"] == "1"
+    assert live_env["NTB_MARKET_DATA_PROVIDER"] == "schwab"
+
+
+def test_live_print_command_does_not_inject_fixture_console_identity() -> None:
+    printed = format_live_marimo_launch_command(project_root=PROJECT_ROOT)
+
+    assert "NTB_CONSOLE_MODE=fixture_demo" not in printed
+    assert "NTB_CONSOLE_PROFILE=fixture_es_demo" not in printed
+    assert "NTB_OPERATOR_RUNTIME_MODE=OPERATOR_LIVE_RUNTIME" in printed
+    assert "marimo run src/ntb_marimo_console/operator_console_app.py" in printed
+
+
+def test_default_print_command_still_carries_fixture_identity() -> None:
+    # The default (non-live) launch is unchanged — it IS the fixture cockpit.
+    printed = format_marimo_launch_command(project_root=PROJECT_ROOT)
+    assert "NTB_CONSOLE_MODE=fixture_demo" in printed
+    assert "NTB_CONSOLE_PROFILE=fixture_es_demo" in printed

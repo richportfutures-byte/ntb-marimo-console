@@ -19,6 +19,11 @@ from ..cockpit_manual_query import (
     build_cockpit_contract_readiness_detail,
     build_cockpit_current_state_summary,
 )
+from ..primary_cockpit import (
+    LIVE_OBSERVATION_COCKPIT_IDENTITY,
+    primary_cockpit_surface,
+    primary_cockpit_surface_key,
+)
 from ..session_evidence import NO_RECENT_SESSION_EVIDENCE
 from ..watchman_gate import build_watchman_gate_markdown, watchman_gate_requires_stop
 
@@ -295,7 +300,10 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
     ----
     present        – True when the surface is available and populated
     position       – "primary" when present; "unavailable" otherwise
-    key            – always "fixture_cockpit_overview"
+    key            – the resolved primary cockpit surface key
+                     ("fixture_cockpit_overview" by default,
+                     "live_observation_cockpit_overview" under --live)
+    cockpit_identity – "fixture_demo" or "live_observation"
     mode           – surface mode string (e.g. "fixture_dry_run_non_live")
     live_credentials_required – bool
     default_launch_live       – bool
@@ -303,32 +311,13 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
     supported_contracts       – list[str]
     rows                      – list of per-contract row dicts
     """
-    surfaces_raw = shell.get("surfaces")
-    if not isinstance(surfaces_raw, Mapping):
+    surface_key = primary_cockpit_surface_key(shell)
+    surface = primary_cockpit_surface(shell)
+    if not surface:
         return {
             "present": False,
             "position": "unavailable",
-            "key": "fixture_cockpit_overview",
-            "mode": None,
-            "live_credentials_required": None,
-            "default_launch_live": None,
-            "decision_authority": None,
-            "supported_contracts": [],
-            "rows": [],
-            "last_query_result": None,
-            "operator_action_status": None,
-            "operator_action_timeline": None,
-            "operator_notes": None,
-            "current_state_summary": None,
-            "contract_readiness_detail": None,
-            "cockpit_event_replay": None,
-        }
-    surface = surfaces_raw.get("fixture_cockpit_overview")
-    if not isinstance(surface, Mapping):
-        return {
-            "present": False,
-            "position": "unavailable",
-            "key": "fixture_cockpit_overview",
+            "key": surface_key,
             "mode": None,
             "live_credentials_required": None,
             "default_launch_live": None,
@@ -346,7 +335,8 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
     return {
         "present": True,
         "position": "primary",
-        "key": "fixture_cockpit_overview",
+        "key": surface_key,
+        "cockpit_identity": surface.get("cockpit_identity", "fixture_demo"),
         "mode": surface.get("mode"),
         "live_credentials_required": surface.get("live_credentials_required"),
         "default_launch_live": surface.get("default_launch_live"),
@@ -428,18 +418,18 @@ def render_phase1_console(
         _render_console_header(shell, heading=heading, mode_summary=mode_summary),
     ]
 
-    # PRIMARY LANDING SURFACE — fixture cockpit renders immediately after the header,
-    # before pre-market brief, stream health, anchors, notes, and all metadata sections.
-    surfaces_raw = shell.get("surfaces")
-    if isinstance(surfaces_raw, Mapping):
-        fixture_cockpit_surface = surfaces_raw.get("fixture_cockpit_overview")
-        if operator_ready and isinstance(fixture_cockpit_surface, Mapping):
-            elements.append(
-                _render_fixture_cockpit_primary(
-                    fixture_cockpit_surface,
-                    control_panel=cockpit_manual_query_control_panel,
-                )
+    # PRIMARY LANDING SURFACE — the primary cockpit renders immediately after the
+    # header, before pre-market brief, stream health, anchors, notes, and all
+    # metadata sections. It is the fixture cockpit by default and the
+    # live-observation cockpit under the explicit OPERATOR_LIVE_RUNTIME opt-in.
+    primary_cockpit = primary_cockpit_surface(shell)
+    if operator_ready and primary_cockpit:
+        elements.append(
+            _render_fixture_cockpit_primary(
+                primary_cockpit,
+                control_panel=cockpit_manual_query_control_panel,
             )
+        )
 
     elements.append(
         render_premarket_brief_panel(shell, control_panel=premarket_brief_control_panel)
@@ -2442,14 +2432,47 @@ def _render_fixture_cockpit_primary(
     mode = _as_str(surface.get("mode"), default="<unavailable>")
     authority = _as_str(surface.get("decision_authority"), default="<unavailable>")
     error = surface.get("error")
+    identity = _as_str(surface.get("cockpit_identity"), default="fixture_demo")
 
-    # Mode banner
-    banner = _ntb_severity_banner(
-        "FIXTURE",
-        "Non-Live Fixture Cockpit — Credential-Free",
-        f"Mode: {mode} | Decision authority: {authority} | Manual query only | No credentials required",
-        tier="ready",
-    )
+    # Identity-aware mode banner and section divider. The same per-contract
+    # table structure renders for both the credential-free fixture cockpit and
+    # the explicit-opt-in live-observation cockpit; only the identity framing
+    # changes so the operator is never shown fixture framing under --live.
+    if identity == LIVE_OBSERVATION_COCKPIT_IDENTITY:
+        runtime_status = _as_str(
+            surface.get("live_runtime_readiness_status"),
+            default="LIVE_RUNTIME_UNAVAILABLE",
+        )
+        provider_status = _as_str(
+            surface.get("runtime_provider_status"), default="unavailable"
+        )
+        live_connected = (
+            runtime_status == "LIVE_RUNTIME_CONNECTED"
+            and surface.get("runtime_snapshot_ready") is True
+        )
+        banner = _ntb_severity_banner(
+            "LIVE" if live_connected else "LIVE FAIL-CLOSED",
+            (
+                "Live-Observation Cockpit — Operator Runtime Cache"
+                if live_connected
+                else "Live-Observation Cockpit — Fail-Closed (Operator Runtime Cache Unavailable)"
+            ),
+            f"Mode: {mode} | Live runtime: {runtime_status} | Provider: {provider_status} | "
+            f"Decision authority: {authority} | Manual query only | "
+            "No fixture fallback after live failure",
+            tier="ready" if live_connected else "blocked",
+        )
+        divider_title = _as_str(
+            surface.get("cockpit_title"), default="FIVE-CONTRACT LIVE-OBSERVATION COCKPIT"
+        )
+    else:
+        banner = _ntb_severity_banner(
+            "FIXTURE",
+            "Non-Live Fixture Cockpit — Credential-Free",
+            f"Mode: {mode} | Decision authority: {authority} | Manual query only | No credentials required",
+            tier="ready",
+        )
+        divider_title = "FIVE-CONTRACT FIXTURE COCKPIT"
 
     # Per-contract table rows
     rows = surface.get("rows")
@@ -2526,7 +2549,7 @@ def _render_fixture_cockpit_primary(
         )
 
     full_html = (
-        _ntb_section_divider("FIVE-CONTRACT FIXTURE COCKPIT")
+        _ntb_section_divider(divider_title)
         + '<div class="ntb-card">'
         + banner
         + current_state_strip_html
@@ -2930,7 +2953,16 @@ def _render_console_header(
     startup_map = startup if isinstance(startup, Mapping) else {}
     runtime_map = runtime if isinstance(runtime, Mapping) else {}
 
-    mode = _first_value(startup_map, runtime_map, "runtime_mode_label", "runtime_mode")
+    # Under the explicit OPERATOR_LIVE_RUNTIME opt-in, attach_launch_metadata
+    # stamps console_identity_* onto runtime; preferring those keys keeps the
+    # live cockpit from presenting fixture/demo identity in the header.
+    mode = _first_value(
+        startup_map,
+        runtime_map,
+        "console_identity_mode_label",
+        "runtime_mode_label",
+        "runtime_mode",
+    )
     profile_id = _first_value(
         startup_map, runtime_map, "selected_profile_id", "profile_id"
     )
@@ -2941,7 +2973,13 @@ def _render_console_header(
     session_state = _first_value(
         startup_map, runtime_map, "current_session_state", "session_state"
     )
-    running_as = _first_value(startup_map, runtime_map, "running_as", "runtime_backend")
+    running_as = _first_value(
+        startup_map,
+        runtime_map,
+        "console_identity_running_as",
+        "running_as",
+        "runtime_backend",
+    )
 
     readiness_color = "#22c55e" if readiness == "OPERATOR_SURFACES_READY" else "#facc15"
     session_color = (
@@ -2977,7 +3015,16 @@ def _build_context_summary_markdown(shell: Mapping[str, object]) -> str:
     startup_map = startup if isinstance(startup, Mapping) else {}
     runtime_map = runtime if isinstance(runtime, Mapping) else {}
 
-    mode = _first_value(startup_map, runtime_map, "runtime_mode_label", "runtime_mode")
+    # Under the explicit OPERATOR_LIVE_RUNTIME opt-in, attach_launch_metadata
+    # stamps console_identity_* onto runtime; preferring those keys keeps the
+    # live cockpit from presenting fixture/demo identity in the header.
+    mode = _first_value(
+        startup_map,
+        runtime_map,
+        "console_identity_mode_label",
+        "runtime_mode_label",
+        "runtime_mode",
+    )
     profile_id = _first_value(
         startup_map, runtime_map, "selected_profile_id", "profile_id"
     )
@@ -2988,7 +3035,13 @@ def _build_context_summary_markdown(shell: Mapping[str, object]) -> str:
     session_state = _first_value(
         startup_map, runtime_map, "current_session_state", "session_state"
     )
-    running_as = _first_value(startup_map, runtime_map, "running_as", "runtime_backend")
+    running_as = _first_value(
+        startup_map,
+        runtime_map,
+        "console_identity_running_as",
+        "running_as",
+        "runtime_backend",
+    )
 
     return "\n".join(
         [

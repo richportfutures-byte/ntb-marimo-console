@@ -424,6 +424,14 @@ def build_live_launch_environment(
     printed: only :func:`format_live_marimo_launch_command` is used for display,
     and it emits the non-sensitive ``NTB_*`` prefix only.
 
+    The live env intentionally does **not** set ``NTB_CONSOLE_MODE`` or
+    ``NTB_CONSOLE_PROFILE``: injecting the fixture console identity was what
+    made the explicit live cockpit still present as Fixture/Demo. The explicit
+    ``NTB_OPERATOR_RUNTIME_MODE=OPERATOR_LIVE_RUNTIME`` opt-in is the live
+    console identity; the app derives a live-observation cockpit from it. The
+    credential-free preserved-engine scaffolding still resolves from the app's
+    own default, which keeps the cockpit observation-only.
+
     Callers must verify :func:`live_launch_prerequisites` is ``ready`` before
     invoking this; it does not itself re-check the opt-in.
     """
@@ -439,8 +447,6 @@ def build_live_launch_environment(
         env.pop(key, None)
     env.update(
         {
-            "NTB_CONSOLE_MODE": DEFAULT_SAFE_MODE,
-            "NTB_CONSOLE_PROFILE": DEFAULT_SAFE_PROFILE,
             "NTB_FIXTURE_LOCKOUT": "false",
             "NTB_OPERATOR_RUNTIME_MODE": LIVE_OPERATOR_RUNTIME_MODE,
             "NTB_OPERATOR_LIVE_RUNTIME": "1",
@@ -472,9 +478,10 @@ def format_live_marimo_launch_command(
         python_executable=python_executable,
         project_root=root,
     )
+    # No NTB_CONSOLE_MODE / NTB_CONSOLE_PROFILE here: the explicit
+    # OPERATOR_LIVE_RUNTIME opt-in is the live console identity. Injecting the
+    # fixture console identity is what made --live still render Fixture/Demo.
     env_prefix = {
-        "NTB_CONSOLE_MODE": DEFAULT_SAFE_MODE,
-        "NTB_CONSOLE_PROFILE": DEFAULT_SAFE_PROFILE,
         "NTB_OPERATOR_RUNTIME_MODE": LIVE_OPERATOR_RUNTIME_MODE,
         "NTB_OPERATOR_LIVE_RUNTIME": "1",
         "NTB_MARKET_DATA_PROVIDER": LIVE_MARKET_DATA_PROVIDER,
