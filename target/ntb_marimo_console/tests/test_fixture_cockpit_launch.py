@@ -149,19 +149,31 @@ def test_fixture_cockpit_launch_contract_states_match_expected() -> None:
     # ES: quote + chart both available → gate ENABLED, query allowed
     assert rows["ES"]["query_gate_state"] == "ENABLED"
     assert rows["ES"]["query_enabled"] is True
+    assert rows["ES"]["query_action_state"] == "ENABLED"
+    assert rows["ES"]["query_action_text"] == "Manual query available: submit preserved pipeline query manually."
+    assert rows["ES"]["query_disabled_reason"] is None
+    assert rows["ES"]["query_action_source"] == "existing_pipeline_gate_provenance"
 
     # MGC: all dependencies available → gate ENABLED, query allowed
     assert rows["MGC"]["query_gate_state"] == "ENABLED"
     assert rows["MGC"]["query_enabled"] is True
+    assert rows["MGC"]["query_action_state"] == "ENABLED"
 
     # NQ: no chart bars ingested → chart missing → gate DISABLED
     assert rows["NQ"]["chart_status"] == "chart missing"
     assert rows["NQ"]["query_gate_state"] == "DISABLED"
+    assert rows["NQ"]["query_action_state"] == "DISABLED"
+    assert rows["NQ"]["query_action_text"] == "Manual query blocked."
+    assert str(rows["NQ"]["query_disabled_reason"]).startswith("Manual query blocked:")
 
     # CL: quote stale (age>60s) and bar blocking reason → both stale
     assert rows["CL"]["quote_status"] == "quote stale"
     assert rows["CL"]["chart_status"] == "chart stale"
+    assert rows["CL"]["query_action_state"] == "DISABLED"
 
     # 6E: dxy dependency unavailable → trigger BLOCKED → query disabled
     assert rows["6E"]["query_enabled"] is False
-    assert "dependency_unavailable:6E:dxy" in str(rows["6E"]["query_reason"])
+    assert rows["6E"]["query_action_state"] == "DISABLED"
+    assert "required dependency is unavailable for 6E: dxy" in str(rows["6E"]["query_reason"])
+    assert "dependency_unavailable:6E:dxy" in rows["6E"]["blocking_reasons"]
+    assert rows["6E"]["query_disabled_reason"] == "Manual query blocked: required dependency is unavailable for 6E: dxy."

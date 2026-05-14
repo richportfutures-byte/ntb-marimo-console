@@ -87,12 +87,16 @@ def test_fixture_operator_session_mixed_states_and_query_reasons_are_visible() -
     assert rows["ES"]["query_enabled"] is True
     assert rows["NQ"]["chart_status"] == "chart missing"
     assert rows["NQ"]["query_gate_state"] == "DISABLED"
-    assert "bars_missing" in rows["NQ"]["query_reason"]
+    assert "chart bars are missing" in rows["NQ"]["query_reason"]
+    assert "bars_missing" in rows["NQ"]["blocking_reasons"]
     assert rows["CL"]["quote_status"] == "quote stale"
     assert rows["CL"]["chart_status"] == "chart stale"
-    assert "quote_stale" in rows["CL"]["query_reason"]
+    assert "quote timestamp is stale or missing for CL" in rows["CL"]["query_reason"]
+    assert "quote_stale" in rows["CL"]["blocking_reasons"]
     assert rows["6E"]["query_enabled"] is False
-    assert "dependency_unavailable:6E:dxy" in rows["6E"]["query_reason"]
+    assert rows["6E"]["query_action_state"] == "DISABLED"
+    assert "required dependency is unavailable for 6E: dxy" in rows["6E"]["query_reason"]
+    assert "dependency_unavailable:6E:dxy" in rows["6E"]["blocking_reasons"]
 
 
 def test_fixture_operator_session_display_does_not_create_query_ready() -> None:

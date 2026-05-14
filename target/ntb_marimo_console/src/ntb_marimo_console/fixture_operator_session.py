@@ -102,7 +102,7 @@ def render_fixture_operator_session_text(summary: dict[str, object]) -> str:
         "decision_authority=preserved_engine_only",
         "supported_contracts=ES,NQ,CL,6E,MGC",
         "",
-        "contract | label | mode | support | quote | chart | gate | query | reason",
+        "contract | label | mode | support | quote | chart | gate | action_state | action | reason",
     ]
     if isinstance(rows, list):
         for row in rows:
@@ -118,7 +118,8 @@ def render_fixture_operator_session_text(summary: dict[str, object]) -> str:
                         str(row.get("quote_status", "")),
                         str(row.get("chart_status", "")),
                         str(row.get("query_gate_state", "")),
-                        str(row.get("query_enabled", "")),
+                        str(row.get("query_action_state", "")),
+                        str(row.get("query_action_text", "")),
                         str(row.get("query_reason", "")),
                     )
                 )
@@ -167,9 +168,18 @@ def _session_row(contract: str, cockpit: dict[str, object]) -> dict[str, object]
         "quote_freshness_state": status.get("quote_freshness_state"),
         "chart_freshness_state": status.get("chart_freshness_state"),
         "blocking_reasons": status.get("blocking_reasons", []),
-        "query_gate_state": query_map.get("pipeline_gate_state", "DISABLED"),
+        "query_gate_state": status.get("query_gate_state")
+        or query_map.get("pipeline_gate_state", "DISABLED"),
         "query_enabled": query_map.get("manual_query_allowed") is True,
+        "query_action_state": status.get("query_action_state", "DISABLED"),
+        "query_action_text": status.get("query_action_text", "Manual query blocked."),
+        "query_disabled_reason": status.get("query_disabled_reason"),
+        "query_action_provenance": status.get("query_action_provenance")
+        or query_map.get("query_ready_provenance"),
+        "query_action_source": status.get("query_action_source"),
+        "query_gate_contract": status.get("query_gate_contract"),
         "query_reason": query_map.get("query_enabled_reason")
+        or status.get("query_disabled_reason")
         or query_map.get("query_disabled_reason"),
         "query_ready_provenance": query_map.get("query_ready_provenance"),
         "runtime_state": status.get("runtime_state"),

@@ -805,6 +805,7 @@ def test_r14_cockpit_disabled_query_state_carries_plain_text_reason() -> None:
         gate=query_gate("ES", stream_status="stale", event_lockout_active=True),
     )
     query = cockpit["query_readiness"]
+    status = {row["contract"]: row for row in cockpit["contract_statuses"]}["ES"]
 
     assert query["query_ready"] is False
     assert query["manual_query_allowed"] is False
@@ -812,6 +813,10 @@ def test_r14_cockpit_disabled_query_state_carries_plain_text_reason() -> None:
     assert "stream_status_blocked:stale" in query["blocking_reasons"]
     assert "event_lockout_active" in query["blocking_reasons"]
     assert "QUERY_READY requires real TriggerStateResult provenance" in query["query_disabled_reason"]
+    assert status["query_action_state"] == "DISABLED"
+    assert status["query_action_text"] == "Manual query blocked."
+    assert status["query_disabled_reason"] == "Manual query blocked: event lockout is active."
+    assert status["query_action_source"] == "existing_pipeline_gate_provenance"
     states = states_by_category(cockpit)
     assert states["event_lockout"]["state"] == "lockout"
 
@@ -867,6 +872,9 @@ def test_r14_cockpit_query_readiness_cannot_be_inferred_from_display_trigger_sta
     assert query["query_ready"] is False
     assert "cockpit_trigger_state_result_provenance_not_verified" in query["blocking_reasons"]
     assert states_by_category(cockpit)["no_trigger_state_result_provenance"]["state"] == "unavailable"
+    es = {row["contract"]: row for row in cockpit["contract_statuses"]}["ES"]
+    assert es["query_action_state"] == "DISABLED"
+    assert es["query_action_provenance"] == "unavailable_not_inferred_from_display_or_raw_enabled_mapping"
 
 
 def test_r14_cockpit_operator_states_surface_stable_plain_text_categories() -> None:
@@ -1000,6 +1008,12 @@ def test_r14_cockpit_exposes_five_contract_quote_chart_status_without_zn_gc() ->
     assert statuses["ES"]["quote_status"] == "quote available"
     assert statuses["ES"]["chart_status"] == "chart available"
     assert statuses["ES"]["query_evaluation_eligible"] is True
+    assert statuses["ES"]["query_action_state"] == "ENABLED"
+    assert statuses["ES"]["query_action_text"] == "Manual query available: submit preserved pipeline query manually."
+    assert statuses["ES"]["query_disabled_reason"] is None
+    assert statuses["ES"]["query_action_provenance"] == "real_trigger_state_result_and_pipeline_gate"
+    assert statuses["NQ"]["query_action_state"] == "DISABLED"
+    assert statuses["NQ"]["query_disabled_reason"] == "Manual query blocked: no pipeline gate is available for this contract."
     assert statuses["MGC"]["profile_label"] == "Micro Gold"
     assert statuses["MGC"]["profile_label"] != "GC"
 
@@ -1040,7 +1054,28 @@ def test_contract_status_display_does_not_create_query_readiness_from_view_model
 
     assert cockpit["query_readiness"]["query_ready"] is False
     assert es["query_evaluation_eligible"] is False
+    assert es["query_action_state"] == "DISABLED"
+    assert es["query_action_text"] == "Manual query blocked."
+    assert es["query_action_provenance"] == "unavailable_not_inferred_from_display_or_raw_enabled_mapping"
     assert "pipeline_gate_provenance_not_verified" in es["blocking_reasons"]
+
+
+def test_contract_status_manual_query_action_is_per_contract_and_gate_reflected() -> None:
+    cockpit = ready_cockpit("MGC", live_observable=operator_status_snapshot())
+    statuses = {row["contract"]: row for row in cockpit["contract_statuses"]}
+
+    assert tuple(statuses) == ("ES", "NQ", "CL", "6E", "MGC")
+    assert statuses["MGC"]["query_gate_contract"] == "MGC"
+    assert statuses["MGC"]["query_gate_state"] == "ENABLED"
+    assert statuses["MGC"]["query_action_state"] == "ENABLED"
+    assert statuses["MGC"]["query_action_text"] == "Manual query available: submit preserved pipeline query manually."
+    assert statuses["MGC"]["query_action_source"] == "existing_pipeline_gate_provenance"
+    for contract in ("ES", "NQ", "CL", "6E"):
+        assert statuses[contract]["query_action_state"] == "DISABLED"
+        assert statuses[contract]["query_action_text"] == "Manual query blocked."
+        assert statuses[contract]["query_disabled_reason"] == (
+            "Manual query blocked: no pipeline gate is available for this contract."
+        )
 
 
 def test_contract_statuses_are_fixture_explicit_and_exclude_raw_values() -> None:

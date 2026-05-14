@@ -105,22 +105,33 @@ def test_primary_cockpit_plan_per_contract_block_reasons_visible() -> None:
     nq = rows["NQ"]
     assert nq["chart_status"] == "chart missing"
     assert nq["query_gate_state"] == "DISABLED"
+    assert nq["query_action_state"] == "DISABLED"
+    assert nq["query_action_text"] == "Manual query blocked."
+    assert str(nq["query_disabled_reason"]).startswith("Manual query blocked:")
     assert nq["query_reason"] is not None and nq["query_reason"] != ""
 
     # CL: blocked for stale quote/chart
     cl = rows["CL"]
     assert cl["quote_status"] == "quote stale"
     assert cl["chart_status"] == "chart stale"
+    assert cl["query_action_state"] == "DISABLED"
     assert cl["query_reason"] is not None and cl["query_reason"] != ""
 
     # 6E: blocked for dependency unavailable
     sixe = rows["6E"]
     assert sixe["query_enabled"] is False
-    assert "dependency_unavailable:6E:dxy" in str(sixe["query_reason"])
+    assert sixe["query_action_state"] == "DISABLED"
+    assert sixe["query_disabled_reason"] == "Manual query blocked: required dependency is unavailable for 6E: dxy."
+    assert "required dependency is unavailable for 6E: dxy" in str(sixe["query_reason"])
+    assert "dependency_unavailable:6E:dxy" in sixe["blocking_reasons"]
 
     # ES and MGC: eligible
     assert rows["ES"]["query_enabled"] is True
     assert rows["MGC"]["query_enabled"] is True
+    assert rows["ES"]["query_action_state"] == "ENABLED"
+    assert rows["ES"]["query_action_text"] == "Manual query available: submit preserved pipeline query manually."
+    assert rows["ES"]["query_disabled_reason"] is None
+    assert rows["MGC"]["query_action_state"] == "ENABLED"
 
 
 def test_primary_cockpit_plan_display_cannot_create_query_ready() -> None:
@@ -137,6 +148,7 @@ def test_primary_cockpit_plan_display_cannot_create_query_ready() -> None:
                 f"{row['contract']}: expected real provenance for query_enabled=True, "
                 f"got {row['query_ready_provenance']!r}"
             )
+            assert row["query_action_provenance"] == "real_trigger_state_result_and_pipeline_gate"
         else:
             assert row["query_ready_provenance"] == (
                 "unavailable_not_inferred_from_display_or_raw_enabled_mapping"
@@ -144,6 +156,7 @@ def test_primary_cockpit_plan_display_cannot_create_query_ready() -> None:
                 f"{row['contract']}: expected unavailable provenance for query_enabled=False, "
                 f"got {row['query_ready_provenance']!r}"
             )
+            assert row["query_action_provenance"] == "unavailable_not_inferred_from_display_or_raw_enabled_mapping"
 
 
 def test_primary_cockpit_plan_excludes_raw_market_values() -> None:

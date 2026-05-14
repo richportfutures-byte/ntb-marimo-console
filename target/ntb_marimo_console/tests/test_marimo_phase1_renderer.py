@@ -262,6 +262,8 @@ class MarimoPhase1RendererTests(unittest.TestCase):
         self.assertIn("Contract Data Status", text)
         self.assertIn("Quote", text)
         self.assertIn("Chart", text)
+        self.assertIn("Operator Action", text)
+        self.assertIn("Manual query blocked", text)
         self.assertIn("chart missing", text)
         self.assertIn("## Premarket Plan", text)
         self.assertIn("Structural Setups", text)

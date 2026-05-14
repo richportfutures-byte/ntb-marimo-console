@@ -2426,8 +2426,8 @@ def _render_fixture_cockpit_primary(surface: Mapping[str, object]) -> Any:
             quote = _as_str(row.get("quote_status"))
             chart = _as_str(row.get("chart_status"))
             gate = _as_str(row.get("query_gate_state"))
-            query_enabled = row.get("query_enabled")
-            enabled_str = "True" if query_enabled is True else "False"
+            action_state = _as_str(row.get("query_action_state"), default="DISABLED")
+            action_text = _as_str(row.get("query_action_text"), default="Manual query blocked.")
             reason = _as_str(row.get("query_reason"))
             tbody_html += (
                 "<tr>"
@@ -2436,20 +2436,21 @@ def _render_fixture_cockpit_primary(surface: Mapping[str, object]) -> Any:
                 f"<td>{_ntb_chip_for_status(quote)}</td>"
                 f"<td>{_ntb_chip_for_status(chart)}</td>"
                 f"<td>{_ntb_chip_for_status(gate)}</td>"
-                f"<td>{_ntb_chip_for_status(enabled_str)}</td>"
+                f"<td>{_ntb_chip_for_status(action_state)}</td>"
+                f"<td>{_h(action_text)}</td>"
                 f"<td class='ntb-muted'>{_h(reason)}</td>"
                 "</tr>"
             )
     if not tbody_html:
         tbody_html = (
-            "<tr><td colspan='7' class='ntb-muted'>&lt;unavailable&gt;</td></tr>"
+            "<tr><td colspan='8' class='ntb-muted'>&lt;unavailable&gt;</td></tr>"
         )
 
     table_html = (
         "<table class='ntb-table'>"
         "<thead><tr>"
         "<th>Contract</th><th>Label</th><th>Quote</th><th>Chart</th>"
-        "<th>Gate</th><th>Query</th><th>Block / Eligible Reason</th>"
+        "<th>Gate</th><th>Manual Query State</th><th>Operator Action</th><th>Block / Eligible Reason</th>"
         "</tr></thead>"
         f"<tbody>{tbody_html}</tbody>"
         "</table>"
@@ -2713,8 +2714,8 @@ def _contract_status_markdown(value: object) -> str:
     if not isinstance(value, list | tuple):
         return "`<unavailable>`"
     lines = [
-        "| Contract | Label | Mode | Support | Quote | Chart | Query | Message | Reasons |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Contract | Label | Mode | Support | Quote | Chart | Action State | Operator Action | Disabled Reason | Provenance | Message | Reasons |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     rendered = 0
     for item in value:
@@ -2734,14 +2735,17 @@ def _contract_status_markdown(value: object) -> str:
             + f"| `{_table_value(item.get('support_state'))}` "
             + f"| `{_table_value(item.get('quote_status'))}` "
             + f"| `{_table_value(item.get('chart_status'))}` "
-            + f"| `{_table_value(item.get('query_evaluation_eligible'))}` "
+            + f"| `{_table_value(item.get('query_action_state'))}` "
+            + f"| {_table_value(item.get('query_action_text'))} "
+            + f"| {_table_value(item.get('query_disabled_reason') or '<none>')} "
+            + f"| `{_table_value(item.get('query_action_provenance'))}` "
             + f"| {_table_value(item.get('status_text'))} "
             + f"| `{_table_value(reason_text or '<none>')}` |"
         )
         rendered += 1
     if rendered == 0:
         lines.append(
-            "| `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` |"
+            "| `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` |"
         )
     return "\n".join(lines)
 
@@ -2767,7 +2771,10 @@ def _contract_status_table_html(value: object) -> str:
             + f"<td>{_h(_as_str(item.get('support_state'), default='<unavailable>'))}</td>"
             + f"<td>{_h(_as_str(item.get('quote_status'), default='<unavailable>'))}</td>"
             + f"<td>{_h(_as_str(item.get('chart_status'), default='<unavailable>'))}</td>"
-            + f"<td>{_h(_as_str(item.get('query_evaluation_eligible'), default='False'))}</td>"
+            + f"<td>{_ntb_chip_for_status(_as_str(item.get('query_action_state'), default='DISABLED'))}</td>"
+            + f"<td>{_h(_as_str(item.get('query_action_text'), default='Manual query blocked.'))}</td>"
+            + f"<td>{_h(_as_str(item.get('query_disabled_reason'), default='<none>'))}</td>"
+            + f"<td>{_h(_as_str(item.get('query_action_provenance'), default='<unavailable>'))}</td>"
             + f"<td>{_h(_as_str(item.get('status_text'), default='<unavailable>'))}</td>"
             + f"<td>{_h(reason_text or '<none>')}</td>"
             + "</tr>"
@@ -2778,7 +2785,7 @@ def _contract_status_table_html(value: object) -> str:
         '<div style="margin-top:12px; overflow-x:auto">'
         '<div class="ntb-stat__label" style="margin-bottom:6px">Contract Data Status</div>'
         '<table class="ntb-table"><thead><tr>'
-        "<th>Contract</th><th>Label</th><th>Mode</th><th>Support</th><th>Quote</th><th>Chart</th><th>Query</th><th>Message</th><th>Reasons</th>"
+        "<th>Contract</th><th>Label</th><th>Mode</th><th>Support</th><th>Quote</th><th>Chart</th><th>Action State</th><th>Operator Action</th><th>Disabled Reason</th><th>Provenance</th><th>Message</th><th>Reasons</th>"
         "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
     )
 

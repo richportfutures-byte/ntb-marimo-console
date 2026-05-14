@@ -144,6 +144,13 @@ class OperatorContractStatusVM:
     blocking_reasons: tuple[str, ...]
     status_text: str
     query_evaluation_eligible: bool
+    query_action_state: str
+    query_action_text: str
+    query_disabled_reason: str | None
+    query_action_provenance: str
+    query_action_source: str
+    query_gate_contract: str
+    query_gate_state: str
     runtime_state: str
 
     def to_dict(self) -> dict[str, object]:
@@ -158,6 +165,13 @@ class OperatorContractStatusVM:
             "blocking_reasons": list(self.blocking_reasons),
             "status_text": self.status_text,
             "query_evaluation_eligible": self.query_evaluation_eligible,
+            "query_action_state": self.query_action_state,
+            "query_action_text": self.query_action_text,
+            "query_disabled_reason": self.query_disabled_reason,
+            "query_action_provenance": self.query_action_provenance,
+            "query_action_source": self.query_action_source,
+            "query_gate_contract": self.query_gate_contract,
+            "query_gate_state": self.query_gate_state,
             "runtime_state": self.runtime_state,
         }
 
@@ -536,7 +550,8 @@ def _build_operator_contract_statuses(
     )
     stream_status = _safe_status(request.stream_status or _string_or_none(gate.get("stream_status")) or "unavailable")
     selected_gate_contract = _safe_text(_string_or_none(gate.get("contract")) or "").upper()
-    gate_enabled = _safe_pipeline_gate_enabled(gate)
+    trigger_state_from_real_producer = isinstance(request.trigger_state, TriggerStateResult)
+    gate_enabled = _safe_pipeline_gate_enabled(gate) and trigger_state_from_real_producer
     gate_reasons = _dedupe(
         (
             *_sequence_text(gate.get("blocking_reasons")),
@@ -546,6 +561,8 @@ def _build_operator_contract_statuses(
     )
     if _raw_pipeline_gate_enabled(gate) and not gate_enabled:
         gate_reasons = _dedupe((*gate_reasons, "pipeline_gate_provenance_not_verified"))
+    if _safe_pipeline_gate_enabled(gate) and not trigger_state_from_real_producer:
+        gate_reasons = _dedupe((*gate_reasons, "cockpit_trigger_state_result_provenance_not_verified"))
     contracts = final_target_contracts() if is_final_target_contract(normalize_contract_symbol(request.contract)) else (
         normalize_contract_symbol(request.contract),
     )
@@ -592,6 +609,7 @@ def _operator_contract_status(
             *(query_reasons if not query_evaluation_eligible else ()),
         )
     )
+    query_action_state = "ENABLED" if query_evaluation_eligible else "DISABLED"
     return OperatorContractStatusVM(
         contract=contract,
         profile_label=_contract_status_label(contract, profile_id),
@@ -607,6 +625,25 @@ def _operator_contract_status(
             query_evaluation_eligible=query_evaluation_eligible,
         ),
         query_evaluation_eligible=query_evaluation_eligible,
+        query_action_state=query_action_state,
+        query_action_text=_query_action_text(query_action_state),
+        query_disabled_reason=(
+            None
+            if query_evaluation_eligible
+            else _query_disabled_reason(
+                contract=contract,
+                selected_gate_contract=selected_gate_contract,
+                reasons=blocking_reasons,
+            )
+        ),
+        query_action_provenance=(
+            "real_trigger_state_result_and_pipeline_gate"
+            if query_evaluation_eligible
+            else "unavailable_not_inferred_from_display_or_raw_enabled_mapping"
+        ),
+        query_action_source="existing_pipeline_gate_provenance",
+        query_gate_contract=selected_gate_contract or "unavailable",
+        query_gate_state="ENABLED" if query_evaluation_eligible else "DISABLED",
         runtime_state=_operator_runtime_state(
             provider_status=provider_status,
             stream_status=stream_status,
@@ -636,6 +673,74 @@ def _contract_status_text(
     if query_evaluation_eligible:
         return "Quote and chart status are displayed from produced runtime and gate state; manual query is eligible."
     return "Query readiness has not been produced for this contract by the pipeline gate."
+
+
+def _query_action_text(state: str) -> str:
+    if state == "ENABLED":
+        return "Manual query available: submit preserved pipeline query manually."
+    return "Manual query blocked."
+
+
+def _query_disabled_reason(
+    *,
+    contract: str,
+    selected_gate_contract: str,
+    reasons: Sequence[str],
+) -> str:
+    if selected_gate_contract != contract:
+        return "Manual query blocked: no pipeline gate is available for this contract."
+    reason = reasons[0] if reasons else "query_ready_provenance_not_verified"
+    return f"Manual query blocked: {_plain_reason(reason)}"
+
+
+def _plain_reason(reason: str) -> str:
+    if reason.startswith("stream_status_blocked:"):
+        return f"stream status is {reason.split(':', 1)[1]}."
+    if reason.startswith("provider_status_blocked:"):
+        return f"market data provider status is {reason.split(':', 1)[1]}."
+    if reason.startswith("watchman_validator_not_ready:"):
+        return f"Watchman validator is {reason.split(':', 1)[1]}."
+    if reason.startswith("dependency_unavailable:"):
+        parts = reason.split(":")
+        if len(parts) >= 3:
+            return f"required dependency is unavailable for {parts[1]}: {parts[2]}."
+        return "required dependency is unavailable."
+    if reason.startswith("missing_cache_record:"):
+        return f"quote data is missing for {reason.split(':', 1)[1]}."
+    if reason.startswith("stale_or_missing_timestamp:"):
+        return f"quote timestamp is stale or missing for {reason.split(':', 1)[1]}."
+    if reason.startswith("chart_bars_missing:") or reason.startswith("missing_chart_bars:"):
+        return f"chart bars are missing for {reason.split(':', 1)[1]}."
+    if reason.startswith("chart_bar_stale:") or reason.startswith("stale_bar_data:"):
+        return f"chart bars are stale for {reason.split(':', 1)[1]}."
+    if reason.startswith("malformed_chart_event:"):
+        return f"latest chart event is malformed for {reason.split(':', 1)[1]}."
+    if reason.startswith("trigger_state_not_query_ready:"):
+        return f"trigger state is {reason.split(':', 1)[1]}, not QUERY_READY."
+    if reason.startswith("unsupported_contract:"):
+        return f"{reason.split(':', 1)[1]} is not a final supported contract."
+    if reason.startswith("excluded_contract:"):
+        return f"{reason.split(':', 1)[1]} is excluded from final target support."
+    if reason.startswith("never_supported_contract:"):
+        return f"{reason.split(':', 1)[1]} is not supported."
+    text_by_reason = {
+        "event_lockout_active": "event lockout is active.",
+        "pipeline_gate_provenance_not_verified": "pipeline gate provenance is not verified.",
+        "cockpit_trigger_state_result_provenance_not_verified": "real TriggerStateResult provenance is not verified.",
+        "cockpit_trigger_state_not_query_ready": "trigger state is not QUERY_READY.",
+        "trigger_state_not_from_real_producer": "trigger state was not produced by the preserved trigger-state producer.",
+        "profile_preflight_failed": "runtime profile preflight has not passed.",
+        "runtime_profile_unavailable": "runtime profile is unavailable.",
+        "live_snapshot_unavailable": "live or fixture observable snapshot is unavailable.",
+        "live_snapshot_stale": "live or fixture observable snapshot is stale.",
+        "quote_stale": "quote data is stale.",
+        "bars_missing": "chart bars are missing.",
+        "bars_stale": "chart bars are stale.",
+        "required_trigger_fields_missing": "required trigger fields are missing.",
+        "session_invalid": "session clock is invalid.",
+        "query_ready_provenance_not_verified": "QUERY_READY provenance is not verified.",
+    }
+    return text_by_reason.get(reason, f"{reason.replace('_', ' ')}.")
 
 
 def _quote_status(quality: Mapping[str, Any], reasons: Sequence[str]) -> str:
