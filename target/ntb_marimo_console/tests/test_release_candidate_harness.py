@@ -37,8 +37,8 @@ def test_release_candidate_harness_has_explicit_fixture_safe_label() -> None:
     assert "credential-free fixture-safe release-candidate verification only" in plan
     assert f"PYTHONPATH={PYTHONPATH_DISPLAY}" in plan
     assert D3_REHEARSAL_STATUS in plan
-    assert "LEVELONE_FUTURES BOUNDED LIVE DELIVERY RECORDED" in plan
-    assert "CHART_FUTURES and production live Schwab readiness remain unproven" in plan
+    assert "LEVELONE_FUTURES AND COMPLETED CHART_FUTURES BOUNDED LIVE DELIVERY RECORDED" in plan
+    assert "full live-session cockpit usability and production live Schwab readiness remain unproven" in plan
 
 
 def test_release_candidate_harness_covers_required_surfaces() -> None:

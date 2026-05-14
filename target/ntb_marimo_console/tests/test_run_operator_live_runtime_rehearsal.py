@@ -550,7 +550,7 @@ class RehearsalCliBlockingTests(unittest.TestCase):
             self.assertNotIn(fragment, rendered)
         self.assertIn("[REDACTED]", rendered)
         self.assertIn("schwab_live_readiness_unproven_until_authorized_manual_rehearsal", rendered)
-        self.assertIn("real_CHART_FUTURES_delivery_not_recorded_for_ES_NQ_CL_6E_MGC", rendered)
+        self.assertIn("symbol_entitlement_and_rollover_proof_beyond_exact_run_not_recorded", rendered)
 
     def test_dry_run_output_is_text_deterministic_and_review_only(self) -> None:
         first = rehearsal.render_dry_run_text(
@@ -572,7 +572,7 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         )
         self.assertIn(
             "production_readiness_blocker="
-            "production_release_remains_premature_until_non_levelone_predicates_are_satisfied",
+            "production_release_remains_premature_until_live_session_usability_and_hardening_predicates_are_satisfied",
             first,
         )
         self.assertIn("review_preflight_only_not_subscription_or_login", first)
@@ -601,10 +601,10 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertEqual(
             payload["production_readiness_blockers"],
             [
-                "real_CHART_FUTURES_delivery_not_recorded_for_ES_NQ_CL_6E_MGC",
                 "symbol_entitlement_and_rollover_proof_beyond_exact_run_not_recorded",
                 "full_live_session_marimo_usability_not_proven",
-                "production_release_remains_premature_until_non_levelone_predicates_are_satisfied",
+                "release_hardening_soak_reconnect_and_live_app_launch_not_proven",
+                "production_release_remains_premature_until_live_session_usability_and_hardening_predicates_are_satisfied",
             ],
         )
 

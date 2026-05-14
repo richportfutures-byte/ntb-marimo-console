@@ -26,6 +26,9 @@ SUBSCRIPTION_ONLY_LIVE_REHEARSAL_RESULT_PATH = (
 LEVELONE_LIVE_MARKET_DATA_RESULT_PATH = (
     LIVE_PROOF_ARTIFACT_DIRECTORY / "five_contract_levelone_live_market_data_result_2026-05-13.md"
 )
+CHART_COMPLETED_LIVE_RESULT_PATH = (
+    LIVE_PROOF_ARTIFACT_DIRECTORY / "five_contract_levelone_chart_completed_live_result_2026-05-14.md"
+)
 
 FORBIDDEN_SENSITIVE_FRAGMENTS = (
     "Authorization: Bearer",
@@ -124,7 +127,7 @@ def test_audit_distinguishes_fixture_evidence_from_real_live_proof(audit_text: s
     assert "Fixture evidence is not represented as real live evidence" in audit_text
 
 
-def test_audit_records_bounded_levelone_proof_without_chart_or_production_claim(audit_text: str) -> None:
+def test_audit_records_bounded_levelone_and_chart_proof_without_production_claim(audit_text: str) -> None:
     artifact_present = real_five_contract_live_proof_artifact_exists()
     assert artifact_present
     assert "market_data_received=no" in audit_text
@@ -138,17 +141,19 @@ def test_audit_records_bounded_levelone_proof_without_chart_or_production_claim(
     assert "received_contracts_count=5" in audit_text
     assert "market_data_diagnostic=levelone_futures_updates_received" in audit_text
     assert "bounded LEVELONE_FUTURES delivery" in audit_text
-    assert "CHART_FUTURES proof remains pending" in audit_text
+    assert "chart_data_received=yes" in audit_text
+    assert "chart_completed_five_minute_contracts_count=5" in audit_text
+    assert "chart_data_diagnostic=chart_futures_completed_five_minute_bars_received" in audit_text
+    assert "Full live-session cockpit usability proof remains pending" in audit_text
     assert "Production live readiness remains withheld" in audit_text
     affirmative_claims = (
-        "chart_futures delivery is proven",
         "production live readiness is proven",
         "production release is ready",
         "is a fully production-proven live-trading platform",
     )
     for claim in affirmative_claims:
         assert claim.lower() not in audit_text.lower(), (
-            "audit must not promote LEVELONE_FUTURES evidence into CHART_FUTURES or production readiness"
+            "audit must not promote bounded live delivery evidence into production readiness"
         )
 
 
@@ -163,11 +168,15 @@ def test_audit_includes_release_blockers_or_proof_gaps(audit_text: str) -> None:
     assert "bounded real-live LEVELONE_FUTURES evidence item" in audit_text
     assert "Successful live login and successful live subscription remain insufficient" in audit_text
     assert "Bounded real LEVELONE_FUTURES market data has been recorded" in audit_text
-    assert "Real CHART_FUTURES delivery has not been recorded" in audit_text
+    assert (
+        "Bounded real CHART_FUTURES completed five-minute-bar delivery has been recorded"
+        in audit_text
+    )
     assert "Direct CHART_FUTURES subscription/parsing" in audit_text
-    assert "sanitized real live CHART_FUTURES proof remains unrecorded" in audit_text
+    assert "sanitized real live completed CHART_FUTURES five-minute-bar result" in audit_text
     assert "Symbol entitlement and rollover proof beyond the exact reported run has not been recorded" in audit_text
-    assert "Full live-session Marimo usability has not been proven" in audit_text
+    assert "Full live-session Marimo cockpit usability has not been proven" in audit_text
+    assert "Release hardening" in audit_text
 
 
 def test_audit_does_not_include_secret_like_strings(audit_text: str) -> None:
@@ -389,3 +398,73 @@ def test_levelone_live_market_data_result_does_not_claim_chart_or_production_rea
     )
     for claim in forbidden_claims:
         assert claim not in text
+
+
+def test_chart_completed_live_result_records_bounded_chart_proof() -> None:
+    assert CHART_COMPLETED_LIVE_RESULT_PATH.exists(), (
+        "bounded five-contract completed CHART_FUTURES live result must be recorded"
+    )
+    text = CHART_COMPLETED_LIVE_RESULT_PATH.read_text(encoding="utf-8")
+
+    assert "**BOUNDED LEVELONE_FUTURES AND COMPLETED CHART_FUTURES LIVE DELIVERY RECORDED**" in text
+    assert "| mode | live |" in text
+    assert "| status | ok |" in text
+    assert "| live_login_succeeded | yes |" in text
+    assert "| live_subscribe_succeeded | yes |" in text
+    assert "| subscribed_contracts_count | 5 |" in text
+    assert "| market_data_received | yes |" in text
+    assert "| received_contracts_count | 5 |" in text
+    assert "| chart_data_received | yes |" in text
+    assert "| chart_received_contracts_count | 5 |" in text
+    assert "| chart_completed_five_minute_contracts_count | 5 |" in text
+    assert "| chart_data_diagnostic | chart_futures_completed_five_minute_bars_received |" in text
+    assert "| chart_dispatch_parse_error_count | 0 |" in text
+    assert "| chart_unsupported_response_count | 0 |" in text
+    assert "| repeated_login_on_refresh | no |" in text
+    assert "| cleanup_status | ok |" in text
+    assert "| requested_duration_seconds | 420.0 |" in text
+    assert "| effective_duration_seconds | 420.0 |" in text
+    assert "| duration_clamped | no |" in text
+    assert "| values_printed | no |" in text
+    for contract in ("ES", "NQ", "CL", "6E", "MGC"):
+        assert f"| {contract} |" in text
+    assert "- ZN" in text
+    assert "- GC" in text
+    assert "MGC is Micro Gold. It is not GC" in text
+    assert "does **not** prove production live readiness" in text
+    assert "Production release remains premature" in text
+    assert "raw market values and raw streamer payloads were not recorded" in text.lower()
+
+
+def test_chart_completed_live_result_has_no_sensitive_values_or_overclaim() -> None:
+    text = CHART_COMPLETED_LIVE_RESULT_PATH.read_text(encoding="utf-8")
+    lowered = text.lower()
+
+    for fragment in FORBIDDEN_SENSITIVE_FRAGMENTS:
+        assert fragment not in text, (
+            f"completed CHART_FUTURES live result must not include sensitive fragment {fragment!r}"
+        )
+    forbidden_fragments = (
+        "raw quote value:",
+        "raw bar value:",
+        "raw streamer payload:",
+        "bid=",
+        "ask=",
+        "last=",
+        "price=",
+        "open=",
+        "high=",
+        "low=",
+        "close=",
+    )
+    for fragment in forbidden_fragments:
+        assert fragment not in lowered
+    forbidden_claims = (
+        "production live readiness is proven",
+        "production release is ready",
+        "query_ready satisfied",
+        "live-readiness acceptance satisfied",
+        "d3 complete",
+    )
+    for claim in forbidden_claims:
+        assert claim not in lowered

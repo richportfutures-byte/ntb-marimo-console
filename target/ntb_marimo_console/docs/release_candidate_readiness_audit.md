@@ -8,9 +8,9 @@ R19 is an audit layer only. It does not change runtime behavior, default launch 
 
 **Verdict: CONDITIONALLY READY**
 
-The repo is ready to be treated as a fixture-verified personal release candidate, with bounded operator-run real Schwab LEVELONE_FUTURES delivery now recorded for the final target universe. It is not ready to be treated as a production-proven, broker-integrated, live-trading platform, and R19 makes no such claim.
+The repo is ready to be treated as a fixture-verified personal release candidate, with bounded operator-run real Schwab LEVELONE_FUTURES delivery and bounded operator-run real Schwab completed CHART_FUTURES five-minute-bar delivery now recorded for the final target universe. It is not ready to be treated as a production-proven, broker-integrated, live-trading platform, and this audit makes no such claim.
 
-A READY verdict is explicitly withheld because the latest sanitized five-contract Schwab live rehearsal proves only bounded LEVELONE_FUTURES delivery. The prior explicit rehearsal blocker was `blocking_reason=required_env_keys_missing` before runtime start. The later subscription-only evidence improved that state: live environment keys were present, streamer credentials were obtained, runtime start was attempted, live login succeeded, live subscription succeeded, and `subscribed_contracts_count=5`, but it still recorded `market_data_received=no` and `received_contracts_count=0`. The current post-fix evidence records `market_data_received=yes`, `received_contracts_count=5`, and `market_data_diagnostic=levelone_futures_updates_received`, so the subscription-only LEVELONE_FUTURES delivery gap is closed for that bounded run. Production readiness remains withheld because CHART_FUTURES delivery, full live-session Marimo usability, and broader live-readiness predicates remain unproven. A NOT READY verdict is explicitly withheld because every release-blocking item that can be verified deterministically from the repository is verified through fixture-safe tests today.
+A READY verdict is explicitly withheld because the data-path proof, while now covering both LEVELONE_FUTURES and completed CHART_FUTURES delivery, does not cover full live-session usability or release hardening. The prior explicit rehearsal blocker was `blocking_reason=required_env_keys_missing` before runtime start. The later subscription-only evidence improved that state: live environment keys were present, streamer credentials were obtained, runtime start was attempted, live login succeeded, live subscription succeeded, and `subscribed_contracts_count=5`, but it still recorded `market_data_received=no` and `received_contracts_count=0`. The post-fix evidence then recorded `market_data_received=yes`, `received_contracts_count=5`, and `market_data_diagnostic=levelone_futures_updates_received`, closing the subscription-only LEVELONE_FUTURES delivery gap for that bounded run. The current evidence additionally records `chart_data_received=yes`, `chart_received_contracts_count=5`, `chart_completed_five_minute_contracts_count=5`, and `chart_data_diagnostic=chart_futures_completed_five_minute_bars_received` for a bounded 420-second run, closing the CHART_FUTURES completed-bar delivery gap for that bounded run. Production readiness remains withheld because full live-session Marimo cockpit usability, symbol entitlement and rollover proof beyond the exact run, and release hardening remain unproven. A NOT READY verdict is explicitly withheld because every release-blocking item that can be verified deterministically from the repository is verified through fixture-safe tests today.
 
 ## Evidence Classification
 
@@ -40,8 +40,10 @@ R19 distinguishes four evidence tiers. Fixture and harness evidence must never b
 - The newer result still does not prove live market-data delivery: `market_data_received=no`, `received_contracts_count=0`, `values_printed=no`, `repeated_login_on_refresh=no`, and `cleanup_status=ok`.
 - A post-fix sanitized five-contract LEVELONE_FUTURES live market-data result is recorded in `docs/live_proof/five_contract_levelone_live_market_data_result_2026-05-13.md`.
 - The post-fix result proves bounded LEVELONE_FUTURES delivery for the exact reported run: `market_data_received=yes`, `received_contracts_count=5`, `market_data_diagnostic=levelone_futures_updates_received`, `values_printed=no`, `repeated_login_on_refresh=no`, `cleanup_status=ok`, and `duration_seconds=30.0`.
-- Real five-contract CHART_FUTURES delivery remains unproven. R19 does not claim that CHART_FUTURES live market-data proof has passed.
-- Production live readiness remains withheld because LEVELONE_FUTURES delivery alone does not prove CHART_FUTURES delivery, full live-session Marimo usability, symbol entitlement and rollover beyond the exact run, query readiness, or execution readiness.
+- A sanitized five-contract LEVELONE_FUTURES and completed CHART_FUTURES live result is recorded in `docs/live_proof/five_contract_levelone_chart_completed_live_result_2026-05-14.md`.
+- The current result proves bounded completed CHART_FUTURES five-minute-bar delivery for the exact reported 420-second run: `chart_data_received=yes`, `chart_received_contracts_count=5`, `chart_completed_five_minute_contracts_count=5`, `chart_data_diagnostic=chart_futures_completed_five_minute_bars_received`, `chart_blocking_reasons=[]`, `chart_dispatch_parse_error_count=0`, `chart_unsupported_response_count=0`, alongside `market_data_received=yes` and `received_contracts_count=5`, with `requested_duration_seconds=420.0`, `effective_duration_seconds=420.0`, `duration_clamped=no`, `values_printed=no`, `repeated_login_on_refresh=no`, and `cleanup_status=ok`.
+- Real five-contract CHART_FUTURES completed-bar delivery is now recorded for ES, NQ, CL, 6E, and MGC for that bounded run. This audit records the bounded completed-bar result and does not extend it into a full live-session usability or production readiness claim.
+- Production live readiness remains withheld because bounded LEVELONE_FUTURES and completed CHART_FUTURES delivery do not prove full live-session Marimo cockpit usability, symbol entitlement and rollover beyond the exact run, query readiness, execution readiness, or release hardening.
 - The current five-contract proof-capture path is documented in `docs/five_contract_live_proof_capture.md`. It remains a manual capture foundation for future evidence and does not promote fixture output into real live proof.
 
 ### Deferred or absent evidence (out of scope for this release candidate)
@@ -60,15 +62,15 @@ R19 distinguishes four evidence tiers. Fixture and harness evidence must never b
 
 ## Contract Support Audit
 
-For each final target contract, the audit verifies the same fixture-safe foundations. Real live Schwab LEVELONE_FUTURES market-data proof is recorded only for the bounded post-fix operator-run result. CHART_FUTURES proof remains pending across all five contracts.
+For each final target contract, the audit verifies the same fixture-safe foundations. Real live Schwab LEVELONE_FUTURES market-data proof and real live Schwab completed CHART_FUTURES five-minute-bar proof are recorded for the bounded operator-run results. Full live-session cockpit usability proof remains pending across all five contracts.
 
 | Contract | Runtime profile | Premarket / watchman fixture coverage | Live workstation read-model foundation | Trigger-state support | Pipeline gate support | Non-live harness coverage | Release-blocking gap |
 |---|---|---|---|---|---|---|---|
-| ES | `preserved_es_phase1` | Yes | Yes | Yes | Yes | Yes | CHART_FUTURES and live usability proof pending |
-| NQ | `preserved_nq_phase1` | Yes | Yes | Yes | Yes | Yes | CHART_FUTURES and live usability proof pending |
-| CL | `preserved_cl_phase1` | Yes | Yes | Yes | Yes | Yes | CHART_FUTURES and live usability proof pending |
-| 6E | `preserved_6e_phase1` | Yes | Yes | Yes | Yes | Yes | CHART_FUTURES and live usability proof pending |
-| MGC | `preserved_mgc_phase1` | Yes | Yes | Yes | Yes | Yes | CHART_FUTURES and live usability proof pending |
+| ES | `preserved_es_phase1` | Yes | Yes | Yes | Yes | Yes | Full live-session cockpit usability proof pending |
+| NQ | `preserved_nq_phase1` | Yes | Yes | Yes | Yes | Yes | Full live-session cockpit usability proof pending |
+| CL | `preserved_cl_phase1` | Yes | Yes | Yes | Yes | Yes | Full live-session cockpit usability proof pending |
+| 6E | `preserved_6e_phase1` | Yes | Yes | Yes | Yes | Yes | Full live-session cockpit usability proof pending |
+| MGC | `preserved_mgc_phase1` | Yes | Yes | Yes | Yes | Yes | Full live-session cockpit usability proof pending |
 
 `ZN` and `GC` are not final target support. `ZN` is not exposed as a target app runtime profile. `GC` is not present and must not be added.
 
@@ -79,7 +81,7 @@ The following live-data foundations are present and exercised by the non-live ha
 - Persistent Schwab stream manager foundation: present (`market_data/stream_manager.py`).
 - LEVELONE_FUTURES handling: present and exercised through fixture ingestion.
 - CHART_FUTURES bar-builder handling: present for normalized bar records (`market_data/bar_builder.py`, `chart_bars.py`).
-- Direct CHART_FUTURES subscription/parsing through the concrete Schwab streamer session: implemented for the explicit live runtime path and covered by fixture/mocked tests; sanitized real live CHART_FUTURES proof remains unrecorded.
+- Direct CHART_FUTURES subscription/parsing through the concrete Schwab streamer session: implemented for the explicit live runtime path, covered by fixture/mocked tests, and now backed by a sanitized real live completed CHART_FUTURES five-minute-bar result recorded for the bounded operator-run rehearsal.
 - Live observable snapshot v2: present (`live_observables/builder.py`, `schema_v2.py`, `quality.py`).
 - Quote freshness and fail-closed blocking: enforced; stale, missing, and mismatched data fail closed.
 - One-connection discipline by design and test: verified by the R18 fixture rehearsal `one_stream_connection_discipline` check.
@@ -128,22 +130,23 @@ Release blockers and proof gaps are reported using exact language and explicit c
    - The subscription-only explicit operator-run result improved past the env-key blocker and reached live login plus five-contract subscription with `subscribed_contracts_count=5`, but it still recorded `market_data_received=no` and `received_contracts_count=0`.
    - The post-fix explicit operator-run result then recorded `market_data_received=yes`, `received_contracts_count=5`, and `market_data_diagnostic=levelone_futures_updates_received`.
    - Successful live login and successful live subscription remain insufficient without real market data for the final target universe.
-   - R19 now records the bounded LEVELONE_FUTURES result, but it does not claim that CHART_FUTURES proof, full live-session usability, or production live readiness has passed.
-   - The operator live runtime rehearsal can request and route CHART_FUTURES-style bar events in fixture/mocked tests, but no sanitized real live CHART_FUTURES result has been recorded.
+   - The current explicit operator-run result additionally recorded `chart_data_received=yes`, `chart_received_contracts_count=5`, `chart_completed_five_minute_contracts_count=5`, and `chart_data_diagnostic=chart_futures_completed_five_minute_bars_received` for a bounded 420-second run.
+   - This audit now records the bounded LEVELONE_FUTURES and bounded completed CHART_FUTURES results, but it does not claim that full live-session usability or production live readiness has passed.
 
-2. Production live readiness remains blocked by unproven live delivery and usability evidence.
+2. Production live readiness remains blocked by unproven live-session usability and release-hardening evidence.
    - Bounded real LEVELONE_FUTURES market data has been recorded for `ES`, `NQ`, `CL`, `6E`, and `MGC` in the exact reported run only.
-   - Real CHART_FUTURES delivery has not been recorded for `ES`, `NQ`, `CL`, `6E`, and `MGC`.
+   - Bounded real CHART_FUTURES completed five-minute-bar delivery has been recorded for `ES`, `NQ`, `CL`, `6E`, and `MGC` in the exact reported 420-second run only.
    - Symbol entitlement and rollover proof beyond the exact reported run has not been recorded.
-   - Full live-session Marimo usability has not been proven.
+   - Full live-session Marimo cockpit usability has not been proven.
+   - Release hardening — multi-session soak, reconnect under real connection loss, and dedicated live-app launch wiring — has not been proven.
 
 No additional release blockers were identified by deterministic, source-backed inspection of the repository at this checkpoint. Default launch remains non-live. Fixture-safe behavior remains intact. No fixture fallback after live failure remains intact. The 15-second minimum refresh floor remains enforced.
 
 ## Release Candidate Conclusion
 
-The NTB Marimo Console is ready to be treated as a fixture-verified personal release candidate, with bounded operator-run real Schwab LEVELONE_FUTURES delivery recorded for the final target universe. It is not yet ready to be treated as a fully production-proven live-trading platform, and this audit does not claim otherwise.
+The NTB Marimo Console is ready to be treated as a fixture-verified personal release candidate, with bounded operator-run real Schwab LEVELONE_FUTURES delivery and bounded operator-run real Schwab completed CHART_FUTURES five-minute-bar delivery recorded for the final target universe. It is not yet ready to be treated as a fully production-proven live-trading platform, and this audit does not claim otherwise.
 
-If a future operator-run real five-contract Schwab live session proves CHART_FUTURES delivery, symbol entitlement and rollover coverage beyond the exact run, and full live-session Marimo usability, the verdict can be re-evaluated. Until those predicates exist in the repository, this audit deliberately holds the verdict at CONDITIONALLY READY rather than READY.
+If a future operator-run real five-contract Schwab live session proves full live-session Marimo cockpit usability, symbol entitlement and rollover coverage beyond the exact run, and release hardening, the verdict can be re-evaluated. Until those predicates exist in the repository, this audit deliberately holds the verdict at CONDITIONALLY READY rather than READY.
 
 ## Non-Goals For R19
 

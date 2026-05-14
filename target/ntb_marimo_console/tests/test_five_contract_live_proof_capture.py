@@ -212,7 +212,8 @@ def test_release_audit_records_levelone_success_but_remains_conditionally_ready(
     assert "received_contracts_count=5" in audit_text
     assert "market_data_diagnostic=levelone_futures_updates_received" in audit_text
     assert "bounded LEVELONE_FUTURES delivery" in audit_text
-    assert "CHART_FUTURES delivery remains unproven" in audit_text
+    assert "chart_data_diagnostic=chart_futures_completed_five_minute_bars_received" in audit_text
+    assert "Full live-session cockpit usability proof remains pending" in audit_text
     assert "scripts/capture_five_contract_live_proof.py" in audit_text
     assert "Production live readiness remains withheld" in audit_text
     assert "**Verdict: READY**" not in audit_text

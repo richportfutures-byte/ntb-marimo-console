@@ -423,7 +423,7 @@ def assess_rehearsal_readiness(report: RehearsalReport) -> RehearsalReadinessAss
         classification = "live_levelone_and_chart_market_data_delivery_proven"
         blocking_reasons = (
             "full_live_session_marimo_usability_not_proven",
-            "production_readiness_requires_non_levelone_predicates",
+            "production_readiness_requires_live_session_usability_and_hardening_predicates",
             "rehearsal_result_is_review_only_not_query_authority",
         )
     elif levelone_data_proven:
@@ -788,10 +788,10 @@ def build_dry_run_report(
             "uv run python scripts/run_operator_live_runtime_rehearsal.py --live --duration 10"
         ),
         production_readiness_blockers=(
-            "real_CHART_FUTURES_delivery_not_recorded_for_ES_NQ_CL_6E_MGC",
             "symbol_entitlement_and_rollover_proof_beyond_exact_run_not_recorded",
             "full_live_session_marimo_usability_not_proven",
-            "production_release_remains_premature_until_non_levelone_predicates_are_satisfied",
+            "release_hardening_soak_reconnect_and_live_app_launch_not_proven",
+            "production_release_remains_premature_until_live_session_usability_and_hardening_predicates_are_satisfied",
         ),
         limitations=(
             "review_preflight_only_not_subscription_or_login",
