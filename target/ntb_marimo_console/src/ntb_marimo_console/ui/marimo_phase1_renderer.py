@@ -8,6 +8,7 @@ from typing import Any
 try:
     import marimo as mo
 except ModuleNotFoundError:
+
     class _MissingMarimo:
         def __getattr__(self, name: str) -> object:
             raise RuntimeError("marimo is required to render Marimo UI surfaces.")
@@ -111,6 +112,7 @@ def _ntb_css_style_element() -> Any:
 # HTML builder helpers
 # ---------------------------------------------------------------------------
 
+
 def _h(value: object) -> str:
     """HTML-escape a value for safe embedding."""
     return _html_escape(str(value)) if value is not None else ""
@@ -135,11 +137,31 @@ def _ntb_chip(value: str, kind: str = "info") -> str:
 def _ntb_chip_for_status(value: str) -> str:
     """Auto-select chip color based on common status values."""
     v = str(value).lower()
-    if v in ("true", "ready", "pass", "enabled", "available", "fresh",
-             "valid", "healthy", "final_supported", "inactive", "clear"):
+    if v in (
+        "true",
+        "ready",
+        "pass",
+        "enabled",
+        "available",
+        "fresh",
+        "valid",
+        "healthy",
+        "final_supported",
+        "inactive",
+        "clear",
+    ):
         return _ntb_chip(value, "ready")
-    if v in ("false", "blocked", "disabled", "fail", "not_ready",
-             "unavailable", "stale", "error", "not_queried"):
+    if v in (
+        "false",
+        "blocked",
+        "disabled",
+        "fail",
+        "not_ready",
+        "unavailable",
+        "stale",
+        "error",
+        "not_queried",
+    ):
         return _ntb_chip(value, "blocked")
     if v in ("touched", "caution", "degraded", "warn", "warning"):
         return _ntb_chip(value, "caution")
@@ -147,7 +169,11 @@ def _ntb_chip_for_status(value: str) -> str:
 
 
 def _ntb_severity_banner(
-    status: str, title: str, subtitle: str, *, tier: str | None = None,
+    status: str,
+    title: str,
+    subtitle: str,
+    *,
+    tier: str | None = None,
 ) -> str:
     """Render a colored severity banner."""
     if tier is None:
@@ -171,13 +197,19 @@ def _ntb_severity_banner(
     )
 
 
-def _ntb_stat_card(label: str, value: str, *, chip: bool = False, note: str | None = None) -> str:
+def _ntb_stat_card(
+    label: str, value: str, *, chip: bool = False, note: str | None = None
+) -> str:
     """Render a single stat card for use inside a grid."""
     if chip:
         val_html = _ntb_chip_for_status(value)
     else:
         val_html = _h(value)
-    note_html = f'<div class="ntb-muted" style="margin-top:6px">{_h(note)}</div>' if note else ""
+    note_html = (
+        f'<div class="ntb-muted" style="margin-top:6px">{_h(note)}</div>'
+        if note
+        else ""
+    )
     return (
         '<div class="ntb-stat">'
         f'<div class="ntb-stat__label">{_h(label)}</div>'
@@ -257,7 +289,9 @@ def build_phase1_render_plan(shell: Mapping[str, object]) -> dict[str, object]:
     if isinstance(surfaces_raw, Mapping):
         surfaces = dict(surfaces_raw)
     else:
-        warnings.append("Missing or invalid shell.surfaces; rendering fail-closed placeholders.")
+        warnings.append(
+            "Missing or invalid shell.surfaces; rendering fail-closed placeholders."
+        )
 
     rendered_sections: list[dict[str, object]] = []
     for key in FROZEN_SURFACE_KEYS:
@@ -266,7 +300,9 @@ def build_phase1_render_plan(shell: Mapping[str, object]) -> dict[str, object]:
             value = _build_five_contract_readiness_summary_fallback(shell)
         if not isinstance(value, Mapping):
             warnings.append(f"Missing or invalid surface: {key}")
-            rendered_sections.append({"key": key, "panel": {"surface": key, "warning": "unavailable"}})
+            rendered_sections.append(
+                {"key": key, "panel": {"surface": key, "warning": "unavailable"}}
+            )
             continue
         rendered_sections.append({"key": key, "panel": dict(value)})
 
@@ -305,16 +341,24 @@ def render_phase1_console(
         _ntb_css_style_element(),
         _render_console_header(shell, heading=heading, mode_summary=mode_summary),
     ]
-    elements.append(render_premarket_brief_panel(shell, control_panel=premarket_brief_control_panel))
+    elements.append(
+        render_premarket_brief_panel(shell, control_panel=premarket_brief_control_panel)
+    )
 
     stream_health_panel = render_stream_health_panel(shell)
     if stream_health_panel is not None:
         elements.append(stream_health_panel)
 
-    elements.append(render_anchor_inputs_panel(shell, control_panel=anchor_input_control_panel))
-    elements.append(render_operator_notes_panel(shell, control_panel=operator_notes_control_panel))
+    elements.append(
+        render_anchor_inputs_panel(shell, control_panel=anchor_input_control_panel)
+    )
+    elements.append(
+        render_operator_notes_panel(shell, control_panel=operator_notes_control_panel)
+    )
 
-    active_trades_panel = render_active_trades_panel(shell, control_panel=active_trade_control_panel)
+    active_trades_panel = render_active_trades_panel(
+        shell, control_panel=active_trade_control_panel
+    )
     if active_trades_panel is not None:
         elements.append(active_trades_panel)
 
@@ -322,18 +366,36 @@ def render_phase1_console(
     if operator_ready and isinstance(cockpit, Mapping):
         elements.append(render_r14_cockpit_shell(cockpit))
 
+    surfaces_raw = shell.get("surfaces")
+    if isinstance(surfaces_raw, Mapping):
+        fixture_cockpit_surface = surfaces_raw.get("fixture_cockpit_overview")
+        if operator_ready and isinstance(fixture_cockpit_surface, Mapping):
+            elements.append(_render_fixture_cockpit_overview(fixture_cockpit_surface))
+
     if isinstance(startup, Mapping):
         elements.append(_render_startup_status_html(startup))
         if profile_control_panel is not None:
             elements.append(_render_control_card(profile_control_panel))
         elements.append(
-            mo.accordion({"Supported Profile Operations": _render_markdown_card(build_profile_operations_markdown(startup))})
+            mo.accordion(
+                {
+                    "Supported Profile Operations": _render_markdown_card(
+                        build_profile_operations_markdown(startup)
+                    )
+                }
+            )
         )
 
     runtime = shell.get("runtime")
     if isinstance(runtime, Mapping):
         elements.append(
-            mo.accordion({"Runtime Identity": _render_markdown_card(build_runtime_identity_markdown(runtime))})
+            mo.accordion(
+                {
+                    "Runtime Identity": _render_markdown_card(
+                        build_runtime_identity_markdown(runtime)
+                    )
+                }
+            )
         )
 
     lifecycle = shell.get("lifecycle")
@@ -354,30 +416,45 @@ def render_phase1_console(
 
     if operator_ready:
         for warning in plan["warnings"]:
-            elements.append(mo.Html(
-                '<div class="ntb-severity ntb-severity--caution" style="margin:6px 0">'
-                '<span class="ntb-severity__badge" style="background:#facc15">WARNING</span>'
-                f'<div><div class="ntb-severity__title">{_h(warning)}</div></div></div>'
-            ))
+            elements.append(
+                mo.Html(
+                    '<div class="ntb-severity ntb-severity--caution" style="margin:6px 0">'
+                    '<span class="ntb-severity__badge" style="background:#facc15">WARNING</span>'
+                    f'<div><div class="ntb-severity__title">{_h(warning)}</div></div></div>'
+                )
+            )
 
         for section in plan["sections"]:
             key = _as_str(section.get("key"), default="unknown")
             if key == "pre_market_brief":
                 continue
             panel_raw = section.get("panel")
-            panel = panel_raw if isinstance(panel_raw, Mapping) else {"warning": "unavailable"}
-            elements.append(_render_surface_section(key, panel, query_action_control=query_action_control))
-    else:
-        elements.append(mo.Html(
-            _ntb_severity_banner(
-                "BLOCKED", "Operator Surfaces Blocked",
-                "Blocked until startup preflight passes and runtime assembly completes. "
-                "Fix the reported startup diagnostics, then relaunch the console.",
-                tier="blocked",
+            panel = (
+                panel_raw
+                if isinstance(panel_raw, Mapping)
+                else {"warning": "unavailable"}
             )
-        ))
+            elements.append(
+                _render_surface_section(
+                    key, panel, query_action_control=query_action_control
+                )
+            )
+    else:
+        elements.append(
+            mo.Html(
+                _ntb_severity_banner(
+                    "BLOCKED",
+                    "Operator Surfaces Blocked",
+                    "Blocked until startup preflight passes and runtime assembly completes. "
+                    "Fix the reported startup diagnostics, then relaunch the console.",
+                    tier="blocked",
+                )
+            )
+        )
 
-    elements.append(_render_debug_secondary(_as_str(plan["debug"].get("shell_json"), default="{}")))
+    elements.append(
+        _render_debug_secondary(_as_str(plan["debug"].get("shell_json"), default="{}"))
+    )
     return mo.vstack(elements, gap=0.75).style(_CONSOLE_STACK_STYLE)
 
 
@@ -401,12 +478,16 @@ def render_watchman_gate_stop_output(
         _ntb_css_style_element(),
         _render_console_header(shell, heading=heading, mode_summary=mode_summary),
     ]
-    elements.append(render_premarket_brief_panel(shell, control_panel=premarket_brief_control_panel))
+    elements.append(
+        render_premarket_brief_panel(shell, control_panel=premarket_brief_control_panel)
+    )
 
     startup = shell.get("startup")
     if isinstance(startup, Mapping):
         elements.append(_render_markdown_card(build_startup_status_markdown(startup)))
-        elements.append(_render_markdown_card(build_profile_operations_markdown(startup)))
+        elements.append(
+            _render_markdown_card(build_profile_operations_markdown(startup))
+        )
         if profile_control_panel is not None:
             elements.append(_render_control_card(profile_control_panel))
 
@@ -416,22 +497,32 @@ def render_watchman_gate_stop_output(
 
     lifecycle = shell.get("lifecycle")
     if isinstance(lifecycle, Mapping):
-        elements.append(_render_markdown_card(build_session_lifecycle_markdown(lifecycle)))
+        elements.append(
+            _render_markdown_card(build_session_lifecycle_markdown(lifecycle))
+        )
         if lifecycle_control_panel is not None:
             elements.append(_render_control_card(lifecycle_control_panel))
 
     evidence = shell.get("evidence")
     if isinstance(evidence, Mapping):
-        elements.append(_render_markdown_card(build_session_evidence_markdown(evidence)))
+        elements.append(
+            _render_markdown_card(build_session_evidence_markdown(evidence))
+        )
         if evidence_control_panel is not None:
             elements.append(_render_control_card(evidence_control_panel))
 
     workflow = shell.get("workflow")
     if isinstance(workflow, Mapping):
-        elements.append(_render_markdown_card(build_session_workflow_markdown(workflow)))
+        elements.append(
+            _render_markdown_card(build_session_workflow_markdown(workflow))
+        )
 
-    elements.append(render_anchor_inputs_panel(shell, control_panel=anchor_input_control_panel))
-    elements.append(render_operator_notes_panel(shell, control_panel=operator_notes_control_panel))
+    elements.append(
+        render_anchor_inputs_panel(shell, control_panel=anchor_input_control_panel)
+    )
+    elements.append(
+        render_operator_notes_panel(shell, control_panel=operator_notes_control_panel)
+    )
 
     surfaces = shell.get("surfaces")
     if isinstance(surfaces, Mapping):
@@ -440,7 +531,9 @@ def render_watchman_gate_stop_output(
             elements.append(_render_surface_section("session_header", session_header))
         readiness_matrix = surfaces.get("readiness_matrix")
         if isinstance(readiness_matrix, Mapping):
-            elements.append(_render_surface_section("readiness_matrix", readiness_matrix))
+            elements.append(
+                _render_surface_section("readiness_matrix", readiness_matrix)
+            )
 
     gate = shell.get("watchman_gate")
     if isinstance(gate, Mapping):
@@ -448,6 +541,7 @@ def render_watchman_gate_stop_output(
 
     elements.append(_render_debug_secondary(json.dumps(dict(shell), indent=2)))
     return mo.vstack(elements, gap=0.75).style(_CONSOLE_STACK_STYLE)
+
 
 # ---------------------------------------------------------------------------
 # HTML section builders (Phase 2 conversions)
@@ -459,26 +553,58 @@ def _render_startup_status_html(startup: Mapping[str, object]) -> Any:
     readiness = _as_str(startup.get("readiness_state"), default="<unavailable>")
     operator_ready = startup.get("operator_ready") is True
     tier = "ready" if operator_ready else "blocked"
-    title = "Startup preflight passed" if operator_ready else "Startup preflight incomplete"
+    title = (
+        "Startup preflight passed" if operator_ready else "Startup preflight incomplete"
+    )
     subtitle = _as_str(startup.get("status_summary"), default="")
 
     stats = '<div class="ntb-grid-3">'
-    stats += _ntb_stat_card("App Identity", _as_str(startup.get("app_name"), default="NTB Marimo Console"))
-    stats += _ntb_stat_card("Selected Profile", _as_str(startup.get("selected_profile_id"), default="<unresolved>"))
-    stats += _ntb_stat_card("Contract", _as_str(startup.get("contract"), default="<unresolved>"))
-    stats += _ntb_stat_card("Runtime Mode", _as_str(startup.get("runtime_mode_label"), default="<unavailable>"))
-    stats += _ntb_stat_card("Running As", _as_str(startup.get("running_as"), default="<unavailable>"))
-    stats += _ntb_stat_card("Session Date", _as_str(startup.get("session_date"), default="<unresolved>"))
-    stats += _ntb_stat_card("Preflight", _as_str(startup.get("preflight_status"), default="<unavailable>"), chip=True)
+    stats += _ntb_stat_card(
+        "App Identity", _as_str(startup.get("app_name"), default="NTB Marimo Console")
+    )
+    stats += _ntb_stat_card(
+        "Selected Profile",
+        _as_str(startup.get("selected_profile_id"), default="<unresolved>"),
+    )
+    stats += _ntb_stat_card(
+        "Contract", _as_str(startup.get("contract"), default="<unresolved>")
+    )
+    stats += _ntb_stat_card(
+        "Runtime Mode",
+        _as_str(startup.get("runtime_mode_label"), default="<unavailable>"),
+    )
+    stats += _ntb_stat_card(
+        "Running As", _as_str(startup.get("running_as"), default="<unavailable>")
+    )
+    stats += _ntb_stat_card(
+        "Session Date", _as_str(startup.get("session_date"), default="<unresolved>")
+    )
+    stats += _ntb_stat_card(
+        "Preflight",
+        _as_str(startup.get("preflight_status"), default="<unavailable>"),
+        chip=True,
+    )
     stats += _ntb_stat_card("Readiness", readiness, chip=True)
-    stats += _ntb_stat_card("Operator Ready", _as_str(startup.get("operator_ready"), default="False"), chip=True)
-    stats += _ntb_stat_card("Session State", _as_str(startup.get("current_session_state"), default="NOT_ASSEMBLED"), chip=True)
+    stats += _ntb_stat_card(
+        "Operator Ready",
+        _as_str(startup.get("operator_ready"), default="False"),
+        chip=True,
+    )
+    stats += _ntb_stat_card(
+        "Session State",
+        _as_str(startup.get("current_session_state"), default="NOT_ASSEMBLED"),
+        chip=True,
+    )
     stats += "</div>"
 
     readiness_history = startup.get("readiness_history")
     history_text = "<unavailable>"
     if isinstance(readiness_history, list):
-        history_text = " → ".join(_as_str(item) for item in readiness_history) if readiness_history else "<none>"
+        history_text = (
+            " → ".join(_as_str(item) for item in readiness_history)
+            if readiness_history
+            else "<none>"
+        )
 
     detail_html = (
         '<div class="ntb-muted" style="margin-top:10px">'
@@ -511,7 +637,12 @@ def _render_startup_status_html(startup: Mapping[str, object]) -> Any:
     full_html = (
         _ntb_section_divider("Startup Status")
         + '<div class="ntb-card">'
-        + _ntb_severity_banner(_as_str(startup.get("preflight_status"), default="INCOMPLETE"), title, subtitle, tier=tier)
+        + _ntb_severity_banner(
+            _as_str(startup.get("preflight_status"), default="INCOMPLETE"),
+            title,
+            subtitle,
+            tier=tier,
+        )
         + stats
         + detail_html
         + blocking_html
@@ -522,20 +653,48 @@ def _render_startup_status_html(startup: Mapping[str, object]) -> Any:
 
 def _render_session_lifecycle_html(lifecycle: Mapping[str, object]) -> Any:
     """Render Session Lifecycle as an HTML card."""
-    current_state = _as_str(lifecycle.get("current_lifecycle_state"), default="<unavailable>")
-    session_state = _as_str(lifecycle.get("current_session_state"), default="<unavailable>")
+    current_state = _as_str(
+        lifecycle.get("current_lifecycle_state"), default="<unavailable>"
+    )
+    session_state = _as_str(
+        lifecycle.get("current_session_state"), default="<unavailable>"
+    )
     last_action = _as_str(lifecycle.get("last_action"), default="<unavailable>")
 
     stats = '<div class="ntb-grid-3">'
     stats += _ntb_stat_card("Lifecycle State", current_state, chip=True)
     stats += _ntb_stat_card("Session State", session_state, chip=True)
     stats += _ntb_stat_card("Last Action", last_action)
-    stats += _ntb_stat_card("Reload Result", _as_str(lifecycle.get("reload_result"), default="<unavailable>"), chip=True)
-    stats += _ntb_stat_card("Operator Ready", _as_str(lifecycle.get("operator_ready"), default="False"), chip=True)
-    stats += _ntb_stat_card("Query Action", _as_str(lifecycle.get("query_action_status"), default="<unavailable>"), chip=True)
-    stats += _ntb_stat_card("Reset Available", _as_str(lifecycle.get("reset_available"), default="False"), chip=True)
-    stats += _ntb_stat_card("Reload Available", _as_str(lifecycle.get("reload_available"), default="False"), chip=True)
-    stats += _ntb_stat_card("Profile Switch", _as_str(lifecycle.get("profile_switch_available"), default="False"), chip=True)
+    stats += _ntb_stat_card(
+        "Reload Result",
+        _as_str(lifecycle.get("reload_result"), default="<unavailable>"),
+        chip=True,
+    )
+    stats += _ntb_stat_card(
+        "Operator Ready",
+        _as_str(lifecycle.get("operator_ready"), default="False"),
+        chip=True,
+    )
+    stats += _ntb_stat_card(
+        "Query Action",
+        _as_str(lifecycle.get("query_action_status"), default="<unavailable>"),
+        chip=True,
+    )
+    stats += _ntb_stat_card(
+        "Reset Available",
+        _as_str(lifecycle.get("reset_available"), default="False"),
+        chip=True,
+    )
+    stats += _ntb_stat_card(
+        "Reload Available",
+        _as_str(lifecycle.get("reload_available"), default="False"),
+        chip=True,
+    )
+    stats += _ntb_stat_card(
+        "Profile Switch",
+        _as_str(lifecycle.get("profile_switch_available"), default="False"),
+        chip=True,
+    )
     stats += "</div>"
 
     detail_html = (
@@ -570,16 +729,34 @@ def _render_session_workflow_html(workflow: Mapping[str, object]) -> Any:
     stats += _ntb_stat_card("Current State", current, chip=True)
     stats += _ntb_stat_card("Watchman Gate", watchman, chip=True)
     stats += _ntb_stat_card("Live Query", live_query, chip=True)
-    stats += _ntb_stat_card("Query Action", _as_str(workflow.get("query_action_status"), default="<unavailable>"), chip=True)
-    stats += _ntb_stat_card("Query Available", _as_str(workflow.get("query_action_available"), default="False"), chip=True)
-    stats += _ntb_stat_card("Decision Review", _as_str(workflow.get("decision_review_ready"), default="False"), chip=True)
-    stats += _ntb_stat_card("Audit/Replay", _as_str(workflow.get("audit_replay_ready"), default="False"), chip=True)
+    stats += _ntb_stat_card(
+        "Query Action",
+        _as_str(workflow.get("query_action_status"), default="<unavailable>"),
+        chip=True,
+    )
+    stats += _ntb_stat_card(
+        "Query Available",
+        _as_str(workflow.get("query_action_available"), default="False"),
+        chip=True,
+    )
+    stats += _ntb_stat_card(
+        "Decision Review",
+        _as_str(workflow.get("decision_review_ready"), default="False"),
+        chip=True,
+    )
+    stats += _ntb_stat_card(
+        "Audit/Replay",
+        _as_str(workflow.get("audit_replay_ready"), default="False"),
+        chip=True,
+    )
     stats += "</div>"
 
     history = workflow.get("state_history")
     history_text = "<unavailable>"
     if isinstance(history, list):
-        history_text = " → ".join(_as_str(item) for item in history) if history else "<none>"
+        history_text = (
+            " → ".join(_as_str(item) for item in history) if history else "<none>"
+        )
 
     detail_html = (
         '<div class="ntb-muted" style="margin-top:10px">'
@@ -627,22 +804,45 @@ def _render_session_workflow_html(workflow: Mapping[str, object]) -> Any:
 
 def _render_session_evidence_html(evidence: Mapping[str, object]) -> Any:
     """Render Session Evidence as an HTML card."""
-    persistence_health = _as_str(evidence.get("persistence_health_status"), default="<unavailable>")
+    persistence_health = _as_str(
+        evidence.get("persistence_health_status"), default="<unavailable>"
+    )
     tier = "ready" if persistence_health.lower() in ("healthy", "ok") else "caution"
 
     stats = '<div class="ntb-grid-3">'
     stats += _ntb_stat_card("Persistence Health", persistence_health, chip=True)
-    stats += _ntb_stat_card("Current Session Events", _as_str(evidence.get("current_session_record_count"), default="0"))
-    stats += _ntb_stat_card("Restored Prior-Run", _as_str(evidence.get("restored_record_count"), default="0"))
-    stats += _ntb_stat_card("Active Profile", _as_str(evidence.get("active_profile_id"), default="<unavailable>"))
-    stats += _ntb_stat_card("Restore Status", _as_str(evidence.get("restore_status"), default="<unavailable>"), chip=True)
-    stats += _ntb_stat_card("Last Persistence", _as_str(evidence.get("last_persistence_status"), default="<unavailable>"), chip=True)
+    stats += _ntb_stat_card(
+        "Current Session Events",
+        _as_str(evidence.get("current_session_record_count"), default="0"),
+    )
+    stats += _ntb_stat_card(
+        "Restored Prior-Run",
+        _as_str(evidence.get("restored_record_count"), default="0"),
+    )
+    stats += _ntb_stat_card(
+        "Active Profile",
+        _as_str(evidence.get("active_profile_id"), default="<unavailable>"),
+    )
+    stats += _ntb_stat_card(
+        "Restore Status",
+        _as_str(evidence.get("restore_status"), default="<unavailable>"),
+        chip=True,
+    )
+    stats += _ntb_stat_card(
+        "Last Persistence",
+        _as_str(evidence.get("last_persistence_status"), default="<unavailable>"),
+        chip=True,
+    )
     stats += "</div>"
 
     recent_profiles = evidence.get("recent_profiles")
     recent_profiles_text = "<none>"
     if isinstance(recent_profiles, list):
-        recent_profiles_text = ", ".join(_as_str(item) for item in recent_profiles) if recent_profiles else "<none>"
+        recent_profiles_text = (
+            ", ".join(_as_str(item) for item in recent_profiles)
+            if recent_profiles
+            else "<none>"
+        )
 
     detail_html = (
         '<div class="ntb-muted" style="margin-top:10px">'
@@ -663,15 +863,20 @@ def _render_session_evidence_html(evidence: Mapping[str, object]) -> Any:
                 continue
             profile = _h(_as_str(outcome.get("profile_id")))
             if outcome.get("has_recent_evidence") is not True:
-                summary = _h(_as_str(outcome.get("status_summary"), default=NO_RECENT_SESSION_EVIDENCE))
+                summary = _h(
+                    _as_str(
+                        outcome.get("status_summary"),
+                        default=NO_RECENT_SESSION_EVIDENCE,
+                    )
+                )
                 rows += f'<tr><td>{profile}</td><td colspan="3">{summary}</td></tr>'
             else:
                 rows += (
-                    f'<tr><td>{profile}</td>'
-                    f'<td>#{_h(_as_str(outcome.get("event_index")))}</td>'
-                    f'<td>{_h(_as_str(outcome.get("source_label"), default=outcome.get("source_scope")))}</td>'
-                    f'<td>{_ntb_chip_for_status(_as_str(outcome.get("last_action"), default="<unavailable>"))}</td>'
-                    f'</tr>'
+                    f"<tr><td>{profile}</td>"
+                    f"<td>#{_h(_as_str(outcome.get('event_index')))}</td>"
+                    f"<td>{_h(_as_str(outcome.get('source_label'), default=outcome.get('source_scope')))}</td>"
+                    f"<td>{_ntb_chip_for_status(_as_str(outcome.get('last_action'), default='<unavailable>'))}</td>"
+                    f"</tr>"
                 )
         if rows:
             outcomes_html = (
@@ -679,10 +884,8 @@ def _render_session_evidence_html(evidence: Mapping[str, object]) -> Any:
                 '<div class="ntb-stat__label" style="margin-bottom:6px">Last Known Outcome By Profile</div>'
                 '<div style="overflow-x:auto">'
                 '<table class="ntb-table"><thead><tr>'
-                '<th>Profile</th><th>Event</th><th>Source</th><th>Action</th>'
-                '</tr></thead><tbody>'
-                + rows
-                + '</tbody></table></div></div>'
+                "<th>Profile</th><th>Event</th><th>Source</th><th>Action</th>"
+                "</tr></thead><tbody>" + rows + "</tbody></table></div></div>"
             )
 
     # Recent activity
@@ -710,7 +913,12 @@ def _render_session_evidence_html(evidence: Mapping[str, object]) -> Any:
     full_html = (
         _ntb_section_divider("Recent Session Evidence")
         + '<div class="ntb-card">'
-        + _ntb_severity_banner(persistence_health, "Evidence Persistence", _as_str(evidence.get("restore_status_summary"), default=""), tier=tier)
+        + _ntb_severity_banner(
+            persistence_health,
+            "Evidence Persistence",
+            _as_str(evidence.get("restore_status_summary"), default=""),
+            tier=tier,
+        )
         + stats
         + detail_html
         + outcomes_html
@@ -725,7 +933,11 @@ def build_startup_status_markdown(startup: Mapping[str, object]) -> str:
     readiness_history = startup.get("readiness_history")
     readiness_path = "<unavailable>"
     if isinstance(readiness_history, list):
-        readiness_path = " -> ".join(_as_str(item) for item in readiness_history) if readiness_history else "<none>"
+        readiness_path = (
+            " -> ".join(_as_str(item) for item in readiness_history)
+            if readiness_history
+            else "<none>"
+        )
 
     lines = [
         "## Startup Status",
@@ -758,8 +970,7 @@ def build_startup_status_markdown(startup: Mapping[str, object]) -> str:
                 + _as_str(check.get("summary"), default="<unavailable>")
             )
             lines.append(
-                "    Remedy: "
-                + _as_str(check.get("remedy"), default="<unavailable>")
+                "    Remedy: " + _as_str(check.get("remedy"), default="<unavailable>")
             )
 
     return "\n".join(lines)
@@ -792,12 +1003,20 @@ def build_runtime_identity_markdown(runtime: Mapping[str, object]) -> str:
     state_history = runtime.get("state_history")
     history_text = "<unavailable>"
     if isinstance(state_history, list):
-        history_text = " -> ".join(_as_str(item) for item in state_history) if state_history else "<none>"
+        history_text = (
+            " -> ".join(_as_str(item) for item in state_history)
+            if state_history
+            else "<none>"
+        )
 
     startup_history = runtime.get("startup_state_history")
     startup_text = "<unavailable>"
     if isinstance(startup_history, list):
-        startup_text = " -> ".join(_as_str(item) for item in startup_history) if startup_history else "<none>"
+        startup_text = (
+            " -> ".join(_as_str(item) for item in startup_history)
+            if startup_history
+            else "<none>"
+        )
 
     preflight_status = _as_str(runtime.get("preflight_status"), default="<unavailable>")
     return "\n".join(
@@ -833,7 +1052,9 @@ def build_session_workflow_markdown(workflow: Mapping[str, object]) -> str:
     history = workflow.get("state_history")
     history_text = "<unavailable>"
     if isinstance(history, list):
-        history_text = " -> ".join(_as_str(item) for item in history) if history else "<none>"
+        history_text = (
+            " -> ".join(_as_str(item) for item in history) if history else "<none>"
+        )
 
     lines = [
         "## Session Workflow",
@@ -866,7 +1087,9 @@ def build_session_lifecycle_markdown(lifecycle: Mapping[str, object]) -> str:
     history = lifecycle.get("state_history")
     history_text = "<unavailable>"
     if isinstance(history, list):
-        history_text = " -> ".join(_as_str(item) for item in history) if history else "<none>"
+        history_text = (
+            " -> ".join(_as_str(item) for item in history) if history else "<none>"
+        )
 
     reload_changed_sources = lifecycle.get("reload_changed_sources")
     reload_source_text = "<not_checked>"
@@ -909,7 +1132,11 @@ def build_session_evidence_markdown(evidence: Mapping[str, object]) -> str:
     recent_profiles = evidence.get("recent_profiles")
     recent_profiles_text = "<none>"
     if isinstance(recent_profiles, list):
-        recent_profiles_text = ", ".join(_as_str(item) for item in recent_profiles) if recent_profiles else "<none>"
+        recent_profiles_text = (
+            ", ".join(_as_str(item) for item in recent_profiles)
+            if recent_profiles
+            else "<none>"
+        )
 
     lines = [
         "## Recent Session Evidence",
@@ -939,7 +1166,10 @@ def build_session_evidence_markdown(evidence: Mapping[str, object]) -> str:
                 lines.append(
                     "  - "
                     + f"{_as_str(outcome.get('profile_id'))}: "
-                    + _as_str(outcome.get("status_summary"), default=NO_RECENT_SESSION_EVIDENCE)
+                    + _as_str(
+                        outcome.get("status_summary"),
+                        default=NO_RECENT_SESSION_EVIDENCE,
+                    )
                 )
                 continue
 
@@ -990,7 +1220,9 @@ def build_session_evidence_markdown(evidence: Mapping[str, object]) -> str:
 def render_stream_health_panel(shell: Mapping[str, object]) -> Any | None:
     runtime = shell.get("runtime")
     runtime_map = runtime if isinstance(runtime, Mapping) else {}
-    mode = _as_str(runtime_map.get("operator_live_runtime_mode"), default="SAFE_NON_LIVE")
+    mode = _as_str(
+        runtime_map.get("operator_live_runtime_mode"), default="SAFE_NON_LIVE"
+    )
     if mode != "OPERATOR_LIVE_RUNTIME":
         return None
     health = shell.get("stream_health")
@@ -1003,7 +1235,9 @@ def render_stream_health_panel(shell: Mapping[str, object]) -> Any | None:
             "reconnect_active": False,
             "per_contract_status": {},
             "stale_contracts": [],
-            "blocking_reasons": runtime_map.get("operator_live_runtime_blocking_reasons", []),
+            "blocking_reasons": runtime_map.get(
+                "operator_live_runtime_blocking_reasons", []
+            ),
             "overall_health": "unavailable",
         }
     return _render_markdown_card(build_stream_health_markdown(health))
@@ -1016,7 +1250,9 @@ def render_active_trades_panel(
 ) -> Any | None:
     runtime = shell.get("runtime")
     runtime_map = runtime if isinstance(runtime, Mapping) else {}
-    mode = _as_str(runtime_map.get("operator_live_runtime_mode"), default="SAFE_NON_LIVE")
+    mode = _as_str(
+        runtime_map.get("operator_live_runtime_mode"), default="SAFE_NON_LIVE"
+    )
     if mode != "OPERATOR_LIVE_RUNTIME":
         return None
 
@@ -1087,7 +1323,9 @@ def render_premarket_brief_panel(
 ) -> Any:
     content: list[Any] = []
     surfaces = shell.get("surfaces")
-    premarket_panel = surfaces.get("pre_market_brief") if isinstance(surfaces, Mapping) else None
+    premarket_panel = (
+        surfaces.get("pre_market_brief") if isinstance(surfaces, Mapping) else None
+    )
     panel = premarket_panel if isinstance(premarket_panel, Mapping) else {}
     content.append(mo.md(build_premarket_brief_markdown(panel)))
     if control_panel is not None:
@@ -1098,7 +1336,9 @@ def render_premarket_brief_panel(
 def render_audit_timeline_panel(shell: Mapping[str, object]) -> Any:
     surfaces = shell.get("surfaces")
     panel: Mapping[str, object] = {}
-    audit_panel = surfaces.get("audit_replay") if isinstance(surfaces, Mapping) else None
+    audit_panel = (
+        surfaces.get("audit_replay") if isinstance(surfaces, Mapping) else None
+    )
     if isinstance(audit_panel, Mapping):
         panel = audit_panel
     return _render_surface_card(_render_audit_timeline_content(panel))
@@ -1154,7 +1394,9 @@ def build_premarket_brief_markdown(panel: Mapping[str, object]) -> str:
     ]
 
     if isinstance(enrichment, Mapping):
-        lines.append(f"- Enrichment Generated At: `{_as_str(enrichment.get('generated_at'), default='<unknown>')}`")
+        lines.append(
+            f"- Enrichment Generated At: `{_as_str(enrichment.get('generated_at'), default='<unknown>')}`"
+        )
         lines.append("")
         sections = enrichment.get("sections")
         if isinstance(sections, list) and sections:
@@ -1231,8 +1473,12 @@ def build_audit_timeline_markdown(panel: Mapping[str, object]) -> str:
         if isinstance(event_types, list | tuple) and event_types:
             event_filters = ", ".join(f"`{_table_value(item)}`" for item in event_types)
         if isinstance(contracts, list | tuple) and contracts:
-            contract_filters = ", ".join(f"`{_table_value(item)}`" for item in contracts)
-        selected_event_types = _selected_filter_values(filters.get("selected_event_types"))
+            contract_filters = ", ".join(
+                f"`{_table_value(item)}`" for item in contracts
+            )
+        selected_event_types = _selected_filter_values(
+            filters.get("selected_event_types")
+        )
         selected_contracts = _selected_filter_values(filters.get("selected_contracts"))
 
     lines = [
@@ -1276,7 +1522,11 @@ def build_audit_timeline_markdown(panel: Mapping[str, object]) -> str:
 def _selected_filter_values(value: object) -> tuple[str, ...]:
     if not isinstance(value, list | tuple):
         return ()
-    return tuple(_as_str(item, default="").strip() for item in value if _as_str(item, default="").strip())
+    return tuple(
+        _as_str(item, default="").strip()
+        for item in value
+        if _as_str(item, default="").strip()
+    )
 
 
 def _filter_value_text(values: tuple[str, ...]) -> str:
@@ -1291,7 +1541,10 @@ def _timeline_row_matches_filters(
     selected_event_types: tuple[str, ...],
     selected_contracts: tuple[str, ...],
 ) -> bool:
-    if selected_event_types and _as_str(row.get("event_type"), default="") not in selected_event_types:
+    if (
+        selected_event_types
+        and _as_str(row.get("event_type"), default="") not in selected_event_types
+    ):
         return False
     contract = _as_str(row.get("contract") or "session", default="session")
     if selected_contracts and contract not in selected_contracts:
@@ -1410,7 +1663,10 @@ def build_stream_health_markdown(health: Mapping[str, object]) -> str:
     stale_contracts = health.get("stale_contracts")
     if isinstance(stale_contracts, list | tuple) and stale_contracts:
         lines.append("")
-        lines.append("- Stale Contracts: " + ", ".join(f"`{_as_str(contract)}`" for contract in stale_contracts))
+        lines.append(
+            "- Stale Contracts: "
+            + ", ".join(f"`{_as_str(contract)}`" for contract in stale_contracts)
+        )
 
     blocking_reasons = health.get("blocking_reasons")
     if isinstance(blocking_reasons, list | tuple) and blocking_reasons:
@@ -1483,9 +1739,15 @@ def render_r14_cockpit_shell(cockpit: Mapping[str, object]) -> Any:
             _render_r14_cockpit_header_html(cockpit),
             mo.hstack(
                 [
-                    _render_markdown_card(build_r14_cockpit_premarket_markdown(cockpit)),
-                    _render_markdown_card(build_r14_cockpit_live_thesis_markdown(cockpit)),
-                    _render_markdown_card(build_r14_cockpit_pipeline_gate_markdown(cockpit)),
+                    _render_markdown_card(
+                        build_r14_cockpit_premarket_markdown(cockpit)
+                    ),
+                    _render_markdown_card(
+                        build_r14_cockpit_live_thesis_markdown(cockpit)
+                    ),
+                    _render_markdown_card(
+                        build_r14_cockpit_pipeline_gate_markdown(cockpit)
+                    ),
                 ],
                 gap=0.75,
             ),
@@ -1503,24 +1765,70 @@ def _render_r14_cockpit_header_html(cockpit: Mapping[str, object]) -> Any:
 
     gate_status = _as_str(query.get("pipeline_gate_state"), default="DISABLED")
     gate_tier = "ready" if gate_status == "ENABLED" else "blocked"
-    gate_title = "Pipeline gate is open" if gate_status == "ENABLED" else "Pipeline gate is disabled"
+    gate_title = (
+        "Pipeline gate is open"
+        if gate_status == "ENABLED"
+        else "Pipeline gate is disabled"
+    )
     gate_subtitle = _as_str(query.get("gate_statement"), default="")
 
     # Stat grid cards
     stats_html = '<div class="ntb-grid-3">'
-    stats_html += _ntb_stat_card("Profile", _as_str(identity.get("current_profile"), default="<unavailable>"))
-    stats_html += _ntb_stat_card("Contract", _as_str(identity.get("contract"), default="<unavailable>"))
-    stats_html += _ntb_stat_card("Support", _as_str(identity.get("contract_support_status"), default="<unavailable>"), chip=True)
-    stats_html += _ntb_stat_card("Runtime", _as_str(identity.get("runtime_profile_status"), default="<unavailable>"), chip=True)
-    stats_html += _ntb_stat_card("Provider", _as_str(runtime.get("provider_status"), default="<unavailable>"), chip=True)
-    stats_html += _ntb_stat_card("Stream", _as_str(runtime.get("stream_status"), default="<unavailable>"), chip=True)
-    stats_html += _ntb_stat_card("Quote", _as_str(runtime.get("quote_freshness"), default="<unavailable>"), chip=True)
-    stats_html += _ntb_stat_card("Chart", _as_str(runtime.get("bar_freshness"), default="<unavailable>"), chip=True)
-    stats_html += _ntb_stat_card("Session", _as_str(runtime.get("session_clock_state"), default="<unavailable>"), chip=True)
-    stats_html += _ntb_stat_card("Event", _as_str(runtime.get("event_lockout_state"), default="<unavailable>"), chip=True)
+    stats_html += _ntb_stat_card(
+        "Profile", _as_str(identity.get("current_profile"), default="<unavailable>")
+    )
+    stats_html += _ntb_stat_card(
+        "Contract", _as_str(identity.get("contract"), default="<unavailable>")
+    )
+    stats_html += _ntb_stat_card(
+        "Support",
+        _as_str(identity.get("contract_support_status"), default="<unavailable>"),
+        chip=True,
+    )
+    stats_html += _ntb_stat_card(
+        "Runtime",
+        _as_str(identity.get("runtime_profile_status"), default="<unavailable>"),
+        chip=True,
+    )
+    stats_html += _ntb_stat_card(
+        "Provider",
+        _as_str(runtime.get("provider_status"), default="<unavailable>"),
+        chip=True,
+    )
+    stats_html += _ntb_stat_card(
+        "Stream",
+        _as_str(runtime.get("stream_status"), default="<unavailable>"),
+        chip=True,
+    )
+    stats_html += _ntb_stat_card(
+        "Quote",
+        _as_str(runtime.get("quote_freshness"), default="<unavailable>"),
+        chip=True,
+    )
+    stats_html += _ntb_stat_card(
+        "Chart",
+        _as_str(runtime.get("bar_freshness"), default="<unavailable>"),
+        chip=True,
+    )
+    stats_html += _ntb_stat_card(
+        "Session",
+        _as_str(runtime.get("session_clock_state"), default="<unavailable>"),
+        chip=True,
+    )
+    stats_html += _ntb_stat_card(
+        "Event",
+        _as_str(runtime.get("event_lockout_state"), default="<unavailable>"),
+        chip=True,
+    )
     stats_html += _ntb_stat_card("Gate", gate_status, chip=True)
-    stats_html += _ntb_stat_card("Manual Query", _as_str(query.get("manual_query_allowed"), default="False"), chip=True)
-    stats_html += _ntb_stat_card("Evaluated At", _as_str(runtime.get("evaluated_at"), default="<unavailable>"))
+    stats_html += _ntb_stat_card(
+        "Manual Query",
+        _as_str(query.get("manual_query_allowed"), default="False"),
+        chip=True,
+    )
+    stats_html += _ntb_stat_card(
+        "Evaluated At", _as_str(runtime.get("evaluated_at"), default="<unavailable>")
+    )
     stats_html += "</div>"
 
     # Query reason
@@ -1545,7 +1853,9 @@ def _render_r14_cockpit_header_html(cockpit: Mapping[str, object]) -> Any:
                 summary = _as_str(state.get("summary"), default="")
                 reason = _as_str(state.get("reason"), default="")
                 source = _as_str(state.get("source"), default="")
-                items.append(f"{_h(cat)} / {_h(st)}: {_h(summary)} Reason: {_h(reason)}. Source: {_h(source)}.")
+                items.append(
+                    f"{_h(cat)} / {_h(st)}: {_h(summary)} Reason: {_h(reason)}. Source: {_h(source)}."
+                )
         states_html = (
             '<div class="ntb-callout" style="margin-top:10px">'
             '<div class="ntb-stat__label" style="color:#818cf8">Operator State Reasons</div>'
@@ -1611,19 +1921,27 @@ def build_r14_cockpit_premarket_markdown(cockpit: Mapping[str, object]) -> str:
             f"- Brief Status: `{_as_str(premarket.get('premarket_brief_status'), default='<unavailable>')}`",
             f"- Active Setup Count: `{_as_str(premarket.get('active_setup_count'), default=0)}`",
             "- Structural Setups:",
-            _mapping_item_lines(premarket.get("setup_summaries"), ("setup_id", "summary")),
+            _mapping_item_lines(
+                premarket.get("setup_summaries"), ("setup_id", "summary")
+            ),
             "- Global Guidance:",
             _plain_item_lines(premarket.get("global_guidance")),
             "- Warnings:",
             _plain_item_lines(premarket.get("warnings")),
             "- Invalidators:",
-            _mapping_item_lines(premarket.get("invalidators"), ("invalidator_id", "condition", "action")),
+            _mapping_item_lines(
+                premarket.get("invalidators"), ("invalidator_id", "condition", "action")
+            ),
             "- Trigger Definitions:",
-            _mapping_item_lines(premarket.get("trigger_definitions"), ("trigger_id", "summary")),
+            _mapping_item_lines(
+                premarket.get("trigger_definitions"), ("trigger_id", "summary")
+            ),
             "- Fields Used:",
             _plain_item_lines(premarket.get("required_fields")),
             "- Missing / Unavailable Fields:",
-            _mixed_item_lines(premarket.get("missing_fields"), premarket.get("unavailable_fields")),
+            _mixed_item_lines(
+                premarket.get("missing_fields"), premarket.get("unavailable_fields")
+            ),
             "- Plan Blocking Reasons:",
             _plain_item_lines(premarket.get("blocking_reasons")),
         ]
@@ -1650,7 +1968,9 @@ def build_r14_cockpit_live_thesis_markdown(cockpit: Mapping[str, object]) -> str
                 f"- Distance To Trigger Ticks: `{_as_str(trigger.get('distance_to_trigger_ticks'), default='<unavailable>')}`",
                 f"- QUERY_READY Provenance: `{_as_str(trigger.get('query_ready_provenance'), default='<unavailable>')}`",
                 "- Current Live / Fixture Values:",
-                _mapping_item_lines(trigger.get("current_values"), ("field", "value", "status")),
+                _mapping_item_lines(
+                    trigger.get("current_values"), ("field", "value", "status")
+                ),
                 "- Required Fields:",
                 _plain_item_lines(trigger.get("required_fields")),
                 "- Missing Fields:",
@@ -1679,7 +1999,9 @@ def build_r14_cockpit_pipeline_gate_markdown(cockpit: Mapping[str, object]) -> s
             "- Enabled Reasons:",
             _plain_item_lines(query.get("enabled_reasons")),
             "- Disabled / Blocking Reasons:",
-            _plain_item_lines(query.get("blocking_reasons") or query.get("disabled_reasons")),
+            _plain_item_lines(
+                query.get("blocking_reasons") or query.get("disabled_reasons")
+            ),
             "- Missing Conditions:",
             _plain_item_lines(query.get("missing_conditions")),
             "- Operator State Reasons:",
@@ -1724,7 +2046,11 @@ def _render_surface_section(
     if key == "session_header":
         contract = _as_str(panel.get("contract"))
         session_date = _as_str(panel.get("session_date"))
-        return _render_surface_card(mo.md(f"## Session Header\n- Contract: `{contract}`\n- Session Date: `{session_date}`"))
+        return _render_surface_card(
+            mo.md(
+                f"## Session Header\n- Contract: `{contract}`\n- Session Date: `{session_date}`"
+            )
+        )
 
     if key == "pre_market_brief":
         return _render_surface_card(mo.md(build_premarket_brief_markdown(panel)))
@@ -1741,7 +2067,12 @@ def _render_surface_section(
                         + f"event_risk={_as_str(row.get('event_risk'))}, "
                         + f"hard_lockouts={_safe_json(row.get('hard_lockouts'))}"
                     )
-        return _render_surface_card(mo.md("## Readiness Matrix\n" + ("\n".join(row_lines) if row_lines else "- unavailable")))
+        return _render_surface_card(
+            mo.md(
+                "## Readiness Matrix\n"
+                + ("\n".join(row_lines) if row_lines else "- unavailable")
+            )
+        )
 
     if key == "five_contract_readiness_summary":
         rows = panel.get("rows")
@@ -1785,10 +2116,15 @@ def _render_surface_section(
                 )
                 blocked = row.get("primary_blocked_reasons")
                 if isinstance(blocked, list) and blocked:
-                    lines.append("    Blocked: " + ", ".join(_as_str(item) for item in blocked))
+                    lines.append(
+                        "    Blocked: " + ", ".join(_as_str(item) for item in blocked)
+                    )
                 query_not_ready = row.get("query_not_ready_reasons")
                 if isinstance(query_not_ready, list) and query_not_ready:
-                    lines.append("    Query Not Ready: " + ", ".join(_as_str(item) for item in query_not_ready))
+                    lines.append(
+                        "    Query Not Ready: "
+                        + ", ".join(_as_str(item) for item in query_not_ready)
+                    )
         else:
             lines.append("  - <unavailable>")
         return _render_surface_card(mo.md("\n".join(lines)))
@@ -1824,7 +2160,12 @@ def _render_surface_section(
                         + f"true={_as_str(row.get('is_true'))}, "
                         + f"missing={_safe_json(row.get('missing_fields'))}"
                     )
-        return _render_surface_card(mo.md("## Trigger Table\n" + ("\n".join(row_lines) if row_lines else "- unavailable")))
+        return _render_surface_card(
+            mo.md(
+                "## Trigger Table\n"
+                + ("\n".join(row_lines) if row_lines else "- unavailable")
+            )
+        )
 
     if key == "query_action":
         lines = [
@@ -1873,13 +2214,28 @@ def _render_surface_section(
                 f"- Stage C: `{_as_str(panel.get('stage_c_outcome'))}`",
                 f"- Stage D: `{_as_str(panel.get('stage_d_decision'))}`",
             ]
-            lines.extend(_render_decision_review_engine_reasoning(panel.get("engine_reasoning")))
-            lines.extend(_render_decision_review_trade_thesis(panel.get("trade_thesis")))
-            lines.extend(_render_decision_review_risk_authorization(panel.get("risk_authorization_detail")))
-            lines.extend(_render_decision_review_invalidation(panel.get("invalidation")))
-            lines.extend(_render_decision_review_replay(panel.get("narrative_audit_replay")))
+            lines.extend(
+                _render_decision_review_engine_reasoning(panel.get("engine_reasoning"))
+            )
+            lines.extend(
+                _render_decision_review_trade_thesis(panel.get("trade_thesis"))
+            )
+            lines.extend(
+                _render_decision_review_risk_authorization(
+                    panel.get("risk_authorization_detail")
+                )
+            )
+            lines.extend(
+                _render_decision_review_invalidation(panel.get("invalidation"))
+            )
+            lines.extend(
+                _render_decision_review_replay(panel.get("narrative_audit_replay"))
+            )
             unavailable_message = panel.get("narrative_unavailable_message")
-            if isinstance(unavailable_message, str) and panel.get("narrative_available") is not True:
+            if (
+                isinstance(unavailable_message, str)
+                and panel.get("narrative_available") is not True
+            ):
                 lines.append("")
                 lines.append(f"_{unavailable_message}_")
             return _render_surface_card(mo.md("\n".join(lines)))
@@ -1892,7 +2248,9 @@ def _render_surface_section(
                         f"- Status: `{_as_str(panel.get('status'), default='NOT_READY')}`",
                         f"- Message: {_as_str(panel.get('message'), default='Decision Review is not ready yet.')}",
                     ]
-                    + _render_decision_review_replay(panel.get("narrative_audit_replay"))
+                    + _render_decision_review_replay(
+                        panel.get("narrative_audit_replay")
+                    )
                 )
             )
         )
@@ -1929,7 +2287,11 @@ def _render_surface_section(
                     row_parts.append(f"{field}={_inline_value(value)}")
                     if len(row_parts) >= 4:
                         break
-            lines.append(f"  - [{index}] " + "; ".join(row_parts) if row_parts else f"  - [{index}] <unavailable>")
+            lines.append(
+                f"  - [{index}] " + "; ".join(row_parts)
+                if row_parts
+                else f"  - [{index}] <unavailable>"
+            )
             rendered_rows += 1
 
         if rendered_rows == 0:
@@ -1956,7 +2318,9 @@ def _render_surface_section(
             )
         else:
             lines.append("- Trace Summary: `<unavailable>`")
-        lines.extend(_render_decision_review_replay(panel.get("narrative_audit_replay")))
+        lines.extend(
+            _render_decision_review_replay(panel.get("narrative_audit_replay"))
+        )
         return _render_surface_card(
             mo.vstack(
                 [
@@ -1970,21 +2334,76 @@ def _render_surface_section(
     return _render_surface_card(mo.md(f"## {key}\n- unavailable"))
 
 
-def _render_console_header(shell: Mapping[str, object], *, heading: str, mode_summary: str) -> Any:
+def _render_fixture_cockpit_overview(surface: Mapping[str, object]) -> Any:
+    """Render the fixture cockpit overview surface as a Marimo markdown card.
+
+    Shows mode metadata and per-contract gate/query state without exposing
+    any raw market values (no bid/ask/last/OHLC numbers).
+    """
+    mode = _as_str(surface.get("mode"), default="<unavailable>")
+    live_creds = _as_str(surface.get("live_credentials_required"), default="False")
+    default_live = _as_str(surface.get("default_launch_live"), default="False")
+    authority = _as_str(surface.get("decision_authority"), default="<unavailable>")
+    lines: list[str] = [
+        "## Fixture Cockpit Overview",
+        f"- Mode: `{mode}`",
+        f"- Live Credentials Required: `{live_creds}`",
+        f"- Default Launch Live: `{default_live}`",
+        f"- Decision Authority: `{authority}`",
+        "- Contract States:",
+    ]
+    rows = surface.get("rows")
+    if isinstance(rows, list):
+        for row in rows:
+            if not isinstance(row, Mapping):
+                continue
+            contract = _as_str(row.get("contract"))
+            label = _as_str(row.get("profile_label"))
+            quote = _as_str(row.get("quote_status"))
+            chart = _as_str(row.get("chart_status"))
+            gate = _as_str(row.get("query_gate_state"))
+            enabled = _as_str(row.get("query_enabled"))
+            reason = _as_str(row.get("query_reason"))
+            lines.append(
+                f"  - **{contract}** ({label}): "
+                f"quote=`{quote}`, chart=`{chart}`, "
+                f"gate=`{gate}`, query={enabled}, reason=`{reason}`"
+            )
+    else:
+        lines.append("  - <unavailable>")
+    error = surface.get("error")
+    if error is not None:
+        lines.append(f"\n_Build error: {_as_str(error)}_")
+    return _render_surface_card(mo.md("\n".join(lines)))
+
+
+def _render_console_header(
+    shell: Mapping[str, object], *, heading: str, mode_summary: str
+) -> Any:
     startup = shell.get("startup")
     runtime = shell.get("runtime")
     startup_map = startup if isinstance(startup, Mapping) else {}
     runtime_map = runtime if isinstance(runtime, Mapping) else {}
 
     mode = _first_value(startup_map, runtime_map, "runtime_mode_label", "runtime_mode")
-    profile_id = _first_value(startup_map, runtime_map, "selected_profile_id", "profile_id")
+    profile_id = _first_value(
+        startup_map, runtime_map, "selected_profile_id", "profile_id"
+    )
     contract = _first_value(startup_map, runtime_map, "contract")
-    readiness = _first_value(startup_map, runtime_map, "readiness_state", "startup_readiness_state")
-    session_state = _first_value(startup_map, runtime_map, "current_session_state", "session_state")
+    readiness = _first_value(
+        startup_map, runtime_map, "readiness_state", "startup_readiness_state"
+    )
+    session_state = _first_value(
+        startup_map, runtime_map, "current_session_state", "session_state"
+    )
     running_as = _first_value(startup_map, runtime_map, "running_as", "runtime_backend")
 
     readiness_color = "#22c55e" if readiness == "OPERATOR_SURFACES_READY" else "#facc15"
-    session_color = "#22c55e" if "READY" in session_state else ("#facc15" if "BLOCKED" in session_state else "#94a3b8")
+    session_color = (
+        "#22c55e"
+        if "READY" in session_state
+        else ("#facc15" if "BLOCKED" in session_state else "#94a3b8")
+    )
 
     pills_html = (
         '<div class="ntb-header__pills">'
@@ -2002,11 +2421,7 @@ def _render_console_header(shell: Mapping[str, object], *, heading: str, mode_su
         f'<div class="ntb-header__title">{_h(heading)}</div>'
         f'<div class="ntb-header__subtitle">'
         f"Running as {_h(running_as)} &middot; {_h(mode)}"
-        "</div></div>"
-        + pills_html
-        + "</div>"
-        + _ntb_ribbon(mode_summary)
-        + "</div>"
+        "</div></div>" + pills_html + "</div>" + _ntb_ribbon(mode_summary) + "</div>"
     )
     return mo.Html(header_html)
 
@@ -2018,10 +2433,16 @@ def _build_context_summary_markdown(shell: Mapping[str, object]) -> str:
     runtime_map = runtime if isinstance(runtime, Mapping) else {}
 
     mode = _first_value(startup_map, runtime_map, "runtime_mode_label", "runtime_mode")
-    profile_id = _first_value(startup_map, runtime_map, "selected_profile_id", "profile_id")
+    profile_id = _first_value(
+        startup_map, runtime_map, "selected_profile_id", "profile_id"
+    )
     contract = _first_value(startup_map, runtime_map, "contract")
-    readiness = _first_value(startup_map, runtime_map, "readiness_state", "startup_readiness_state")
-    session_state = _first_value(startup_map, runtime_map, "current_session_state", "session_state")
+    readiness = _first_value(
+        startup_map, runtime_map, "readiness_state", "startup_readiness_state"
+    )
+    session_state = _first_value(
+        startup_map, runtime_map, "current_session_state", "session_state"
+    )
     running_as = _first_value(startup_map, runtime_map, "running_as", "runtime_backend")
 
     return "\n".join(
@@ -2050,7 +2471,9 @@ def _render_surface_card(element: Any) -> Any:
     return element.style(_CARD_STYLE)
 
 
-def _first_value(primary: Mapping[str, object], secondary: Mapping[str, object], *keys: str) -> str:
+def _first_value(
+    primary: Mapping[str, object], secondary: Mapping[str, object], *keys: str
+) -> str:
     for key in keys:
         value = primary.get(key)
         if value is not None:
@@ -2061,17 +2484,23 @@ def _first_value(primary: Mapping[str, object], secondary: Mapping[str, object],
     return "<unavailable>"
 
 
-def _build_five_contract_readiness_summary_fallback(shell: Mapping[str, object]) -> dict[str, object]:
+def _build_five_contract_readiness_summary_fallback(
+    shell: Mapping[str, object],
+) -> dict[str, object]:
     from ..readiness_summary import build_five_contract_readiness_summary_surface
 
     startup = shell.get("startup")
     runtime = shell.get("runtime")
     startup_map = startup if isinstance(startup, Mapping) else {}
     runtime_map = runtime if isinstance(runtime, Mapping) else {}
-    active_profile_id = _first_value(startup_map, runtime_map, "selected_profile_id", "profile_id")
+    active_profile_id = _first_value(
+        startup_map, runtime_map, "selected_profile_id", "profile_id"
+    )
     if active_profile_id == "<unavailable>":
         active_profile_id = None
-    return build_five_contract_readiness_summary_surface(active_profile_id=active_profile_id)
+    return build_five_contract_readiness_summary_surface(
+        active_profile_id=active_profile_id
+    )
 
 
 def _table_value(value: object) -> str:
@@ -2121,7 +2550,9 @@ def _inline_value(value: object) -> str:
 
 
 def _inline_mapping(mapping: Mapping[object, object]) -> str:
-    return "; ".join(f"{_table_value(key)}={_table_value(value)}" for key, value in mapping.items())
+    return "; ".join(
+        f"{_table_value(key)}={_table_value(value)}" for key, value in mapping.items()
+    )
 
 
 def _flatten_mapping_lines(
@@ -2151,7 +2582,11 @@ def _bullet_lines(value: object) -> str:
 
 def _plain_item_lines(value: object) -> str:
     if isinstance(value, list | tuple):
-        lines = [f"  - `{_as_str(item)}`" for item in value if _as_str(item, default="").strip()]
+        lines = [
+            f"  - `{_as_str(item)}`"
+            for item in value
+            if _as_str(item, default="").strip()
+        ]
         return "\n".join(lines) if lines else "  - `<none>`"
     return "  - `<unavailable>`"
 
@@ -2168,7 +2603,9 @@ def _operator_state_lines(value: object) -> str:
         summary = _as_str(item.get("summary"), default="<unavailable>")
         reason = _as_str(item.get("reason"), default="<unavailable>")
         source = _as_str(item.get("source"), default="<unavailable>")
-        lines.append(f"  - `{state}` / `{category}`: {summary} Reason: `{reason}`. Source: `{source}`.")
+        lines.append(
+            f"  - `{state}` / `{category}`: {summary} Reason: `{reason}`. Source: `{source}`."
+        )
     return "\n".join(lines) if lines else "  - `<none>`"
 
 
@@ -2184,7 +2621,11 @@ def _contract_status_markdown(value: object) -> str:
         if not isinstance(item, Mapping):
             continue
         reasons = item.get("blocking_reasons")
-        reason_text = ", ".join(_as_str(reason) for reason in reasons) if isinstance(reasons, list) else ""
+        reason_text = (
+            ", ".join(_as_str(reason) for reason in reasons)
+            if isinstance(reasons, list)
+            else ""
+        )
         lines.append(
             "| "
             + f"`{_table_value(item.get('contract'))}` "
@@ -2199,7 +2640,9 @@ def _contract_status_markdown(value: object) -> str:
         )
         rendered += 1
     if rendered == 0:
-        lines.append("| `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` |")
+        lines.append(
+            "| `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` | `<unavailable>` |"
+        )
     return "\n".join(lines)
 
 
@@ -2211,7 +2654,11 @@ def _contract_status_table_html(value: object) -> str:
         if not isinstance(item, Mapping):
             continue
         reasons = item.get("blocking_reasons")
-        reason_text = ", ".join(_as_str(reason) for reason in reasons) if isinstance(reasons, list) else ""
+        reason_text = (
+            ", ".join(_as_str(reason) for reason in reasons)
+            if isinstance(reasons, list)
+            else ""
+        )
         rows.append(
             "<tr>"
             + f"<td>{_h(_as_str(item.get('contract'), default='<unavailable>'))}</td>"
@@ -2232,9 +2679,7 @@ def _contract_status_table_html(value: object) -> str:
         '<div class="ntb-stat__label" style="margin-bottom:6px">Contract Data Status</div>'
         '<table class="ntb-table"><thead><tr>'
         "<th>Contract</th><th>Label</th><th>Mode</th><th>Support</th><th>Quote</th><th>Chart</th><th>Query</th><th>Message</th><th>Reasons</th>"
-        "</tr></thead><tbody>"
-        + "".join(rows)
-        + "</tbody></table></div>"
+        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
     )
 
 
@@ -2245,7 +2690,11 @@ def _mapping_item_lines(value: object, fields: tuple[str, ...]) -> str:
     for item in value:
         if not isinstance(item, Mapping):
             continue
-        parts = [f"{field}={_inline_value(item.get(field))}" for field in fields if field in item]
+        parts = [
+            f"{field}={_inline_value(item.get(field))}"
+            for field in fields
+            if field in item
+        ]
         lines.append("  - " + "; ".join(parts) if parts else "  - `<unavailable>`")
     return "\n".join(lines) if lines else "  - `<none>`"
 
@@ -2297,7 +2746,9 @@ def _candidate_profile_lines(value: object) -> str:
             + f"status={_as_str(item.get('status'))}, "
             + f"reason={_as_str(item.get('reason_label'), default=_as_str(item.get('reason_category')))}"
         )
-        lines.append("    Summary: " + _as_str(item.get("summary"), default="<unavailable>"))
+        lines.append(
+            "    Summary: " + _as_str(item.get("summary"), default="<unavailable>")
+        )
     return "\n".join(lines) if lines else "  - <none>"
 
 
@@ -2323,7 +2774,9 @@ def _render_pipeline_query_gate_lines(panel: Mapping[str, object]) -> list[str]:
     trigger_id = _as_str(gate.get("trigger_id"), default="<unavailable>")
     trigger_state = _as_str(gate.get("trigger_state"), default="UNAVAILABLE")
     from_real_producer = gate.get("trigger_state_from_real_producer") is True
-    raw_enabled = gate.get("enabled") is True or gate.get("pipeline_query_authorized") is True
+    raw_enabled = (
+        gate.get("enabled") is True or gate.get("pipeline_query_authorized") is True
+    )
     enabled = raw_enabled and trigger_state == "QUERY_READY" and from_real_producer
     status = "ENABLED" if enabled else "DISABLED"
 
@@ -2384,15 +2837,15 @@ def _render_pipeline_query_gate_lines(panel: Mapping[str, object]) -> list[str]:
     return lines
 
 
-_GATE_STATEMENT_TEXT = (
-    "Gate enabled means only that the operator may manually query the preserved Stage A through D pipeline."
-)
+_GATE_STATEMENT_TEXT = "Gate enabled means only that the operator may manually query the preserved Stage A through D pipeline."
 
 
 def _render_decision_review_replay(replay: object) -> list[str]:
     lines = ["", "### Narrative Audit Replay"]
     if not isinstance(replay, Mapping) or replay.get("available") is not True:
-        message = replay.get("unavailable_message") if isinstance(replay, Mapping) else None
+        message = (
+            replay.get("unavailable_message") if isinstance(replay, Mapping) else None
+        )
         lines.append(
             f"- _{_as_str(message, default='Decision Review narrative audit replay is unavailable.')}_"
         )
@@ -2429,7 +2882,9 @@ def _render_decision_review_replay(replay: object) -> list[str]:
 
     quality = replay.get("narrative_quality")
     if isinstance(quality, Mapping):
-        lines.append(f"- Narrative Quality Status: `{_as_str(quality.get('status'), default='WARN')}`")
+        lines.append(
+            f"- Narrative Quality Status: `{_as_str(quality.get('status'), default='WARN')}`"
+        )
         blockers = quality.get("blocking_reasons")
         if isinstance(blockers, list) and blockers:
             lines.append("- Narrative Quality Blocking Reasons:")
@@ -2467,7 +2922,11 @@ def _render_decision_review_replay(replay: object) -> list[str]:
             + f"outcome=`{_as_str(engine_summary.get('outcome'))}`"
         )
     else:
-        message = engine_summary.get("unavailable_message") if isinstance(engine_summary, Mapping) else None
+        message = (
+            engine_summary.get("unavailable_message")
+            if isinstance(engine_summary, Mapping)
+            else None
+        )
         lines.append(
             f"- Engine Reasoning Summary: {_as_str(message, default='unavailable')}"
         )
@@ -2492,9 +2951,7 @@ def _render_decision_review_engine_reasoning(section: object) -> list[str]:
     lines = ["", "### Engine Reasoning"]
     if not isinstance(section, Mapping) or section.get("available") is not True:
         message = (
-            section.get("unavailable_message")
-            if isinstance(section, Mapping)
-            else None
+            section.get("unavailable_message") if isinstance(section, Mapping) else None
         )
         lines.append(
             f"- _{_as_str(message, default='Engine narrative unavailable in this run.')}_"
@@ -2553,9 +3010,7 @@ def _render_decision_review_trade_thesis(section: object) -> list[str]:
     lines = ["", "### Trade Thesis"]
     if not isinstance(section, Mapping) or section.get("available") is not True:
         message = (
-            section.get("unavailable_message")
-            if isinstance(section, Mapping)
-            else None
+            section.get("unavailable_message") if isinstance(section, Mapping) else None
         )
         lines.append(
             f"- _{_as_str(message, default='Engine narrative unavailable in this run.')}_"
@@ -2567,7 +3022,9 @@ def _render_decision_review_trade_thesis(section: object) -> list[str]:
         lines.append(
             f"- No-Trade Reason: `{_as_str(section.get('no_trade_reason'), default='unavailable')}`"
         )
-        lines.append("- _NO_TRADE is a first-class outcome. The engine did not propose a setup for this run._")
+        lines.append(
+            "- _NO_TRADE is a first-class outcome. The engine did not propose a setup for this run._"
+        )
         rationale = section.get("rationale")
         if isinstance(rationale, str) and rationale:
             lines.append(f"- Rationale: {rationale}")
@@ -2616,9 +3073,7 @@ def _render_decision_review_risk_authorization(section: object) -> list[str]:
     lines = ["", "### Risk Authorization"]
     if not isinstance(section, Mapping) or section.get("available") is not True:
         message = (
-            section.get("unavailable_message")
-            if isinstance(section, Mapping)
-            else None
+            section.get("unavailable_message") if isinstance(section, Mapping) else None
         )
         lines.append(
             f"- _{_as_str(message, default='Engine narrative unavailable in this run.')}_"
@@ -2641,7 +3096,9 @@ def _render_decision_review_risk_authorization(section: object) -> list[str]:
         lines.append(f"- Remaining Daily Risk Budget ($): `{_as_str(remaining_daily)}`")
     remaining_aggregate = section.get("remaining_aggregate_risk_budget")
     if remaining_aggregate is not None:
-        lines.append(f"- Remaining Aggregate Risk Budget ($): `{_as_str(remaining_aggregate)}`")
+        lines.append(
+            f"- Remaining Aggregate Risk Budget ($): `{_as_str(remaining_aggregate)}`"
+        )
     checks = section.get("checks")
     if isinstance(checks, list) and checks:
         lines.append("- Checks:")
@@ -2661,9 +3118,7 @@ def _render_decision_review_invalidation(section: object) -> list[str]:
     lines = ["", "### What Would Invalidate This"]
     if not isinstance(section, Mapping) or section.get("available") is not True:
         message = (
-            section.get("unavailable_message")
-            if isinstance(section, Mapping)
-            else None
+            section.get("unavailable_message") if isinstance(section, Mapping) else None
         )
         lines.append(
             f"- _{_as_str(message, default='Disqualifiers list is unavailable for this run.')}_"

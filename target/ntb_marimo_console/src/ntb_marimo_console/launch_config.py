@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .adapters.contracts import RuntimeMode
+from .app import build_phase1_shell_from_artifacts
 from .market_data import FuturesQuoteServiceConfig, resolve_futures_quote_service_config
 from .market_data.stream_manager import StreamManagerSnapshot
 from .operator_live_runtime import (
@@ -14,7 +15,10 @@ from .operator_live_runtime import (
     operator_runtime_mode_from_env,
     resolve_operator_runtime_snapshot,
 )
-from .readiness_summary import RuntimeReadinessSnapshot, build_five_contract_readiness_summary_surface
+from .readiness_summary import (
+    RuntimeReadinessSnapshot,
+    build_five_contract_readiness_summary_surface,
+)
 from .runtime_diagnostics import (
     DIAG_INCOMPLETE_PROFILE_DEFINITION,
     DIAG_LAUNCH_PREFLIGHT_MISMATCH,
@@ -28,8 +32,11 @@ from .runtime_diagnostics import (
     build_runtime_failure_report,
     runtime_identity_payload,
 )
-from .app import build_phase1_shell_from_artifacts
-from .runtime_modes import assemble_runtime_for_profile, build_phase1_artifacts_from_assembly, parse_runtime_mode
+from .runtime_modes import (
+    assemble_runtime_for_profile,
+    build_phase1_artifacts_from_assembly,
+    parse_runtime_mode,
+)
 from .runtime_profiles import (
     RuntimeProfile,
     RuntimeProfileError,
@@ -146,7 +153,13 @@ def build_startup_artifacts_from_env(
             runtime_snapshot=runtime_snapshot,
         )
         shell = _build_startup_shell(report, operator_runtime=operator_runtime)
-        return StartupArtifacts(shell=shell, report=report, ready=False, config=None, operator_runtime=operator_runtime)
+        return StartupArtifacts(
+            shell=shell,
+            report=report,
+            ready=False,
+            config=None,
+            operator_runtime=operator_runtime,
+        )
 
     return build_startup_artifacts(
         request,
@@ -301,7 +314,9 @@ def _build_launch_request(
 
     resolved_adapter_binding: str | None = adapter_binding
     if profile.runtime_mode == "preserved_engine":
-        resolved_adapter_binding = resolved_adapter_binding or profile.default_model_adapter_ref
+        resolved_adapter_binding = (
+            resolved_adapter_binding or profile.default_model_adapter_ref
+        )
 
     return LaunchRequest(
         mode=mode,
@@ -367,7 +382,9 @@ def attach_launch_metadata(
     runtime_snapshot: RuntimeReadinessSnapshot | None = None,
     operator_runtime: OperatorRuntimeSnapshotResult | None = None,
 ) -> dict[str, object]:
-    resolved_operator_runtime = operator_runtime or resolve_operator_runtime_snapshot(runtime_snapshot=runtime_snapshot)
+    resolved_operator_runtime = operator_runtime or resolve_operator_runtime_snapshot(
+        runtime_snapshot=runtime_snapshot
+    )
     _attach_five_contract_readiness_summary(
         shell,
         report,
@@ -376,7 +393,33 @@ def attach_launch_metadata(
     _attach_runtime_identity(shell, report)
     _attach_operator_live_runtime_metadata(shell, resolved_operator_runtime)
     _attach_startup_payload(shell, report)
+    _attach_fixture_cockpit_overview(shell)
     return shell
+
+
+def _attach_fixture_cockpit_overview(shell: dict[str, object]) -> None:
+    """Attach the credential-free fixture cockpit overview surface to the shell.
+
+    The surface is always computed regardless of launch mode because
+    ``build_fixture_cockpit_shell_surface`` is network- and credential-free.
+    A try/except guards against unexpected build failures so they never
+    block the main shell assembly path.
+    """
+    surfaces = shell.get("surfaces")
+    if not isinstance(surfaces, dict):
+        return
+    try:
+        from .fixture_operator_session import (
+            build_fixture_cockpit_shell_surface,  # noqa: PLC0415
+        )
+
+        surfaces["fixture_cockpit_overview"] = build_fixture_cockpit_shell_surface()
+    except Exception as exc:  # noqa: BLE001
+        surfaces["fixture_cockpit_overview"] = {
+            "surface": "fixture_cockpit_overview",
+            "error": str(exc),
+            "mode": "fixture_build_failed",
+        }
 
 
 def _attach_five_contract_readiness_summary(
@@ -388,9 +431,11 @@ def _attach_five_contract_readiness_summary(
     surfaces = shell.get("surfaces")
     if not isinstance(surfaces, dict) or report.request is None:
         return
-    surfaces["five_contract_readiness_summary"] = build_five_contract_readiness_summary_surface(
-        active_profile_id=report.request.profile.profile_id,
-        runtime_snapshot=runtime_snapshot,
+    surfaces["five_contract_readiness_summary"] = (
+        build_five_contract_readiness_summary_surface(
+            active_profile_id=report.request.profile.profile_id,
+            runtime_snapshot=runtime_snapshot,
+        )
     )
 
 
@@ -420,7 +465,9 @@ def _attach_operator_live_runtime_metadata(
             "operator_live_runtime_requested": operator_runtime.requested_live_runtime,
             "operator_live_runtime_cache_derived": operator_runtime.runtime_cache_derived,
             "operator_live_runtime_refresh_floor_seconds": operator_runtime.refresh_floor_seconds,
-            "operator_live_runtime_blocking_reasons": list(operator_runtime.blocking_reasons),
+            "operator_live_runtime_blocking_reasons": list(
+                operator_runtime.blocking_reasons
+            ),
             "operator_live_runtime_cache_provider_status": operator_runtime.cache_provider_status,
             "operator_live_runtime_cache_generated_at": operator_runtime.cache_generated_at,
             "operator_live_runtime_cache_snapshot_ready": operator_runtime.cache_snapshot_ready,
@@ -428,7 +475,9 @@ def _attach_operator_live_runtime_metadata(
     )
 
 
-def _stream_health_payload(operator_runtime: OperatorRuntimeSnapshotResult) -> dict[str, object] | None:
+def _stream_health_payload(
+    operator_runtime: OperatorRuntimeSnapshotResult,
+) -> dict[str, object] | None:
     if operator_runtime.mode != "OPERATOR_LIVE_RUNTIME":
         return None
     if isinstance(operator_runtime.snapshot, StreamManagerSnapshot):
@@ -477,7 +526,13 @@ def _build_startup_artifacts_from_report(
     )
     if not report.passed or report.request is None:
         shell = _build_startup_shell(report, operator_runtime=operator_runtime)
-        return StartupArtifacts(shell=shell, report=report, ready=False, config=None, operator_runtime=operator_runtime)
+        return StartupArtifacts(
+            shell=shell,
+            report=report,
+            ready=False,
+            config=None,
+            operator_runtime=operator_runtime,
+        )
 
     request = report.request
     config = LaunchConfig(
@@ -517,7 +572,13 @@ def _build_startup_artifacts_from_report(
             remedy="Inspect the startup diagnostics, fix the blocking runtime issue, then relaunch the console.",
         )
         shell = _build_startup_shell(failed_report, operator_runtime=operator_runtime)
-        return StartupArtifacts(shell=shell, report=failed_report, ready=False, config=config, operator_runtime=operator_runtime)
+        return StartupArtifacts(
+            shell=shell,
+            report=failed_report,
+            ready=False,
+            config=config,
+            operator_runtime=operator_runtime,
+        )
 
     attach_launch_metadata(shell, report, operator_runtime=operator_runtime)
     return StartupArtifacts(
