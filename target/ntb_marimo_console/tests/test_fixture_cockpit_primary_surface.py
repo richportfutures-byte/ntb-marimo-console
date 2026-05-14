@@ -196,6 +196,17 @@ def test_primary_cockpit_plan_default_launch_is_non_live() -> None:
     assert plan["default_launch_live"] is False
 
 
+def test_primary_cockpit_plan_starts_with_no_manual_query_submitted() -> None:
+    shell = _fixture_shell()
+    plan = build_primary_cockpit_plan(shell)
+    result = plan["last_query_result"]
+
+    assert isinstance(result, dict)
+    assert result["request_status"] == "NOT_SUBMITTED"
+    assert result["submitted"] is False
+    assert result["pipeline_result_status"] == "not_submitted"
+
+
 def test_primary_cockpit_plan_absent_when_no_surface() -> None:
     """build_primary_cockpit_plan() returns present=False when shell has no surfaces."""
     plan = build_primary_cockpit_plan({})

@@ -32,6 +32,11 @@ from .runtime_diagnostics import (
     build_artifact_source_snapshot,
 )
 from .app import build_phase1_shell_from_artifacts
+from .cockpit_manual_query import (
+    CockpitManualQueryResult,
+    submit_cockpit_manual_query,
+)
+from .contract_universe import normalize_contract_symbol
 from .runtime_modes import RuntimeAssembly, assemble_runtime_for_profile, build_phase1_artifacts_from_assembly
 from .session_evidence import (
     SessionEvidenceRecord,
@@ -51,6 +56,7 @@ from .trigger_transition_replay_source import TriggerTransitionReplaySource
 class LifecycleAction(str, Enum):
     INITIAL_LOAD = "INITIAL_LOAD"
     RUN_BOUNDED_QUERY = "RUN_BOUNDED_QUERY"
+    RUN_COCKPIT_MANUAL_QUERY = "RUN_COCKPIT_MANUAL_QUERY"
     RELOAD_CURRENT_PROFILE = "RELOAD_CURRENT_PROFILE"
     RESET_SESSION = "RESET_SESSION"
     SWITCH_PROFILE = "SWITCH_PROFILE"
@@ -290,6 +296,61 @@ def request_query_action(lifecycle: SessionLifecycle) -> SessionLifecycle:
     )
     observe_phase1_trigger_state_results(next_lifecycle, artifacts.trigger_state_results)
     return next_lifecycle
+
+
+def request_cockpit_manual_query(lifecycle: SessionLifecycle, contract: str) -> SessionLifecycle:
+    normalized_contract = normalize_contract_symbol(contract)
+    current_shell = deepcopy(lifecycle.shell)
+    rows = _fixture_cockpit_rows(current_shell)
+    assembly_result = _manual_query_assembly_for_contract(lifecycle, normalized_contract)
+    if isinstance(assembly_result, CockpitManualQueryResult):
+        result = assembly_result
+    else:
+        result = submit_cockpit_manual_query(
+            contract=normalized_contract,
+            action_rows=rows,
+            backend=assembly_result.backend,
+            pipeline_query=assembly_result.inputs.pipeline_query,
+            submitted_at=assembly_result.inputs.pipeline_query.evaluation_timestamp_iso,
+        )
+    _attach_cockpit_manual_query_result(current_shell, result.to_dict())
+    status_summary = _cockpit_manual_query_summary(result)
+    next_action = _cockpit_manual_query_next_action(result)
+    return _finalize_lifecycle(
+        shell=current_shell,
+        baseline_shell=deepcopy(lifecycle.baseline_shell) if lifecycle.baseline_shell is not None else None,
+        report=lifecycle.report,
+        ready=lifecycle.ready,
+        config=lifecycle.config,
+        assembly=lifecycle.assembly,
+        artifact_snapshot=lifecycle.artifact_snapshot,
+        lifecycle_state=lifecycle.lifecycle_state,
+        lifecycle_history=lifecycle.lifecycle_history,
+        last_action=LifecycleAction.RUN_COCKPIT_MANUAL_QUERY,
+        status_summary=status_summary,
+        next_action=next_action,
+        reload_changed_sources=lifecycle.reload_changed_sources,
+        profile_switch_target_id=lifecycle.profile_switch_target_id,
+        profile_switch_result=lifecycle.profile_switch_result,
+        evidence_app_session_id=lifecycle.evidence_app_session_id,
+        evidence_persistence_path=lifecycle.evidence_persistence_path,
+        evidence_persist_min_event_index=lifecycle.evidence_persist_min_event_index,
+        evidence_restore_status=lifecycle.evidence_restore_status,
+        evidence_restore_message=lifecycle.evidence_restore_message,
+        evidence_persistence_health_status=lifecycle.evidence_persistence_health_status,
+        evidence_last_persistence_status=lifecycle.evidence_last_persistence_status,
+        evidence_last_persistence_message=lifecycle.evidence_last_persistence_message,
+        evidence_last_persistence_at_utc=lifecycle.evidence_last_persistence_at_utc,
+        evidence_history=lifecycle.evidence_history,
+        evidence_originating_profile_id=_selected_profile_id(lifecycle),
+        evidence_requested_profile_id=None,
+        record_evidence=False,
+        runtime_snapshot=lifecycle.runtime_snapshot,
+        operator_runtime=lifecycle.operator_runtime,
+        runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
+        operator_runtime_mode=lifecycle.operator_runtime_mode,
+        trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
+    )
 
 
 def refresh_runtime_snapshot(lifecycle: SessionLifecycle) -> SessionLifecycle:
@@ -751,6 +812,140 @@ def _assemble_runtime(startup: StartupArtifacts) -> RuntimeAssembly | None:
         lockout=startup.config.lockout,
         model_adapter=startup.config.model_adapter,
     )
+
+
+_PRESERVED_PROFILE_BY_CONTRACT = {
+    "ES": "preserved_es_phase1",
+    "NQ": "preserved_nq_phase1",
+    "CL": "preserved_cl_phase1",
+    "6E": "preserved_6e_phase1",
+    "MGC": "preserved_mgc_phase1",
+}
+
+
+def _manual_query_assembly_for_contract(
+    lifecycle: SessionLifecycle,
+    contract: str,
+) -> RuntimeAssembly | CockpitManualQueryResult:
+    if lifecycle.assembly is not None and lifecycle.assembly.profile.contract == contract:
+        return lifecycle.assembly
+
+    profile_id = _PRESERVED_PROFILE_BY_CONTRACT.get(contract)
+    if profile_id is None:
+        return CockpitManualQueryResult(
+            contract=contract,
+            request_status="BLOCKED",
+            submitted=False,
+            submitted_at=None,
+            gate_provenance_basis="contract_universe",
+            pipeline_result_status="not_submitted",
+            terminal_summary=None,
+            stage_termination_reason=None,
+            blocked_reason=f"Manual query blocked: {contract} is not a supported cockpit query contract.",
+            query_action_state="DISABLED",
+            query_action_text="Manual query blocked.",
+        )
+
+    fixtures_root = lifecycle.config.fixtures_root if lifecycle.config is not None else None
+    try:
+        request = resolve_launch_request_for_profile_id(
+            profile_id,
+            fixtures_root=fixtures_root,
+            lockout=False,
+            use_env_defaults=False,
+        )
+        startup = build_startup_artifacts(
+            request,
+            query_action_requested=False,
+            runtime_snapshot=lifecycle.runtime_snapshot,
+            runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
+            operator_runtime_mode=lifecycle.operator_runtime_mode,
+        )
+        assembly = _assemble_runtime(startup)
+    except Exception as exc:
+        return CockpitManualQueryResult(
+            contract=contract,
+            request_status="BLOCKED",
+            submitted=False,
+            submitted_at=None,
+            gate_provenance_basis="runtime_profile_preflight",
+            pipeline_result_status="not_submitted",
+            terminal_summary=None,
+            stage_termination_reason=None,
+            blocked_reason=f"Manual query blocked: runtime assembly failed for {contract}: {exc}",
+            query_action_state="DISABLED",
+            query_action_text="Manual query blocked.",
+        )
+    if assembly is None:
+        return CockpitManualQueryResult(
+            contract=contract,
+            request_status="BLOCKED",
+            submitted=False,
+            submitted_at=None,
+            gate_provenance_basis="runtime_profile_preflight",
+            pipeline_result_status="not_submitted",
+            terminal_summary=None,
+            stage_termination_reason=None,
+            blocked_reason=f"Manual query blocked: runtime assembly is unavailable for {contract}.",
+            query_action_state="DISABLED",
+            query_action_text="Manual query blocked.",
+        )
+    return assembly
+
+
+def _fixture_cockpit_rows(shell: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
+    surfaces = shell.get("surfaces")
+    if not isinstance(surfaces, Mapping):
+        return ()
+    cockpit = surfaces.get("fixture_cockpit_overview")
+    if not isinstance(cockpit, Mapping):
+        return ()
+    rows = cockpit.get("rows")
+    if not isinstance(rows, list):
+        return ()
+    return tuple(row for row in rows if isinstance(row, Mapping))
+
+
+def _attach_cockpit_manual_query_result(
+    shell: dict[str, object],
+    result: dict[str, object],
+) -> None:
+    surfaces = shell.get("surfaces")
+    if isinstance(surfaces, dict):
+        cockpit = surfaces.get("fixture_cockpit_overview")
+        if isinstance(cockpit, dict):
+            cockpit["last_query_result"] = dict(result)
+            rows = cockpit.get("rows")
+            if isinstance(rows, list):
+                for row in rows:
+                    if not isinstance(row, dict) or row.get("contract") != result.get("contract"):
+                        continue
+                    row["last_query_status"] = result.get("request_status")
+                    row["last_query_result_status"] = result.get("pipeline_result_status")
+                    row["last_query_terminal_summary"] = result.get("terminal_summary")
+                    row["last_query_blocked_reason"] = result.get("blocked_reason")
+    workflow = shell.get("workflow")
+    if isinstance(workflow, dict):
+        workflow["cockpit_manual_query_status"] = result.get("request_status")
+        workflow["cockpit_manual_query_contract"] = result.get("contract")
+        workflow["cockpit_manual_query_result"] = dict(result)
+
+
+def _cockpit_manual_query_summary(result: CockpitManualQueryResult) -> str:
+    if result.submitted and result.pipeline_result_status == "completed":
+        return (
+            f"Manual cockpit query submitted for {result.contract}. "
+            "The preserved pipeline returned a bounded result."
+        )
+    if result.request_status == "FAILED":
+        return f"Manual cockpit query failed closed for {result.contract}."
+    return result.blocked_reason or f"Manual cockpit query blocked for {result.contract}."
+
+
+def _cockpit_manual_query_next_action(result: CockpitManualQueryResult) -> str:
+    if result.submitted and result.pipeline_result_status == "completed":
+        return "Review the bounded last-query status in the primary cockpit."
+    return result.blocked_reason or "Wait for gate/provenance authorization before submitting a manual query."
 
 
 def _resolve_operator_runtime_for_lifecycle(lifecycle: SessionLifecycle) -> OperatorRuntimeSnapshotResult:

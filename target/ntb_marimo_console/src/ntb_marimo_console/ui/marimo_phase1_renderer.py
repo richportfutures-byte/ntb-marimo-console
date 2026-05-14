@@ -311,6 +311,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
             "decision_authority": None,
             "supported_contracts": [],
             "rows": [],
+            "last_query_result": None,
         }
     surface = surfaces_raw.get("fixture_cockpit_overview")
     if not isinstance(surface, Mapping):
@@ -324,6 +325,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
             "decision_authority": None,
             "supported_contracts": [],
             "rows": [],
+            "last_query_result": None,
         }
     return {
         "present": True,
@@ -335,6 +337,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
         "decision_authority": surface.get("decision_authority"),
         "supported_contracts": list(surface.get("supported_contracts") or []),
         "rows": list(surface.get("rows") or []),
+        "last_query_result": surface.get("last_query_result"),
     }
 
 
@@ -388,6 +391,7 @@ def render_phase1_console(
     anchor_input_control_panel: Any | None = None,
     operator_notes_control_panel: Any | None = None,
     premarket_brief_control_panel: Any | None = None,
+    cockpit_manual_query_control_panel: Any | None = None,
 ) -> Any:
     plan = build_phase1_render_plan(shell)
     startup = shell.get("startup")
@@ -406,7 +410,12 @@ def render_phase1_console(
     if isinstance(surfaces_raw, Mapping):
         fixture_cockpit_surface = surfaces_raw.get("fixture_cockpit_overview")
         if operator_ready and isinstance(fixture_cockpit_surface, Mapping):
-            elements.append(_render_fixture_cockpit_primary(fixture_cockpit_surface))
+            elements.append(
+                _render_fixture_cockpit_primary(
+                    fixture_cockpit_surface,
+                    control_panel=cockpit_manual_query_control_panel,
+                )
+            )
 
     elements.append(
         render_premarket_brief_panel(shell, control_panel=premarket_brief_control_panel)
@@ -2395,7 +2404,11 @@ def _render_surface_section(
     return _render_surface_card(mo.md(f"## {key}\n- unavailable"))
 
 
-def _render_fixture_cockpit_primary(surface: Mapping[str, object]) -> Any:
+def _render_fixture_cockpit_primary(
+    surface: Mapping[str, object],
+    *,
+    control_panel: Any | None = None,
+) -> Any:
     """Render the fixture cockpit as the primary operator landing surface.
 
     This is the first operator-visible section in the console, positioned
@@ -2455,6 +2468,7 @@ def _render_fixture_cockpit_primary(surface: Mapping[str, object]) -> Any:
         f"<tbody>{tbody_html}</tbody>"
         "</table>"
     )
+    last_query_html = _fixture_cockpit_last_query_html(surface.get("last_query_result"))
 
     error_html = ""
     if error is not None:
@@ -2468,14 +2482,45 @@ def _render_fixture_cockpit_primary(surface: Mapping[str, object]) -> Any:
         + '<div class="ntb-card">'
         + banner
         + table_html
+        + last_query_html
         + error_html
         + "</div>"
     )
-    return mo.Html(full_html)
+    elements: list[Any] = [mo.Html(full_html)]
+    if control_panel is not None:
+        elements.append(_render_control_card(control_panel))
+    return mo.vstack(elements, gap=0.5)
 
 
 # Backward-compatible alias (kept for any external callers; use the primary variant in new code)
 _render_fixture_cockpit_overview = _render_fixture_cockpit_primary
+
+
+def _fixture_cockpit_last_query_html(value: object) -> str:
+    result = value if isinstance(value, Mapping) else {}
+    status = _as_str(result.get("request_status"), default="NOT_SUBMITTED")
+    contract = _as_str(result.get("contract"), default="<unavailable>")
+    pipeline_status = _as_str(result.get("pipeline_result_status"), default="not_submitted")
+    terminal = _as_str(result.get("terminal_summary"), default="<none>")
+    reason = _as_str(result.get("blocked_reason"), default="<none>")
+    provenance = _as_str(result.get("gate_provenance_basis"), default="<unavailable>")
+    submitted_at = _as_str(result.get("submitted_at"), default="<none>")
+    return (
+        '<div style="margin-top:12px">'
+        '<div class="ntb-stat__label" style="margin-bottom:6px">Last Manual Query</div>'
+        '<table class="ntb-table"><thead><tr>'
+        "<th>Contract</th><th>Status</th><th>Pipeline Result</th><th>Terminal Summary</th>"
+        "<th>Submitted At</th><th>Gate / Provenance Basis</th><th>Blocked Reason</th>"
+        "</tr></thead><tbody><tr>"
+        f"<td>{_h(contract)}</td>"
+        f"<td>{_ntb_chip_for_status(status)}</td>"
+        f"<td>{_ntb_chip_for_status(pipeline_status)}</td>"
+        f"<td>{_h(terminal)}</td>"
+        f"<td>{_h(submitted_at)}</td>"
+        f"<td>{_h(provenance)}</td>"
+        f"<td class='ntb-muted'>{_h(reason)}</td>"
+        "</tr></tbody></table></div>"
+    )
 
 
 def _render_console_header(

@@ -70,6 +70,7 @@ def _():
         refresh_runtime_snapshot,
         load_session_lifecycle_from_env,
         reload_current_profile,
+        request_cockpit_manual_query,
         request_query_action,
         reset_session,
         switch_profile,
@@ -77,6 +78,7 @@ def _():
 
     get_lifecycle, set_lifecycle = mo.state(None)
     get_runtime_snapshot_producer, set_runtime_snapshot_producer = mo.state(None)
+    get_pending_cockpit_query_contract, set_pending_cockpit_query_contract = mo.state("ES")
     get_pending_profile_id, set_pending_profile_id = mo.state(None)
     get_active_trade_registry, set_active_trade_registry = mo.state(None)
     get_anchor_input_registry, set_anchor_input_registry = mo.state(None)
@@ -117,6 +119,7 @@ def _():
         active_trade_registry,
         anchor_input_registry,
         clear_retained_evidence,
+        get_pending_cockpit_query_contract,
         get_pending_profile_id,
         get_premarket_manual_sections,
         lifecycle,
@@ -124,12 +127,14 @@ def _():
         operator_notes_registry,
         refresh_runtime_snapshot,
         reload_current_profile,
+        request_cockpit_manual_query,
         request_query_action,
         reset_session,
         set_active_trade_registry,
         set_anchor_input_registry,
         set_lifecycle,
         set_operator_notes_registry,
+        set_pending_cockpit_query_contract,
         set_pending_profile_id,
         set_premarket_manual_sections,
         switch_profile,
@@ -139,10 +144,12 @@ def _():
 @app.cell
 def _(
     active_trade_registry,
+    get_pending_cockpit_query_contract,
     get_pending_profile_id,
     get_premarket_manual_sections,
     lifecycle,
     mo,
+    set_pending_cockpit_query_contract,
     set_pending_profile_id,
 ):
     from collections.abc import Mapping as _Mapping
@@ -197,6 +204,42 @@ def _(
         full_width=True,
     )
     switch_available = bool(profile_options) and pending_profile_id is not None and pending_profile_id != selected_profile_id
+
+    cockpit_rows: dict[str, dict] = {}
+    surfaces = controls_shell.get("surfaces")
+    if isinstance(surfaces, _Mapping):
+        cockpit_surface = surfaces.get("fixture_cockpit_overview")
+        if isinstance(cockpit_surface, _Mapping):
+            raw_rows = cockpit_surface.get("rows")
+            if isinstance(raw_rows, list):
+                for row in raw_rows:
+                    if isinstance(row, _Mapping) and row.get("contract") is not None:
+                        cockpit_rows[str(row.get("contract"))] = dict(row)
+    cockpit_query_options = ["ES", "NQ", "CL", "6E", "MGC"]
+    pending_cockpit_query_contract = get_pending_cockpit_query_contract()
+    if pending_cockpit_query_contract not in cockpit_query_options:
+        pending_cockpit_query_contract = "ES"
+        set_pending_cockpit_query_contract(pending_cockpit_query_contract)
+    selected_cockpit_query_row = cockpit_rows.get(str(pending_cockpit_query_contract), {})
+    cockpit_query_available = selected_cockpit_query_row.get("query_action_state") == "ENABLED"
+    cockpit_query_selector = mo.ui.dropdown(
+        options=cockpit_query_options,
+        value=str(pending_cockpit_query_contract),
+        label="Manual Query Contract",
+        on_change=set_pending_cockpit_query_contract,
+        full_width=True,
+    )
+    cockpit_query_button = mo.ui.run_button(
+        label="Submit Preserved Pipeline Query",
+        kind="success" if cockpit_query_available else "neutral",
+        disabled=not cockpit_query_available,
+        tooltip=(
+            "Submits the selected contract through the preserved pipeline boundary."
+            if cockpit_query_available
+            else str(selected_cockpit_query_row.get("query_disabled_reason") or "Manual query is blocked for this contract.")
+        ),
+        full_width=True,
+    )
 
     query_button = mo.ui.run_button(
         label="Run bounded query for loaded snapshot",
@@ -574,6 +617,22 @@ def _(
         ],
         gap=0.5,
     )
+    cockpit_manual_query_controls = mo.vstack(
+        [
+            mo.md(
+                "\n".join(
+                    [
+                        "## Manual Query",
+                        f"- Selected Contract: `{pending_cockpit_query_contract}`",
+                        f"- Action State: `{selected_cockpit_query_row.get('query_action_state', 'DISABLED')}`",
+                    ]
+                )
+            ),
+            cockpit_query_selector,
+            cockpit_query_button,
+        ],
+        gap=0.5,
+    )
 
     lifecycle_controls = mo.vstack(
         [
@@ -592,6 +651,9 @@ def _(
         clear_retained_button,
         controls_shell,
         controls_startup_panel,
+        cockpit_manual_query_controls,
+        cockpit_query_button,
+        cockpit_query_selector,
         evidence_controls,
         lifecycle_controls,
         operator_notes_controls,
@@ -608,6 +670,7 @@ def _(
         reset_button,
         runtime_refresh,
         selected_profile_id,
+        pending_cockpit_query_contract,
         switch_available,
         switch_button,
     )
@@ -626,6 +689,7 @@ def _(
     clear_retained_evidence,
     controls_shell,
     controls_startup_panel,
+    cockpit_query_button,
     get_premarket_manual_sections,
     lifecycle,
     operator_notes_form,
@@ -638,12 +702,14 @@ def _(
     reload_available,
     reload_button,
     reload_current_profile,
+    request_cockpit_manual_query,
     request_query_action,
     reset_available,
     reset_button,
     reset_session,
     runtime_refresh,
     selected_profile_id,
+    pending_cockpit_query_contract,
     set_active_trade_registry,
     set_anchor_input_registry,
     set_lifecycle,
@@ -728,6 +794,12 @@ def _(
         set_lifecycle(current_lifecycle)
     elif reset_button.value and reset_available:
         current_lifecycle = reset_session(lifecycle)
+        set_lifecycle(current_lifecycle)
+    elif cockpit_query_button.value:
+        current_lifecycle = request_cockpit_manual_query(
+            lifecycle,
+            str(pending_cockpit_query_contract),
+        )
         set_lifecycle(current_lifecycle)
     elif query_button.value and query_available:
         current_lifecycle = request_query_action(lifecycle)
@@ -932,6 +1004,7 @@ def _(
 def _(
     active_trade_controls,
     anchor_input_controls,
+    cockpit_manual_query_controls,
     evidence_controls,
     lifecycle_controls,
     mo,
@@ -1011,6 +1084,7 @@ def _(
         anchor_input_control_panel=anchor_input_controls,
         operator_notes_control_panel=operator_notes_controls,
         premarket_brief_control_panel=premarket_brief_controls,
+        cockpit_manual_query_control_panel=cockpit_manual_query_controls,
     )
     rendered
     return (rendered,)

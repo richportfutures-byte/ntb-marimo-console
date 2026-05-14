@@ -125,6 +125,15 @@ def test_fixture_cockpit_launch_default_non_live() -> None:
     assert surface["default_launch_live"] is False
 
 
+def test_fixture_cockpit_launch_has_no_auto_submitted_manual_query() -> None:
+    surface = build_fixture_cockpit_shell_surface()
+    result = surface["last_query_result"]
+
+    assert result["request_status"] == "NOT_SUBMITTED"
+    assert result["submitted"] is False
+    assert result["pipeline_result_status"] == "not_submitted"
+
+
 def test_fixture_cockpit_marimo_shell_has_surface() -> None:
     """The Marimo startup shell always carries fixture_cockpit_overview."""
     artifacts = build_startup_artifacts_from_env(default_mode="fixture_demo")

@@ -18,6 +18,7 @@ from ntb_marimo_console.market_data.stream_cache import StreamCacheRecord, Strea
 from ntb_marimo_console.session_lifecycle import (
     load_session_lifecycle_from_env,
     observe_phase1_trigger_state_results,
+    request_cockpit_manual_query,
     reload_current_profile,
     request_query_action,
     reset_session,
@@ -187,6 +188,51 @@ class SessionLifecycleTests(unittest.TestCase):
                 self.assertNotIn("trigger_transition_log", rendered)
                 self.assertNotIn("evidence_replay_v1", rendered)
                 self.assertIsNone(item.trigger_transition_log(contract="ES"))
+
+    def test_cockpit_manual_query_is_not_auto_submitted_on_load_or_refresh(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+            refreshed = refresh_runtime_snapshot(lifecycle)
+
+        for item in (lifecycle, refreshed):
+            result = item.shell["surfaces"]["fixture_cockpit_overview"]["last_query_result"]
+            self.assertEqual(result["request_status"], "NOT_SUBMITTED")
+            self.assertFalse(result["submitted"])
+
+    def test_cockpit_manual_query_submits_eligible_contract_and_renders_last_result(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+            queried = request_cockpit_manual_query(lifecycle, "ES")
+
+        result = queried.shell["surfaces"]["fixture_cockpit_overview"]["last_query_result"]
+        rows = {
+            row["contract"]: row
+            for row in queried.shell["surfaces"]["fixture_cockpit_overview"]["rows"]
+        }
+        self.assertEqual(result["request_status"], "SUBMITTED")
+        self.assertTrue(result["submitted"])
+        self.assertEqual(result["contract"], "ES")
+        self.assertEqual(result["pipeline_result_status"], "completed")
+        self.assertEqual(result["terminal_summary"], "NO_TRADE")
+        self.assertEqual(result["gate_provenance_basis"], "real_trigger_state_result_and_pipeline_gate")
+        self.assertEqual(rows["ES"]["last_query_status"], "SUBMITTED")
+        self.assertEqual(queried.shell["workflow"]["cockpit_manual_query_status"], "SUBMITTED")
+
+    def test_cockpit_manual_query_blocks_ineligible_contract_without_submission(self) -> None:
+        with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):
+            lifecycle = load_session_lifecycle_from_env()
+            queried = request_cockpit_manual_query(lifecycle, "NQ")
+
+        result = queried.shell["surfaces"]["fixture_cockpit_overview"]["last_query_result"]
+        rows = {
+            row["contract"]: row
+            for row in queried.shell["surfaces"]["fixture_cockpit_overview"]["rows"]
+        }
+        self.assertEqual(result["request_status"], "BLOCKED")
+        self.assertFalse(result["submitted"])
+        self.assertEqual(result["pipeline_result_status"], "not_submitted")
+        self.assertIn("Manual query blocked", result["blocked_reason"])
+        self.assertEqual(rows["NQ"]["last_query_status"], "BLOCKED")
 
     def test_lifecycle_observes_produced_trigger_state_results_without_first_replay(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "fixture_es_demo"}, clear=True):
