@@ -159,8 +159,15 @@ received_contracts_count=N
 repeated_login_on_refresh=no
 cleanup_status=ok|skipped|error
 duration_seconds=N
+requested_duration_seconds=N
+effective_duration_seconds=N
+actual_observed_duration_seconds=N
+duration_clamped=yes|no
+early_exit_reason=
 values_printed=no
 ```
+
+`duration_seconds` and `effective_duration_seconds` report the bounded receive window actually used after clamping. `requested_duration_seconds` echoes the operator's `--duration` value, and `duration_clamped=yes` makes any clamp explicit instead of silent. `actual_observed_duration_seconds` is the measured wall time of the receive loop, and `early_exit_reason` is non-empty only if the loop exited before the deadline (e.g. `token_refresh_blocking:...`, `reconnect_failed`).
 
 Expected structural pass fields:
 
@@ -197,7 +204,7 @@ received_contracts_count>=1
 
 R30 structural rehearsal is verified after login, subscribe, and cleanup pass. Market-data tick-flow evidence remains pending until `market_data_received=yes` appears during an open market session.
 
-Active front-month symbol resolution defaults to ES=`/ESM26`, NQ=`/NQM26`, CL=`/CLM26`, 6E=`/6EM26`, MGC=`/MGCM26` (calendar-dependent). Operators override at roll dates via `--symbol ROOT=KEY` (repeatable). `ZN` and `GC` are rejected at argparse and never appear in any subscription payload. The duration is clamped to `[1, 30]` seconds. The receive loop only invokes `session.dispatch_one(handler=manager.ingest_message)`; it never re-invokes login, subscribe, websocket connect, or `manager.start`. Cleanup via `stop_operator_live_runtime` runs in a `finally` block.
+Active front-month symbol resolution defaults to ES=`/ESM26`, NQ=`/NQM26`, CL=`/CLM26`, 6E=`/6EM26`, MGC=`/MGCM26` (calendar-dependent). Operators override at roll dates via `--symbol ROOT=KEY` (repeatable). `ZN` and `GC` are rejected at argparse and never appear in any subscription payload. The duration is clamped to `[1, 3600]` seconds; the ceiling is high enough for a bounded run to span at least one completed five-minute `CHART_FUTURES` bar boundary (e.g. `--duration 420`). Any clamp is reported explicitly via `requested_duration_seconds`, `effective_duration_seconds`, and `duration_clamped`. The receive loop only invokes `session.dispatch_one(handler=manager.ingest_message)`; it never re-invokes login, subscribe, websocket connect, or `manager.start`. Cleanup via `stop_operator_live_runtime` runs in a `finally` block.
 
 This step does not write into `target/ntb_marimo_console/docs/live_proof/`. Operators capture proof artifacts via the existing `scripts/capture_five_contract_live_proof.py --live` flow; that path remains unchanged.
 

@@ -109,7 +109,11 @@ REQUIRED_ENV_KEYS: tuple[str, ...] = (
 )
 DEFAULT_DURATION_SECONDS = 10
 MIN_DURATION_SECONDS = 1
-MAX_DURATION_SECONDS = 30
+# The bounded receive window must be able to span at least one completed
+# five-minute CHART_FUTURES bar boundary (300s) plus headroom for all five
+# contracts to deliver. The ceiling stays bounded but generous enough for
+# long completed-bar proof runs (e.g. ``--duration 420``).
+MAX_DURATION_SECONDS = 3600
 MAX_IDLE_DISPATCH_SLEEP_SECONDS = 0.05
 DEFAULT_FRONT_MONTH_SYMBOLS: dict[str, str] = {
     "ES": "/ESM26",
@@ -314,6 +318,11 @@ class RehearsalReport:
     repeated_login_on_refresh: bool = False
     cleanup_status: str = "skipped"  # "ok" | "skipped" | "error"
     duration_seconds: float = 0.0
+    requested_duration_seconds: float = 0.0
+    effective_duration_seconds: float = 0.0
+    actual_observed_duration_seconds: float = 0.0
+    duration_clamped: bool = False
+    early_exit_reason: str = ""
     blocking_reason: str = ""
     checks: list[RehearsalCheck] = field(default_factory=list)
 
@@ -351,6 +360,11 @@ class RehearsalReport:
             "repeated_login_on_refresh": "no",
             "cleanup_status": self.cleanup_status,
             "duration_seconds": float(self.duration_seconds),
+            "requested_duration_seconds": float(self.requested_duration_seconds),
+            "effective_duration_seconds": float(self.effective_duration_seconds),
+            "actual_observed_duration_seconds": float(self.actual_observed_duration_seconds),
+            "duration_clamped": _yes_no(self.duration_clamped),
+            "early_exit_reason": self.early_exit_reason,
             "blocking_reason": self.blocking_reason,
             "values_printed": "no",
             "checks": [
@@ -373,6 +387,8 @@ class ReceiveLoopObservation:
     chart_completed_contracts: tuple[str, ...] = ()
     chart_dispatch_parse_error_count: int = 0
     chart_unsupported_response_count: int = 0
+    actual_observed_duration_seconds: float = 0.0
+    early_exit_reason: str = ""
 
     def __iter__(self):
         yield self.market_data_received
@@ -511,6 +527,11 @@ def render_text(report: RehearsalReport) -> str:
         "repeated_login_on_refresh",
         "cleanup_status",
         "duration_seconds",
+        "requested_duration_seconds",
+        "effective_duration_seconds",
+        "actual_observed_duration_seconds",
+        "duration_clamped",
+        "early_exit_reason",
         "values_printed",
     )
     body = "\n".join(f"{key}={payload[key]}" for key in keys_in_order)
@@ -1011,7 +1032,9 @@ def _pump_receive_loop(
                     received_at_least_one = True
 
     active_session = session
-    deadline = clock() + max(0.0, duration_seconds)
+    loop_start = clock()
+    deadline = loop_start + max(0.0, duration_seconds)
+    early_exit_reason = ""
     while clock() < deadline:
         received_message = active_session.dispatch_one(handler=_handler)
         dispatch_status = _dispatch_status(active_session)
@@ -1025,6 +1048,7 @@ def _pump_receive_loop(
                 marker = getattr(manager, "mark_connection_lost", None)
                 if callable(marker):
                     marker(token_refresh_reason)
+                early_exit_reason = f"token_refresh_blocking:{token_refresh_reason}"
                 break
             if reconnect_controller is not None and should_attempt_reconnect(active_session):
                 result = reconnect_controller.reconnect(
@@ -1034,6 +1058,7 @@ def _pump_receive_loop(
                 if result.reconnected and result.session is not None:
                     active_session = result.session
                     continue
+                early_exit_reason = "reconnect_failed"
                 break
             remaining = deadline - clock()
             if remaining <= 0:
@@ -1043,6 +1068,7 @@ def _pump_receive_loop(
             # receive interval does not prove the whole bounded window quiet.
             time.sleep(min(MAX_IDLE_DISPATCH_SLEEP_SECONDS, max(0.0, remaining)))
             continue
+    actual_observed_duration_seconds = max(0.0, clock() - loop_start)
     return ReceiveLoopObservation(
         market_data_received=received_at_least_one,
         received_contracts_count=len(contracts_seen),
@@ -1055,6 +1081,8 @@ def _pump_receive_loop(
         chart_completed_contracts=tuple(sorted(chart_completed_contracts_seen)),
         chart_dispatch_parse_error_count=chart_dispatch_parse_error_count,
         chart_unsupported_response_count=chart_unsupported_response_count,
+        actual_observed_duration_seconds=actual_observed_duration_seconds,
+        early_exit_reason=early_exit_reason,
     )
 
 
@@ -1304,7 +1332,11 @@ def run_with_dependencies(
     initial_session: OperatorSchwabStreamerSession | None = None
     report.runtime_start_attempted = True
     report.checks.append(RehearsalCheck("runtime_start_attempted", "ok"))
-    duration_clamped = max(MIN_DURATION_SECONDS, min(MAX_DURATION_SECONDS, int(getattr(args, "duration", DEFAULT_DURATION_SECONDS))))
+    requested_duration = int(getattr(args, "duration", DEFAULT_DURATION_SECONDS))
+    duration_clamped = max(MIN_DURATION_SECONDS, min(MAX_DURATION_SECONDS, requested_duration))
+    report.requested_duration_seconds = float(requested_duration)
+    report.effective_duration_seconds = float(duration_clamped)
+    report.duration_clamped = duration_clamped != requested_duration
     report.duration_seconds = float(duration_clamped)
 
     try:
@@ -1366,6 +1398,8 @@ def run_with_dependencies(
         )
         report.market_data_received = receive_observation.market_data_received
         report.received_contracts_count = receive_observation.received_contracts_count
+        report.actual_observed_duration_seconds = receive_observation.actual_observed_duration_seconds
+        report.early_exit_reason = receive_observation.early_exit_reason
         report.chart_data_received = receive_observation.chart_data_received
         report.chart_received_contracts_count = receive_observation.chart_received_contracts_count
         report.chart_completed_five_minute_contracts_count = (

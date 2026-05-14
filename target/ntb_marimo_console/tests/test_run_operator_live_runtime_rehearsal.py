@@ -379,6 +379,22 @@ def _make_clock(duration: float = 0.5) -> Any:
     return _clock
 
 
+def _make_stepping_clock(step: float) -> Any:
+    """Monotonic clock advancing by ``step`` seconds per call.
+
+    Large steps let tests exercise long bounded receive windows without
+    incurring real wall-clock sleeps inside the dispatch loop.
+    """
+    state = {"now": 0.0}
+
+    def _clock() -> float:
+        current = state["now"]
+        state["now"] += step
+        return current
+
+    return _clock
+
+
 def _full_env(target_root: Path, *, override: dict[str, str] | None = None) -> dict[str, str]:
     state_token_path = target_root / ".state" / "schwab" / "token.json"
     base = {
@@ -824,6 +840,54 @@ class RehearsalCliBlockingTests(unittest.TestCase):
         self.assertEqual(manager._snapshot.state, "blocked")
         self.assertIn("token_refresh_failed:SchwabTokenError", manager._snapshot.blocking_reasons)
 
+    def test_receive_pump_records_early_exit_reason_and_observed_duration(self) -> None:
+        config = rehearsal._build_stream_config(symbol_overrides={})
+        manager = FakeStartingManager(config=config, client=None)
+        manager._snapshot = manager._active_snapshot(record_count=0)
+
+        class TokenRefreshFailureSession:
+            def dispatch_one(self, handler):
+                return False
+
+            def token_refresh_blocking_reason(self) -> str:
+                return "token_refresh_failed:SchwabTokenError"
+
+        observation = rehearsal._pump_receive_loop(
+            session=TokenRefreshFailureSession(),
+            manager=manager,
+            duration_seconds=300.0,
+            clock=_make_stepping_clock(step=0.5),
+        )
+
+        self.assertEqual(
+            observation.early_exit_reason,
+            "token_refresh_blocking:token_refresh_failed:SchwabTokenError",
+        )
+        # The loop broke on the token-refresh signal well before the
+        # 300s bounded deadline; observed duration reflects the real
+        # (short) wall time, not the requested window.
+        self.assertGreater(observation.actual_observed_duration_seconds, 0.0)
+        self.assertLess(observation.actual_observed_duration_seconds, 300.0)
+
+    def test_receive_pump_has_empty_early_exit_reason_on_full_window(self) -> None:
+        config = rehearsal._build_stream_config(symbol_overrides={})
+        manager = FakeStartingManager(config=config, client=None)
+        manager._snapshot = manager._active_snapshot(record_count=0)
+
+        class SilentSession:
+            def dispatch_one(self, handler):
+                return False
+
+        observation = rehearsal._pump_receive_loop(
+            session=SilentSession(),
+            manager=manager,
+            duration_seconds=10.0,
+            clock=_make_stepping_clock(step=2.0),
+        )
+
+        self.assertEqual(observation.early_exit_reason, "")
+        self.assertGreaterEqual(observation.actual_observed_duration_seconds, 10.0)
+
     def test_no_live_flag_blocks_before_env_or_token_access(self) -> None:
         sentinel_open = unittest.mock.MagicMock(side_effect=AssertionError("open_must_not_be_called"))
         with patch("builtins.open", new=sentinel_open):
@@ -1065,6 +1129,64 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
         self.assertEqual(managers[0].start_count, 1)
         self.assertEqual(managers[0].shutdown_count, 1)
         self.assertEqual(report.cleanup_status, "ok")
+
+    def test_long_duration_request_is_not_clamped_and_reported_transparently(self) -> None:
+        websocket_factory = FakeWebsocketFactory()
+        websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
+
+        deps = rehearsal.RehearsalDependencies(
+            token_provider=FakeTokenProvider(),
+            credentials_provider=FakeCredentialsProvider(),
+            websocket_factory=websocket_factory,
+            manager_builder=lambda cfg, c: FakeStartingManager(cfg, c),
+            clock=_make_stepping_clock(step=60.0),
+        )
+        report = rehearsal.run_with_dependencies(
+            args=_make_args(live=True, duration=420),
+            env=_full_env(self.target_root),
+            target_root=self.target_root,
+            deps=deps,
+        )
+
+        self.assertEqual(report.requested_duration_seconds, 420.0)
+        self.assertEqual(report.effective_duration_seconds, 420.0)
+        self.assertEqual(report.duration_seconds, 420.0)
+        self.assertFalse(report.duration_clamped)
+        self.assertGreaterEqual(report.actual_observed_duration_seconds, 420.0)
+        self.assertEqual(report.early_exit_reason, "")
+        payload = json.loads(rehearsal.render_json(report))
+        self.assertEqual(payload["requested_duration_seconds"], 420.0)
+        self.assertEqual(payload["effective_duration_seconds"], 420.0)
+        self.assertEqual(payload["duration_clamped"], "no")
+
+    def test_oversized_duration_request_is_clamped_to_max_and_flagged(self) -> None:
+        websocket_factory = FakeWebsocketFactory()
+        websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
+
+        deps = rehearsal.RehearsalDependencies(
+            token_provider=FakeTokenProvider(),
+            credentials_provider=FakeCredentialsProvider(),
+            websocket_factory=websocket_factory,
+            manager_builder=lambda cfg, c: FakeStartingManager(cfg, c),
+            clock=_make_stepping_clock(step=600.0),
+        )
+        report = rehearsal.run_with_dependencies(
+            args=_make_args(live=True, duration=99999),
+            env=_full_env(self.target_root),
+            target_root=self.target_root,
+            deps=deps,
+        )
+
+        self.assertEqual(report.requested_duration_seconds, 99999.0)
+        self.assertEqual(report.effective_duration_seconds, float(rehearsal.MAX_DURATION_SECONDS))
+        self.assertEqual(report.duration_seconds, float(rehearsal.MAX_DURATION_SECONDS))
+        self.assertTrue(report.duration_clamped)
+        payload = json.loads(rehearsal.render_json(report))
+        self.assertEqual(payload["duration_clamped"], "yes")
 
     def test_chart_subscription_denial_is_provider_or_entitlement_diagnostic(self) -> None:
         websocket_factory = FakeWebsocketFactory()
