@@ -9,15 +9,66 @@ from pathlib import Path
 
 import pytest
 
+import ntb_marimo_console.operator_cockpit_launch as launch_mod
 from ntb_marimo_console.operator_cockpit_launch import (
     APP_ENTRYPOINT_RELATIVE,
     DEFAULT_OPERATOR_RUNTIME_MODE,
+    LIVE_OPERATOR_RUNTIME_MODE,
+    REQUIRED_LIVE_ENV_KEYS,
+    build_live_launch_environment,
+    build_live_operator_cockpit_launch_smoke,
     build_marimo_launch_command,
     build_operator_cockpit_launch_smoke,
     build_safe_launch_environment,
+    format_live_marimo_launch_command,
     format_marimo_launch_command,
     launch_operator_cockpit,
+    launch_operator_cockpit_live,
+    live_launch_prerequisites,
+    main,
+    render_live_operator_cockpit_launch_smoke,
     render_operator_cockpit_launch_smoke,
+)
+
+
+def _live_opt_in_env() -> dict[str, str]:
+    """Minimal explicit-opt-in env. Credential values are placeholders only;
+    nothing here is read as a file or surfaced anywhere."""
+    return {
+        "PATH": os.environ.get("PATH", ""),
+        "NTB_OPERATOR_RUNTIME_MODE": "OPERATOR_LIVE_RUNTIME",
+        "SCHWAB_APP_KEY": "placeholder-app-key-not-a-real-secret",
+        "SCHWAB_APP_SECRET": "placeholder-app-secret-not-a-real-secret",
+        "SCHWAB_TOKEN_PATH": ".state/schwab/token.json",
+    }
+
+
+_FORBIDDEN_OUTPUT_FRAGMENTS = (
+    "placeholder-app-key-not-a-real-secret",
+    "placeholder-app-secret-not-a-real-secret",
+    "Authorization",
+    "Bearer",
+    "access_token",
+    "refresh_token",
+    "client_secret",
+    "api_key",
+    "customerId",
+    "correlId",
+    "accountId",
+    "wss://",
+    "streamer-api",
+    ".state/secrets",
+    "schwab_live.env",
+    "QUERY_READY",
+)
+_FORBIDDEN_AUTOMATION_TOKENS = (
+    "order",
+    "broker",
+    "execution",
+    "account",
+    "fill",
+    "p&l",
+    "pnl",
 )
 
 
@@ -246,3 +297,300 @@ def test_smoke_text_does_not_render_excluded_contracts(forbidden: str) -> None:
     text = render_operator_cockpit_launch_smoke(smoke)
 
     assert forbidden not in text
+
+
+# ---------------------------------------------------------------------------
+# Explicit opt-in live-observation cockpit launch path
+# ---------------------------------------------------------------------------
+
+
+def test_default_launch_remains_non_live_with_live_path_present() -> None:
+    # The new live path must not change default launch behavior.
+    env = build_safe_launch_environment(_live_opt_in_env(), project_root=PROJECT_ROOT)
+    assert env["NTB_OPERATOR_RUNTIME_MODE"] == DEFAULT_OPERATOR_RUNTIME_MODE
+    assert env["NTB_OPERATOR_LIVE_RUNTIME"] == "0"
+    assert env["NTB_MARKET_DATA_PROVIDER"] == "disabled"
+    assert "SCHWAB_APP_KEY" not in env
+    assert "SCHWAB_TOKEN_PATH" not in env
+
+    safe_command = format_marimo_launch_command(project_root=PROJECT_ROOT)
+    assert "NTB_OPERATOR_RUNTIME_MODE=SAFE_NON_LIVE" in safe_command
+    assert "NTB_OPERATOR_RUNTIME_MODE=OPERATOR_LIVE_RUNTIME" not in safe_command
+    assert "NTB_MARKET_DATA_PROVIDER=schwab" not in safe_command
+
+
+def test_live_launch_prerequisites_require_explicit_opt_in() -> None:
+    missing = live_launch_prerequisites({"PATH": os.environ.get("PATH", "")})
+    assert missing.ready is False
+    assert missing.explicit_runtime_mode_opt_in is False
+    assert missing.required_env_keys_present is False
+    assert "operator_live_runtime_opt_in_required" in missing.blocking_reasons
+    assert "required_live_env_keys_missing" in missing.blocking_reasons
+
+    # Credential keys present but no explicit runtime opt-in: still not ready.
+    keys_only = live_launch_prerequisites(
+        {key: "placeholder" for key in REQUIRED_LIVE_ENV_KEYS}
+    )
+    assert keys_only.ready is False
+    assert keys_only.required_env_keys_present is True
+    assert keys_only.explicit_runtime_mode_opt_in is False
+    assert "operator_live_runtime_opt_in_required" in keys_only.blocking_reasons
+
+
+def test_live_launch_prerequisites_ready_with_explicit_opt_in_and_keys() -> None:
+    ready = live_launch_prerequisites(_live_opt_in_env())
+    assert ready.ready is True
+    assert ready.explicit_runtime_mode_opt_in is True
+    assert ready.required_env_keys_present is True
+    assert ready.blocking_reasons == ()
+
+
+def test_live_launch_refuses_fail_closed_and_never_falls_back_to_fixture(monkeypatch) -> None:
+    subprocess_calls: list[object] = []
+    fixture_calls: list[object] = []
+
+    def fake_run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        subprocess_calls.append((args, kwargs))
+        return subprocess.CompletedProcess(args, 0)
+
+    def fake_fixture_launch(*args, **kwargs):  # type: ignore[no-untyped-def]
+        fixture_calls.append((args, kwargs))
+        return 0
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(launch_mod, "launch_operator_cockpit", fake_fixture_launch)
+
+    result = launch_operator_cockpit_live(
+        base_env={"PATH": os.environ.get("PATH", "")},
+        project_root=PROJECT_ROOT,
+        python_executable="python",
+    )
+
+    assert result == 2
+    assert subprocess_calls == []
+    assert fixture_calls == []
+
+
+def test_live_launch_invokes_marimo_with_live_env_when_prerequisites_met(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+    fixture_calls: list[object] = []
+
+    def fake_run(command, *, cwd, env, check):  # type: ignore[no-untyped-def]
+        calls.append({"command": command, "cwd": cwd, "env": env, "check": check})
+        return subprocess.CompletedProcess(command, 0)
+
+    def fake_fixture_launch(*args, **kwargs):  # type: ignore[no-untyped-def]
+        fixture_calls.append((args, kwargs))
+        return 0
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(launch_mod, "launch_operator_cockpit", fake_fixture_launch)
+
+    result = launch_operator_cockpit_live(
+        base_env=_live_opt_in_env(),
+        project_root=PROJECT_ROOT,
+        python_executable="python",
+    )
+
+    assert result == 0
+    assert fixture_calls == []
+    assert len(calls) == 1
+    assert calls[0]["command"] == (
+        "python",
+        "-m",
+        "marimo",
+        "run",
+        "src/ntb_marimo_console/operator_console_app.py",
+    )
+    env = calls[0]["env"]
+    assert isinstance(env, dict)
+    assert env["NTB_OPERATOR_RUNTIME_MODE"] == LIVE_OPERATOR_RUNTIME_MODE
+    assert env["NTB_OPERATOR_LIVE_RUNTIME"] == "1"
+    assert env["NTB_MARKET_DATA_PROVIDER"] == "schwab"
+    # The runtime reads token material internally; the launcher must keep the
+    # credential env keys for the child process but never print them.
+    assert env["SCHWAB_APP_KEY"] == "placeholder-app-key-not-a-real-secret"
+
+
+def test_live_launch_failure_does_not_fall_back_to_fixture(monkeypatch) -> None:
+    fixture_calls: list[object] = []
+
+    def fake_run(command, *, cwd, env, check):  # type: ignore[no-untyped-def]
+        return subprocess.CompletedProcess(command, 3)
+
+    def fake_fixture_launch(*args, **kwargs):  # type: ignore[no-untyped-def]
+        fixture_calls.append((args, kwargs))
+        return 0
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(launch_mod, "launch_operator_cockpit", fake_fixture_launch)
+
+    result = launch_operator_cockpit_live(
+        base_env=_live_opt_in_env(),
+        project_root=PROJECT_ROOT,
+        python_executable="python",
+    )
+
+    assert result == 3
+    assert fixture_calls == []
+
+
+def test_live_launch_environment_keeps_credentials_but_outputs_never_print_them() -> None:
+    secret_env = dict(_live_opt_in_env())
+    secret_env["SCHWAB_APP_KEY"] = "placeholder-app-key-not-a-real-secret"
+    live_env = build_live_launch_environment(secret_env, project_root=PROJECT_ROOT)
+
+    # Child process keeps the credential keys; runtime reads token internally.
+    assert live_env["SCHWAB_APP_KEY"] == "placeholder-app-key-not-a-real-secret"
+    assert live_env["NTB_OPERATOR_RUNTIME_MODE"] == LIVE_OPERATOR_RUNTIME_MODE
+    assert live_env["NTB_OPERATOR_LIVE_RUNTIME"] == "1"
+    assert live_env["NTB_MARKET_DATA_PROVIDER"] == "schwab"
+
+    printed = format_live_marimo_launch_command(project_root=PROJECT_ROOT)
+    for fragment in _FORBIDDEN_OUTPUT_FRAGMENTS:
+        assert fragment not in printed
+    assert "NTB_OPERATOR_RUNTIME_MODE=OPERATOR_LIVE_RUNTIME" in printed
+    assert "NTB_MARKET_DATA_PROVIDER=schwab" in printed
+    assert "marimo run src/ntb_marimo_console/operator_console_app.py" in printed
+
+
+def test_live_dry_run_smoke_fails_closed_without_opt_in() -> None:
+    smoke = build_live_operator_cockpit_launch_smoke(
+        project_root=PROJECT_ROOT,
+        base_env={"PATH": os.environ.get("PATH", "")},
+        python_executable="python",
+    )
+
+    assert smoke.smoke_passed is False
+    assert smoke.prerequisites_ready is False
+    assert smoke.app_importable is False
+    assert smoke.live_runtime_fail_closed is True
+    assert smoke.default_launch_live is False
+    assert "operator_live_runtime_opt_in_required" in smoke.blocking_reasons
+
+    text = render_live_operator_cockpit_launch_smoke(smoke)
+    assert "Live-observation cockpit launch smoke: FAIL" in text
+    assert "prerequisites_ready=no" in text
+    assert "fixture_fallback_after_live_failure=no" in text
+
+
+def test_live_dry_run_smoke_is_observation_only_and_final_target_only() -> None:
+    smoke = build_live_operator_cockpit_launch_smoke(
+        project_root=PROJECT_ROOT,
+        base_env=_live_opt_in_env(),
+        python_executable="python",
+    )
+
+    assert smoke.prerequisites_ready is True
+    assert smoke.app_importable is True
+    assert smoke.primary_cockpit_present is True
+    assert smoke.operator_runtime_mode == LIVE_OPERATOR_RUNTIME_MODE
+    # No operator-owned manager is registered into the Marimo process yet, so
+    # the live runtime status is fail-closed observation-only by design.
+    assert smoke.live_runtime_fail_closed is True
+    assert smoke.operator_runtime_status != "QUERY_READY"
+    assert smoke.default_launch_live is False
+    assert smoke.supported_contracts == ("ES", "NQ", "CL", "6E", "MGC")
+    assert smoke.mgc_label == "Micro Gold"
+    assert smoke.mgc_label != "GC"
+    assert smoke.smoke_passed is True
+
+
+def test_live_dry_run_smoke_text_is_sanitized_final_target_only_and_no_query_ready() -> None:
+    smoke = build_live_operator_cockpit_launch_smoke(
+        project_root=PROJECT_ROOT,
+        base_env=_live_opt_in_env(),
+        python_executable="python",
+    )
+    text = render_live_operator_cockpit_launch_smoke(smoke)
+
+    assert "Live-observation cockpit launch smoke: PASS" in text
+    assert "supported_contracts=ES,NQ,CL,6E,MGC" in text
+    assert "MGC_label=Micro Gold" in text
+    assert "operator_runtime_mode=OPERATOR_LIVE_RUNTIME" in text
+    assert "ZN" not in text
+    assert " GC " not in text
+    for fragment in _FORBIDDEN_OUTPUT_FRAGMENTS:
+        assert fragment not in text, f"live smoke text must not surface {fragment!r}"
+    lowered = text.lower()
+    for token in _FORBIDDEN_AUTOMATION_TOKENS:
+        assert token not in lowered, f"live smoke text must not surface automation token {token!r}"
+
+
+def test_live_smoke_to_dict_exposes_no_broker_order_execution_or_pnl_fields() -> None:
+    smoke = build_live_operator_cockpit_launch_smoke(
+        project_root=PROJECT_ROOT,
+        base_env=_live_opt_in_env(),
+        python_executable="python",
+    )
+    keys = " ".join(smoke.to_dict().keys()).lower()
+    for token in _FORBIDDEN_AUTOMATION_TOKENS:
+        assert token not in keys
+
+
+def test_live_dry_run_smoke_does_not_read_secret_or_token_paths(monkeypatch) -> None:
+    original_open = builtins.open
+    original_read_text = Path.read_text
+
+    def guarded_open(file, *args, **kwargs):  # type: ignore[no-untyped-def]
+        text = str(file)
+        assert ".state/secrets" not in text
+        assert "schwab_live.env" not in text
+        assert "token" not in text.lower()
+        return original_open(file, *args, **kwargs)
+
+    def guarded_read_text(self: Path, *args, **kwargs):  # type: ignore[no-untyped-def]
+        text = str(self)
+        assert ".state/secrets" not in text
+        assert "schwab_live.env" not in text
+        assert "token" not in text.lower()
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", guarded_open)
+    monkeypatch.setattr(Path, "read_text", guarded_read_text)
+
+    smoke = build_live_operator_cockpit_launch_smoke(
+        project_root=PROJECT_ROOT,
+        base_env=_live_opt_in_env(),
+        python_executable="python",
+    )
+
+    assert smoke.prerequisites_ready is True
+    assert smoke.smoke_passed is True
+
+
+def test_main_default_dry_run_remains_non_live(capsys) -> None:
+    exit_code = main(["--dry-run"])
+    out = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Fixture cockpit launch smoke: PASS" in out
+    assert "operator_runtime=SAFE_NON_LIVE" in out
+    assert "NTB_OPERATOR_RUNTIME_MODE=OPERATOR_LIVE_RUNTIME" not in out
+    assert "NTB_MARKET_DATA_PROVIDER=schwab" not in out
+
+
+def test_main_live_dry_run_without_opt_in_fails_closed(capsys, monkeypatch) -> None:
+    for key in ("NTB_OPERATOR_RUNTIME_MODE", "NTB_OPERATOR_LIVE_RUNTIME"):
+        monkeypatch.delenv(key, raising=False)
+    for key in REQUIRED_LIVE_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+    exit_code = main(["--live", "--dry-run"])
+    out = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Live-observation cockpit launch smoke: FAIL" in out
+    assert "prerequisites_ready=no" in out
+    assert "fixture_fallback_after_live_failure=no" in out
+
+
+def test_main_live_print_command_is_secret_free(capsys) -> None:
+    exit_code = main(["--live", "--print-command"])
+    out = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "NTB_OPERATOR_RUNTIME_MODE=OPERATOR_LIVE_RUNTIME" in out
+    assert "marimo run src/ntb_marimo_console/operator_console_app.py" in out
+    for fragment in _FORBIDDEN_OUTPUT_FRAGMENTS:
+        assert fragment not in out
