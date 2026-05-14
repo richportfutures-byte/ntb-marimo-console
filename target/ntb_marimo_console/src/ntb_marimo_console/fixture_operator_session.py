@@ -6,6 +6,9 @@ from datetime import datetime, timedelta, timezone
 from .contract_universe import final_target_contracts
 from .cockpit_manual_query import (
     COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES,
+    COCKPIT_OPERATOR_NOTE_MAX_TEXT_LENGTH,
+    COCKPIT_OPERATOR_NOTES_MAX_ENTRIES,
+    COCKPIT_OPERATOR_NOTES_SURFACE_SCHEMA,
     no_cockpit_manual_query_result,
     no_cockpit_operator_action_status,
 )
@@ -91,6 +94,16 @@ def build_fixture_operator_session_summary() -> dict[str, object]:
             "max_entries": COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES,
             "entry_count": 0,
             "entries": [],
+        },
+        "operator_notes": {
+            "schema": COCKPIT_OPERATOR_NOTES_SURFACE_SCHEMA,
+            "max_entries": COCKPIT_OPERATOR_NOTES_MAX_ENTRIES,
+            "max_text_length": COCKPIT_OPERATOR_NOTE_MAX_TEXT_LENGTH,
+            "entry_count": 0,
+            "entries": [],
+            "raw_quote_values_included": False,
+            "raw_bar_values_included": False,
+            "raw_streamer_payloads_included": False,
         },
         "sanitization": {
             "raw_quote_values_printed": False,

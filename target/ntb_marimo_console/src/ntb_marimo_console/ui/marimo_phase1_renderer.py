@@ -314,6 +314,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
             "last_query_result": None,
             "operator_action_status": None,
             "operator_action_timeline": None,
+            "operator_notes": None,
         }
     surface = surfaces_raw.get("fixture_cockpit_overview")
     if not isinstance(surface, Mapping):
@@ -330,6 +331,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
             "last_query_result": None,
             "operator_action_status": None,
             "operator_action_timeline": None,
+            "operator_notes": None,
         }
     return {
         "present": True,
@@ -344,6 +346,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
         "last_query_result": surface.get("last_query_result"),
         "operator_action_status": surface.get("operator_action_status"),
         "operator_action_timeline": surface.get("operator_action_timeline"),
+        "operator_notes": surface.get("operator_notes"),
     }
 
 
@@ -2481,6 +2484,9 @@ def _render_fixture_cockpit_primary(
     action_timeline_html = _fixture_cockpit_operator_action_timeline_html(
         surface.get("operator_action_timeline")
     )
+    operator_notes_html = _fixture_cockpit_operator_notes_html(
+        surface.get("operator_notes")
+    )
 
     error_html = ""
     if error is not None:
@@ -2497,6 +2503,7 @@ def _render_fixture_cockpit_primary(
         + table_html
         + last_query_html
         + action_timeline_html
+        + operator_notes_html
         + error_html
         + "</div>"
     )
@@ -2578,6 +2585,53 @@ def _fixture_cockpit_operator_action_status_html(value: object) -> str:
         f"<td class='ntb-muted'>{_h(blocked_reason)}</td>"
         f"<td>{_h(next_state)}</td>"
         "</tr></tbody></table></div>"
+    )
+
+
+def _fixture_cockpit_operator_notes_html(value: object) -> str:
+    notes = value if isinstance(value, Mapping) else {}
+    entries_raw = notes.get("entries")
+    entries = entries_raw if isinstance(entries_raw, list) else []
+    rows_html = ""
+    for entry in reversed(entries):
+        if not isinstance(entry, Mapping):
+            continue
+        sequence = _as_str(entry.get("sequence"), default="<unavailable>")
+        recorded_at = _as_str(entry.get("recorded_at"), default="<none>")
+        contract = _as_str(entry.get("contract"), default="<none>")
+        profile_id = _as_str(entry.get("profile_id"), default="<none>")
+        text = _as_str(entry.get("text"), default="")
+        source = _as_str(entry.get("source"), default="OPERATOR_NOTE")
+        rows_html += (
+            "<tr>"
+            f"<td>{_h(sequence)}</td>"
+            f"<td>{_h(recorded_at)}</td>"
+            f"<td>{_h(contract)}</td>"
+            f"<td>{_h(profile_id)}</td>"
+            f"<td>{_h(source)}</td>"
+            f"<td>{_h(text)}</td>"
+            "</tr>"
+        )
+    if not rows_html:
+        rows_html = (
+            "<tr><td colspan='6' class='ntb-muted'>"
+            "No cockpit operator notes have been recorded yet.</td></tr>"
+        )
+    entry_count = _as_str(notes.get("entry_count"), default=len(entries))
+    max_entries = _as_str(notes.get("max_entries"), default="<unavailable>")
+    max_text_length = _as_str(notes.get("max_text_length"), default="<unavailable>")
+    return (
+        '<div style="margin-top:12px">'
+        '<div class="ntb-stat__label" style="margin-bottom:6px">'
+        f"Operator Notes (recent {_h(entry_count)} of bounded max {_h(max_entries)}; "
+        f"max {_h(max_text_length)} chars per note; manual annotation only)"
+        "</div>"
+        '<table class="ntb-table"><thead><tr>'
+        "<th>#</th><th>Recorded At</th><th>Contract</th><th>Profile</th>"
+        "<th>Source</th><th>Note</th>"
+        "</tr></thead>"
+        f"<tbody>{rows_html}</tbody>"
+        "</table></div>"
     )
 
 

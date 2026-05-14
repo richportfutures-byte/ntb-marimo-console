@@ -10,6 +10,9 @@ from .market_data import FuturesQuoteServiceConfig, resolve_futures_quote_servic
 from .market_data.stream_manager import StreamManagerSnapshot
 from .cockpit_manual_query import (
     COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES,
+    COCKPIT_OPERATOR_NOTE_MAX_TEXT_LENGTH,
+    COCKPIT_OPERATOR_NOTES_MAX_ENTRIES,
+    COCKPIT_OPERATOR_NOTES_SURFACE_SCHEMA,
     operator_action_status_for_lifecycle_action,
 )
 from .operator_live_runtime import (
@@ -460,6 +463,19 @@ def _attach_initial_cockpit_operator_action_status(shell: dict[str, object]) -> 
             "max_entries": COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES,
             "entry_count": 0,
             "entries": [],
+        },
+    )
+    cockpit.setdefault(
+        "operator_notes",
+        {
+            "schema": COCKPIT_OPERATOR_NOTES_SURFACE_SCHEMA,
+            "max_entries": COCKPIT_OPERATOR_NOTES_MAX_ENTRIES,
+            "max_text_length": COCKPIT_OPERATOR_NOTE_MAX_TEXT_LENGTH,
+            "entry_count": 0,
+            "entries": [],
+            "raw_quote_values_included": False,
+            "raw_bar_values_included": False,
+            "raw_streamer_payloads_included": False,
         },
     )
 

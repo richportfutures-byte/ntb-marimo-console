@@ -16,6 +16,10 @@ COCKPIT_MANUAL_QUERY_SCHEMA: Final[str] = "cockpit_manual_query_result_v1"
 COCKPIT_OPERATOR_ACTION_STATUS_SCHEMA: Final[str] = "cockpit_operator_action_status_v1"
 COCKPIT_OPERATOR_ACTION_TIMELINE_ENTRY_SCHEMA: Final[str] = "cockpit_operator_action_timeline_entry_v1"
 COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES: Final[int] = 10
+COCKPIT_OPERATOR_NOTE_SCHEMA: Final[str] = "cockpit_operator_note_v1"
+COCKPIT_OPERATOR_NOTES_SURFACE_SCHEMA: Final[str] = "cockpit_operator_notes_v1"
+COCKPIT_OPERATOR_NOTES_MAX_ENTRIES: Final[int] = 10
+COCKPIT_OPERATOR_NOTE_MAX_TEXT_LENGTH: Final[int] = 500
 NO_QUERY_SUBMITTED_TEXT: Final[str] = "No manual query has been submitted from the primary cockpit."
 MANUAL_QUERY_DECISION_AUTHORITY: Final[str] = "preserved_engine_only"
 MANUAL_QUERY_SOURCE: Final[str] = "primary_cockpit_manual_action"
@@ -227,6 +231,103 @@ def append_operator_action_timeline_entry(
     if max_entries > 0 and len(updated) > max_entries:
         updated = updated[-max_entries:]
     return updated
+
+
+@dataclass(frozen=True)
+class CockpitOperatorNote:
+    sequence: int
+    recorded_at: str | None
+    contract: str | None
+    profile_id: str | None
+    text: str
+    source: str = "OPERATOR_NOTE"
+    schema: str = COCKPIT_OPERATOR_NOTE_SCHEMA
+    raw_quote_values_included: bool = False
+    raw_bar_values_included: bool = False
+    raw_streamer_payloads_included: bool = False
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.schema,
+            "sequence": self.sequence,
+            "recorded_at": self.recorded_at,
+            "contract": self.contract,
+            "profile_id": self.profile_id,
+            "text": self.text,
+            "source": self.source,
+            "raw_quote_values_included": self.raw_quote_values_included,
+            "raw_bar_values_included": self.raw_bar_values_included,
+            "raw_streamer_payloads_included": self.raw_streamer_payloads_included,
+        }
+
+
+def sanitize_cockpit_operator_note_text(
+    text: object,
+    *,
+    max_length: int = COCKPIT_OPERATOR_NOTE_MAX_TEXT_LENGTH,
+) -> str | None:
+    """Bound and sanitize a candidate operator-note text string.
+
+    Returns the cleaned text, or None if the input is empty/whitespace-only
+    or not a string. Length is bounded; control characters are stripped.
+    """
+    if not isinstance(text, str):
+        return None
+    cleaned = "".join(
+        ch for ch in text if ch == "\n" or ch == "\t" or (ord(ch) >= 32 and ord(ch) != 127)
+    )
+    cleaned = cleaned.strip()
+    if not cleaned:
+        return None
+    if max_length > 0 and len(cleaned) > max_length:
+        cleaned = cleaned[:max_length]
+    return cleaned
+
+
+def append_cockpit_operator_note(
+    history: Sequence[CockpitOperatorNote],
+    *,
+    text: object,
+    recorded_at: str | None,
+    contract: str | None = None,
+    profile_id: str | None = None,
+    max_entries: int = COCKPIT_OPERATOR_NOTES_MAX_ENTRIES,
+    max_text_length: int = COCKPIT_OPERATOR_NOTE_MAX_TEXT_LENGTH,
+) -> tuple[tuple[CockpitOperatorNote, ...], CockpitOperatorNote | None]:
+    """Return (updated_notes, added_note) — added_note is None when rejected."""
+    cleaned = sanitize_cockpit_operator_note_text(text, max_length=max_text_length)
+    if cleaned is None:
+        return tuple(history), None
+    sequence = (history[-1].sequence + 1) if history else 1
+    note = CockpitOperatorNote(
+        sequence=sequence,
+        recorded_at=recorded_at,
+        contract=_optional_text(contract),
+        profile_id=_optional_text(profile_id),
+        text=cleaned,
+    )
+    updated = tuple(history) + (note,)
+    if max_entries > 0 and len(updated) > max_entries:
+        updated = updated[-max_entries:]
+    return updated, note
+
+
+def build_cockpit_operator_notes_payload(
+    notes: Sequence[CockpitOperatorNote],
+    *,
+    max_entries: int = COCKPIT_OPERATOR_NOTES_MAX_ENTRIES,
+    max_text_length: int = COCKPIT_OPERATOR_NOTE_MAX_TEXT_LENGTH,
+) -> dict[str, object]:
+    return {
+        "schema": COCKPIT_OPERATOR_NOTES_SURFACE_SCHEMA,
+        "max_entries": max_entries,
+        "max_text_length": max_text_length,
+        "entry_count": len(notes),
+        "entries": [note.to_dict() for note in notes],
+        "raw_quote_values_included": False,
+        "raw_bar_values_included": False,
+        "raw_streamer_payloads_included": False,
+    }
 
 
 def operator_action_status_from_manual_query_result(
