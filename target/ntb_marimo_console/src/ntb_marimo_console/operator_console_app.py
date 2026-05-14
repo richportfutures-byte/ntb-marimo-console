@@ -54,6 +54,47 @@ def optional_thesis_reference_from_form(submitted, thesis_cls):
         return None, str(exc)
 
 
+def resolve_cockpit_runtime_snapshot_producer(
+    cached_producer,
+    *,
+    operator_runtime_mode,
+    live_runtime_starter=None,
+    non_live_producer_builder=None,
+):
+    """Resolve the read-only runtime snapshot producer for a cockpit session.
+
+    Called once per session with the Marimo-state-cached producer:
+
+    * If a producer is already cached, it is returned unchanged — the live
+      runtime is NOT started again on refresh/render and there is no repeated
+      Schwab login per refresh.
+    * On first resolution (``cached_producer is None``) in explicit
+      ``OPERATOR_LIVE_RUNTIME`` mode, the operator-owned live runtime is started
+      and registered exactly once; the returned producer reads that runtime's
+      cache read-only. If the live start fails the producer is fail-closed
+      (live unavailable/error), never fixture data.
+    * Otherwise the non-live producer is built (default fixture/non-live path).
+    """
+
+    if cached_producer is not None:
+        return cached_producer
+
+    from ntb_marimo_console.live_cockpit_runtime import start_live_cockpit_runtime
+    from ntb_marimo_console.operator_live_runtime import (
+        OPERATOR_LIVE_RUNTIME,
+        build_operator_runtime_snapshot_producer_from_env,
+    )
+
+    if live_runtime_starter is None:
+        live_runtime_starter = start_live_cockpit_runtime
+    if non_live_producer_builder is None:
+        non_live_producer_builder = build_operator_runtime_snapshot_producer_from_env
+
+    if operator_runtime_mode == OPERATOR_LIVE_RUNTIME:
+        return live_runtime_starter().producer
+    return non_live_producer_builder()
+
+
 @app.cell
 def _():
     import marimo as mo
@@ -62,7 +103,6 @@ def _():
     from ntb_marimo_console.anchor_inputs import AnchorInputRegistry
     from ntb_marimo_console.operator_notes import OperatorNotesRegistry
     from ntb_marimo_console.operator_live_runtime import (
-        build_operator_runtime_snapshot_producer_from_env,
         operator_runtime_mode_from_env,
     )
     from ntb_marimo_console.session_lifecycle import (
@@ -84,9 +124,13 @@ def _():
     get_anchor_input_registry, set_anchor_input_registry = mo.state(None)
     get_operator_notes_registry, set_operator_notes_registry = mo.state(None)
     get_premarket_manual_sections, set_premarket_manual_sections = mo.state({})
+    operator_runtime_mode = operator_runtime_mode_from_env()
     runtime_snapshot_producer = get_runtime_snapshot_producer()
     if runtime_snapshot_producer is None:
-        runtime_snapshot_producer = build_operator_runtime_snapshot_producer_from_env()
+        runtime_snapshot_producer = resolve_cockpit_runtime_snapshot_producer(
+            runtime_snapshot_producer,
+            operator_runtime_mode=operator_runtime_mode,
+        )
         set_runtime_snapshot_producer(runtime_snapshot_producer)
     active_trade_registry = get_active_trade_registry()
     if active_trade_registry is None:
@@ -101,7 +145,6 @@ def _():
         operator_notes_registry = OperatorNotesRegistry()
         set_operator_notes_registry(operator_notes_registry)
 
-    operator_runtime_mode = operator_runtime_mode_from_env()
     lifecycle = get_lifecycle()
     if lifecycle is None:
         lifecycle = load_session_lifecycle_from_env(
