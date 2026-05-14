@@ -9,6 +9,7 @@ from .cockpit_manual_query import (
     COCKPIT_OPERATOR_NOTE_MAX_TEXT_LENGTH,
     COCKPIT_OPERATOR_NOTES_MAX_ENTRIES,
     COCKPIT_OPERATOR_NOTES_SURFACE_SCHEMA,
+    build_cockpit_current_state_summary,
     no_cockpit_manual_query_result,
     no_cockpit_operator_action_status,
 )
@@ -75,7 +76,7 @@ def build_fixture_operator_session_summary() -> dict[str, object]:
             )
         ).to_dict()
         rows.append(_session_row(contract, cockpit))
-    return {
+    summary: dict[str, object] = {
         "schema": "fixture_operator_session_dry_run_v1",
         "mode": "fixture_dry_run_non_live",
         "live_credentials_required": False,
@@ -112,6 +113,8 @@ def build_fixture_operator_session_summary() -> dict[str, object]:
             "live_credentials_printed": False,
         },
     }
+    summary["current_state_summary"] = build_cockpit_current_state_summary(summary)
+    return summary
 
 
 def render_fixture_operator_session_text(summary: dict[str, object]) -> str:

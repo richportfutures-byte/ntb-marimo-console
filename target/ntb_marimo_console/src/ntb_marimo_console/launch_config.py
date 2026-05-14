@@ -13,6 +13,7 @@ from .cockpit_manual_query import (
     COCKPIT_OPERATOR_NOTE_MAX_TEXT_LENGTH,
     COCKPIT_OPERATOR_NOTES_MAX_ENTRIES,
     COCKPIT_OPERATOR_NOTES_SURFACE_SCHEMA,
+    build_cockpit_current_state_summary,
     operator_action_status_for_lifecycle_action,
 )
 from .operator_live_runtime import (
@@ -478,6 +479,7 @@ def _attach_initial_cockpit_operator_action_status(shell: dict[str, object]) -> 
             "raw_streamer_payloads_included": False,
         },
     )
+    cockpit["current_state_summary"] = build_cockpit_current_state_summary(cockpit)
 
 
 def _attach_five_contract_readiness_summary(

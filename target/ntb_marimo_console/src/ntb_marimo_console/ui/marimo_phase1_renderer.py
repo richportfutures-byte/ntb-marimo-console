@@ -15,6 +15,7 @@ except ModuleNotFoundError:
 
     mo = _MissingMarimo()
 
+from ..cockpit_manual_query import build_cockpit_current_state_summary
 from ..session_evidence import NO_RECENT_SESSION_EVIDENCE
 from ..watchman_gate import build_watchman_gate_markdown, watchman_gate_requires_stop
 
@@ -315,6 +316,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
             "operator_action_status": None,
             "operator_action_timeline": None,
             "operator_notes": None,
+            "current_state_summary": None,
         }
     surface = surfaces_raw.get("fixture_cockpit_overview")
     if not isinstance(surface, Mapping):
@@ -332,6 +334,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
             "operator_action_status": None,
             "operator_action_timeline": None,
             "operator_notes": None,
+            "current_state_summary": None,
         }
     return {
         "present": True,
@@ -347,6 +350,8 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
         "operator_action_status": surface.get("operator_action_status"),
         "operator_action_timeline": surface.get("operator_action_timeline"),
         "operator_notes": surface.get("operator_notes"),
+        "current_state_summary": surface.get("current_state_summary")
+        or build_cockpit_current_state_summary(surface),
     }
 
 
@@ -2477,6 +2482,12 @@ def _render_fixture_cockpit_primary(
         f"<tbody>{tbody_html}</tbody>"
         "</table>"
     )
+    current_state_summary = surface.get("current_state_summary")
+    if not isinstance(current_state_summary, Mapping):
+        current_state_summary = build_cockpit_current_state_summary(surface)
+    current_state_strip_html = _fixture_cockpit_current_state_strip_html(
+        current_state_summary
+    )
     last_query_html = _fixture_cockpit_last_query_html(surface.get("last_query_result"))
     action_status_html = _fixture_cockpit_operator_action_status_html(
         surface.get("operator_action_status")
@@ -2499,6 +2510,7 @@ def _render_fixture_cockpit_primary(
         _ntb_section_divider("FIVE-CONTRACT FIXTURE COCKPIT")
         + '<div class="ntb-card">'
         + banner
+        + current_state_strip_html
         + action_status_html
         + table_html
         + last_query_html
@@ -2585,6 +2597,62 @@ def _fixture_cockpit_operator_action_status_html(value: object) -> str:
         f"<td class='ntb-muted'>{_h(blocked_reason)}</td>"
         f"<td>{_h(next_state)}</td>"
         "</tr></tbody></table></div>"
+    )
+
+
+def _fixture_cockpit_current_state_strip_html(value: object) -> str:
+    summary = value if isinstance(value, Mapping) else {}
+    runtime_text = _as_str(
+        summary.get("runtime_state_text"),
+        default="Fixture / non-live; live runtime not requested.",
+    )
+    query_text = _as_str(
+        summary.get("query_state_text"),
+        default="Query gate state is unavailable for this cockpit surface.",
+    )
+    blocked_reason = _as_str(summary.get("query_blocked_reason_text"), default="<none>")
+    last_action_text = _as_str(
+        summary.get("last_action_text"),
+        default="No cockpit operator action has been attempted.",
+    )
+    timeline_text = _as_str(
+        summary.get("timeline_state_text"),
+        default="No recent operator actions recorded yet.",
+    )
+    notes_text = _as_str(
+        summary.get("notes_state_text"),
+        default="No operator notes recorded yet.",
+    )
+    universe_text = _as_str(
+        summary.get("contract_universe_text"),
+        default=(
+            "Cockpit universe: ES, NQ, CL, 6E, MGC. "
+            "ZN and GC remain excluded. MGC is Micro Gold."
+        ),
+    )
+    rows = (
+        ("Runtime", runtime_text),
+        ("Query gate", query_text),
+        ("Block reason", blocked_reason),
+        ("Last operator action", last_action_text),
+        ("Action timeline", timeline_text),
+        ("Operator notes", notes_text),
+        ("Contract universe", universe_text),
+    )
+    items_html = "".join(
+        "<tr>"
+        f"<td class='ntb-stat__label' style='white-space:nowrap'>{_h(label)}</td>"
+        f"<td>{_h(text)}</td>"
+        "</tr>"
+        for label, text in rows
+    )
+    return (
+        '<div style="margin:12px 0">'
+        '<div class="ntb-stat__label" style="margin-bottom:6px">'
+        "Current-State Summary (plain-English read; display only — does not create query readiness)"
+        "</div>"
+        f'<table class="ntb-table"><tbody>{items_html}</tbody></table>'
+        "</div>"
     )
 
 

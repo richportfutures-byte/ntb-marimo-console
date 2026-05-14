@@ -41,6 +41,7 @@ from .cockpit_manual_query import (
     CockpitOperatorNote,
     append_cockpit_operator_note,
     append_operator_action_timeline_entry,
+    build_cockpit_current_state_summary,
     build_cockpit_operator_notes_payload,
     operator_action_status_for_lifecycle_action,
     operator_action_status_from_manual_query_result,
@@ -1123,6 +1124,16 @@ def _attach_cockpit_operator_notes(
         workflow["cockpit_operator_notes_entry_count"] = len(notes)
 
 
+def _attach_cockpit_current_state_summary(shell: dict[str, object]) -> None:
+    surfaces = shell.get("surfaces")
+    if not isinstance(surfaces, dict):
+        return
+    cockpit = surfaces.get("fixture_cockpit_overview")
+    if not isinstance(cockpit, dict):
+        return
+    cockpit["current_state_summary"] = build_cockpit_current_state_summary(cockpit)
+
+
 def _attach_cockpit_operator_action_timeline(
     shell: dict[str, object],
     timeline: tuple[CockpitOperatorActionTimelineEntry, ...],
@@ -1523,6 +1534,7 @@ def _finalize_lifecycle(
     )
     _attach_cockpit_operator_action_timeline(shell, operator_action_timeline)
     _attach_cockpit_operator_notes(shell, cockpit_operator_notes)
+    _attach_cockpit_current_state_summary(shell)
     shell["lifecycle"] = _build_lifecycle_panel(
         shell=shell,
         lifecycle_state=lifecycle_state,

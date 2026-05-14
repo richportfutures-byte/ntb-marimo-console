@@ -20,6 +20,8 @@ COCKPIT_OPERATOR_NOTE_SCHEMA: Final[str] = "cockpit_operator_note_v1"
 COCKPIT_OPERATOR_NOTES_SURFACE_SCHEMA: Final[str] = "cockpit_operator_notes_v1"
 COCKPIT_OPERATOR_NOTES_MAX_ENTRIES: Final[int] = 10
 COCKPIT_OPERATOR_NOTE_MAX_TEXT_LENGTH: Final[int] = 500
+COCKPIT_CURRENT_STATE_SUMMARY_SCHEMA: Final[str] = "cockpit_current_state_summary_v1"
+COCKPIT_CURRENT_STATE_SUMMARY_MAX_TEXT_LENGTH: Final[int] = 240
 NO_QUERY_SUBMITTED_TEXT: Final[str] = "No manual query has been submitted from the primary cockpit."
 MANUAL_QUERY_DECISION_AUTHORITY: Final[str] = "preserved_engine_only"
 MANUAL_QUERY_SOURCE: Final[str] = "primary_cockpit_manual_action"
@@ -324,6 +326,155 @@ def build_cockpit_operator_notes_payload(
         "max_text_length": max_text_length,
         "entry_count": len(notes),
         "entries": [note.to_dict() for note in notes],
+        "raw_quote_values_included": False,
+        "raw_bar_values_included": False,
+        "raw_streamer_payloads_included": False,
+    }
+
+
+def _bounded_summary_text(
+    text: object,
+    *,
+    max_length: int = COCKPIT_CURRENT_STATE_SUMMARY_MAX_TEXT_LENGTH,
+) -> str:
+    cleaned = _optional_text(text)
+    if cleaned is None:
+        return ""
+    if max_length > 0 and len(cleaned) > max_length:
+        return cleaned[: max_length - 1].rstrip() + "…"
+    return cleaned
+
+
+def _runtime_state_text(runtime_readiness_status: str, runtime_readiness_preserved: bool) -> str:
+    status = runtime_readiness_status.strip() or "LIVE_RUNTIME_NOT_REQUESTED"
+    if status == "LIVE_RUNTIME_CONNECTED":
+        base = "Runtime cache connected"
+        if runtime_readiness_preserved:
+            return f"{base}; runtime-cache-derived readiness preserved."
+        return f"{base}; readiness preservation not confirmed."
+    if status in {"LIVE_RUNTIME_NOT_REQUESTED", "SAFE_NON_LIVE"}:
+        return "Fixture / non-live; live runtime not requested."
+    return f"Runtime readiness status: {status}."
+
+
+def build_cockpit_current_state_summary(surface: Mapping[str, object]) -> dict[str, object]:
+    """Build a plain-English current-state summary from a cockpit surface.
+
+    Pure display/view-model derivation: it only reads existing cockpit surface
+    fields. It never creates QUERY_READY, never calls the pipeline, and never
+    exposes raw quote/bar/streamer payloads.
+    """
+    action_status = surface.get("operator_action_status")
+    action_status_map = action_status if isinstance(action_status, Mapping) else {}
+    timeline = surface.get("operator_action_timeline")
+    timeline_map = timeline if isinstance(timeline, Mapping) else {}
+    notes = surface.get("operator_notes")
+    notes_map = notes if isinstance(notes, Mapping) else {}
+
+    rows = surface.get("rows")
+    rows_list = [row for row in rows if isinstance(row, Mapping)] if isinstance(rows, list) else []
+    enabled_count = sum(1 for row in rows_list if row.get("query_action_state") == "ENABLED")
+    blocked_count = sum(1 for row in rows_list if row.get("query_action_state") != "ENABLED")
+    total_rows = len(rows_list)
+
+    blocked_reason_text: str | None = None
+    for row in rows_list:
+        if row.get("query_action_state") != "ENABLED":
+            reason = (
+                _optional_text(row.get("query_disabled_reason"))
+                or _optional_text(row.get("query_reason"))
+            )
+            if reason:
+                contract = _optional_text(row.get("contract")) or "<contract>"
+                blocked_reason_text = _bounded_summary_text(f"{contract}: {reason}")
+                break
+
+    if total_rows == 0:
+        query_state_text = "Query gate state is unavailable for this cockpit surface."
+    elif enabled_count == 0:
+        query_state_text = (
+            f"No contract is query-ready; all {total_rows} are blocked (fail-closed)."
+        )
+    elif blocked_count == 0:
+        query_state_text = f"All {total_rows} contracts are query-ready by the existing gate."
+    else:
+        query_state_text = (
+            f"{enabled_count} of {total_rows} contracts query-ready; "
+            f"{blocked_count} blocked (fail-closed)."
+        )
+
+    runtime_readiness_status = str(
+        action_status_map.get("runtime_readiness_status") or "LIVE_RUNTIME_NOT_REQUESTED"
+    )
+    runtime_readiness_preserved = bool(action_status_map.get("runtime_readiness_preserved"))
+
+    last_action_kind = str(action_status_map.get("action_kind") or "IDLE")
+    last_action_status = str(action_status_map.get("action_status") or "IDLE")
+    last_action_text = _bounded_summary_text(
+        action_status_map.get("action_text")
+        or "No cockpit operator action has been attempted."
+    )
+
+    timeline_entry_count = int(timeline_map.get("entry_count") or 0)
+    timeline_max = int(
+        timeline_map.get("max_entries") or COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES
+    )
+    if timeline_entry_count == 0:
+        timeline_state_text = "No recent operator actions recorded yet."
+    elif timeline_entry_count == 1:
+        timeline_state_text = f"1 recent operator action recorded (bounded max {timeline_max})."
+    else:
+        timeline_state_text = (
+            f"{timeline_entry_count} recent operator actions recorded (bounded max {timeline_max})."
+        )
+
+    notes_entry_count = int(notes_map.get("entry_count") or 0)
+    notes_max = int(notes_map.get("max_entries") or COCKPIT_OPERATOR_NOTES_MAX_ENTRIES)
+    if notes_entry_count == 0:
+        notes_state_text = "No operator notes recorded yet."
+    elif notes_entry_count == 1:
+        notes_state_text = f"1 operator note recorded (bounded max {notes_max})."
+    else:
+        notes_state_text = (
+            f"{notes_entry_count} operator notes recorded (bounded max {notes_max})."
+        )
+
+    supported = surface.get("supported_contracts")
+    supported_list = (
+        [str(item) for item in supported] if isinstance(supported, (list, tuple)) else []
+    )
+    if not supported_list:
+        supported_list = list(final_target_contracts())
+    contract_universe_text = (
+        f"Cockpit universe: {', '.join(supported_list)}. "
+        "ZN and GC remain excluded. MGC is Micro Gold."
+    )
+
+    return {
+        "schema": COCKPIT_CURRENT_STATE_SUMMARY_SCHEMA,
+        "runtime_state_text": _runtime_state_text(
+            runtime_readiness_status, runtime_readiness_preserved
+        ),
+        "runtime_readiness_status": runtime_readiness_status,
+        "runtime_readiness_preserved": runtime_readiness_preserved,
+        "default_launch_live": bool(surface.get("default_launch_live")),
+        "query_state_text": query_state_text,
+        "query_enabled_count": enabled_count,
+        "query_blocked_count": blocked_count,
+        "query_blocked_reason_text": blocked_reason_text,
+        "last_action_kind": last_action_kind,
+        "last_action_status": last_action_status,
+        "last_action_text": last_action_text,
+        "timeline_state_text": timeline_state_text,
+        "timeline_entry_count": timeline_entry_count,
+        "notes_state_text": notes_state_text,
+        "notes_entry_count": notes_entry_count,
+        "contract_universe_text": contract_universe_text,
+        "supported_contracts": supported_list,
+        "decision_authority": MANUAL_QUERY_DECISION_AUTHORITY,
+        "manual_query_only": True,
+        "manual_execution_only": True,
+        "creates_query_ready": False,
         "raw_quote_values_included": False,
         "raw_bar_values_included": False,
         "raw_streamer_payloads_included": False,
