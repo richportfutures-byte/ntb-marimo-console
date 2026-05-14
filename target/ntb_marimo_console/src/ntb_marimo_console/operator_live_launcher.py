@@ -19,6 +19,9 @@ from .operator_live_runtime import (
     operator_runtime_mode_from_env,
     register_operator_live_runtime_manager,
 )
+from .schwab_receive_thread import (
+    ManagedSchwabReceiveThread,
+)
 
 
 class OperatorLiveRuntimeOptInRequired(RuntimeError):
@@ -35,6 +38,7 @@ class OperatorLiveRuntimeStartError(RuntimeError):
 
 ClientFactory = Callable[[SchwabStreamManagerConfig], SchwabStreamClient]
 ManagerBuilder = Callable[[SchwabStreamManagerConfig, SchwabStreamClient], object]
+ReceiveThreadBuilder = Callable[..., object]
 
 
 @dataclass(frozen=True)
@@ -42,6 +46,11 @@ class OperatorLiveLaunchResult:
     manager: object
     producer: RuntimeSnapshotProducer
     started_snapshot: StreamManagerSnapshot
+    receive_worker: object | None = None
+    receive_worker_status: object | None = None
+
+
+_RECEIVE_WORKERS_BY_MANAGER_ID: dict[int, object] = {}
 
 
 def start_operator_live_runtime(
@@ -51,12 +60,17 @@ def start_operator_live_runtime(
     values: dict[str, str] | None = None,
     register: bool = True,
     manager_builder: ManagerBuilder | None = None,
+    receive_thread_builder: ReceiveThreadBuilder | None = None,
+    start_receive_worker: bool = True,
 ) -> OperatorLiveLaunchResult:
     """Construct, start, and (optionally) register an operator-owned live runtime.
 
     The launcher is the only place where ``manager.start()`` (and therefore
-    ``client.login`` / ``client.subscribe``) is invoked. The Marimo refresh
-    path remains read-only via ``StreamManagerRuntimeSnapshotProducer``.
+    ``client.login`` / ``client.subscribe``) is invoked. When the constructed
+    client exposes an operator streamer session, the launcher also starts one
+    receive worker to dispatch websocket data into ``manager.ingest_message``.
+    The Marimo refresh path remains read-only via
+    ``StreamManagerRuntimeSnapshotProducer``.
     """
 
     if operator_runtime_mode_from_env(values) != OPERATOR_LIVE_RUNTIME:
@@ -100,6 +114,15 @@ def start_operator_live_runtime(
             f"operator_live_runtime_start_error:{detail}",
         )
 
+    receive_worker: object | None = None
+    receive_worker_status: object | None = None
+    if start_receive_worker:
+        receive_worker, receive_worker_status = _start_receive_worker_if_supported(
+            client=client,
+            manager=manager,
+            receive_thread_builder=receive_thread_builder,
+        )
+
     producer = StreamManagerRuntimeSnapshotProducer(manager)
     if register:
         register_operator_live_runtime_manager(manager)
@@ -108,6 +131,8 @@ def start_operator_live_runtime(
         manager=manager,
         producer=producer,
         started_snapshot=started_snapshot,
+        receive_worker=receive_worker,
+        receive_worker_status=receive_worker_status,
     )
 
 
@@ -119,6 +144,7 @@ def stop_operator_live_runtime(manager: object) -> StreamManagerSnapshot:
     Marimo cell evaluation falls back to the safe default.
     """
 
+    _stop_receive_worker_for_manager(manager)
     snapshot = manager.shutdown()
     registered = get_registered_operator_live_runtime_producer()
     if isinstance(registered, StreamManagerRuntimeSnapshotProducer) and registered.manager is manager:
@@ -128,3 +154,65 @@ def stop_operator_live_runtime(manager: object) -> StreamManagerSnapshot:
             "operator_live_runtime_shutdown_error:stream_manager_snapshot_required",
         )
     return snapshot
+
+
+def _start_receive_worker_if_supported(
+    *,
+    client: object,
+    manager: object,
+    receive_thread_builder: ReceiveThreadBuilder | None,
+) -> tuple[object | None, object | None]:
+    session = _receive_session_from_client(client)
+    if session is None:
+        return None, None
+    if not callable(getattr(manager, "ingest_message", None)):
+        return None, None
+    builder = receive_thread_builder or ManagedSchwabReceiveThread
+    try:
+        worker = builder(session=session, manager=manager)
+        status = worker.start()
+    except Exception as exc:
+        _safe_shutdown_manager(manager)
+        raise OperatorLiveRuntimeStartError(
+            f"operator_live_runtime_start_error:receive_thread_start_failed:{redact_sensitive_text(exc)}",
+        ) from exc
+    _RECEIVE_WORKERS_BY_MANAGER_ID[id(manager)] = worker
+    return worker, status
+
+
+def _receive_session_from_client(client: object) -> object | None:
+    direct_dispatch = getattr(client, "dispatch_one", None)
+    if callable(direct_dispatch):
+        return client
+    session = getattr(client, "receive_session", None)
+    if session is not None and callable(getattr(session, "dispatch_one", None)):
+        return session
+    return None
+
+
+def _stop_receive_worker_for_manager(manager: object) -> None:
+    worker = _RECEIVE_WORKERS_BY_MANAGER_ID.pop(id(manager), None)
+    if worker is None:
+        return
+    stop = getattr(worker, "stop", None)
+    try:
+        if callable(stop):
+            stop()
+    except Exception:
+        pass
+    join = getattr(worker, "join", None)
+    try:
+        if callable(join):
+            join(timeout=2.0)
+    except Exception:
+        pass
+
+
+def _safe_shutdown_manager(manager: object) -> None:
+    shutdown = getattr(manager, "shutdown", None)
+    if not callable(shutdown):
+        return
+    try:
+        shutdown()
+    except Exception:
+        pass

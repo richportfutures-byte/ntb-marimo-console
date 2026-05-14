@@ -127,6 +127,35 @@ def test_start_and_register_with_injected_builder_and_starter() -> None:
     assert calls[0]["config"] is config_obj
 
 
+def test_start_with_default_values_passes_live_environment_to_builder(monkeypatch) -> None:
+    monkeypatch.setenv("NTB_OPERATOR_RUNTIME_MODE", "OPERATOR_LIVE_RUNTIME")
+    monkeypatch.setenv("SCHWAB_APP_KEY", "dummy-app-key")
+    monkeypatch.setenv("SCHWAB_APP_SECRET", "dummy-app-secret")
+    monkeypatch.setenv("SCHWAB_TOKEN_PATH", ".state/tokens/dummy-token.json")
+
+    captured: dict[str, str | None] = {}
+
+    def _builder(values):
+        captured["app_key"] = values.get("SCHWAB_APP_KEY")
+        captured["app_secret"] = values.get("SCHWAB_APP_SECRET")
+        captured["token_path"] = values.get("SCHWAB_TOKEN_PATH")
+        return object(), object()
+
+    bootstrap = start_live_cockpit_runtime(
+        client_factory_builder=_builder,
+        runtime_starter=lambda **kwargs: _FakeLaunchResult(
+            producer=_FakeProducer(), manager=_FakeManager()
+        ),
+    )
+
+    assert bootstrap.started is True
+    assert captured == {
+        "app_key": "dummy-app-key",
+        "app_secret": "dummy-app-secret",
+        "token_path": ".state/tokens/dummy-token.json",
+    }
+
+
 def test_start_failure_is_fail_closed_and_does_not_fall_back_to_fixture() -> None:
     def _failing_starter(**kwargs):
         raise OperatorLiveRuntimeStartError(

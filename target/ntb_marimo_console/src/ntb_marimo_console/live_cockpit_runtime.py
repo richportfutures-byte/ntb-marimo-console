@@ -21,6 +21,7 @@ when :func:`start_live_cockpit_runtime` is explicitly invoked under live opt-in.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -152,13 +153,12 @@ def start_live_cockpit_runtime(
     available, the builder errors, or the runtime fails to start.
     """
 
-    resolved_values = dict(values) if values is not None else None
-
-    if operator_runtime_mode_from_env(resolved_values) != OPERATOR_LIVE_RUNTIME:
+    if operator_runtime_mode_from_env(values) != OPERATOR_LIVE_RUNTIME:
         return _fail_closed(
             LIVE_COCKPIT_STATUS_OPT_IN_REQUIRED,
             "operator_live_runtime_opt_in_required",
         )
+    resolved_values = dict(values) if values is not None else dict(os.environ)
 
     builder = client_factory_builder or _REGISTERED_CLIENT_FACTORY_BUILDER
     if builder is None:

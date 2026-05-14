@@ -1292,6 +1292,7 @@ def run_with_dependencies(
                 values=dict(env),
                 manager_builder=deps.manager_builder,
                 register=False,
+                start_receive_worker=False,
             )
         except OperatorLiveRuntimeOptInRequired:
             report.mode = "blocked"

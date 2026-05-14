@@ -83,17 +83,45 @@ def _runtime_record(contract: str, index: int = 0) -> StreamCacheRecord:
     )
 
 
+def _chart_record(contract: str, index: int = 0) -> StreamCacheRecord:
+    return StreamCacheRecord(
+        provider="schwab",
+        service="CHART_FUTURES",
+        symbol=RUNTIME_SYMBOL_BY_CONTRACT[contract],
+        contract=contract,
+        message_type="bar",
+        fields=(
+            ("start_time", NOW),
+            ("end_time", NOW),
+            ("open", 100.0 + index),
+            ("high", 101.0 + index),
+            ("low", 99.0 + index),
+            ("close", 100.5 + index),
+            ("completed", True),
+        ),
+        updated_at=NOW,
+        age_seconds=0.0,
+        fresh=True,
+        blocking_reasons=(),
+    )
+
+
 def _populated_runtime_cache_snapshot() -> StreamCacheSnapshot:
-    """A live runtime cache snapshot with quote records for all five contracts."""
+    """A live runtime cache snapshot with quote and chart records for all five contracts."""
+    quote_records = tuple(
+        _runtime_record(contract, index)
+        for index, contract in enumerate(final_target_contracts())
+    )
+    chart_records = tuple(
+        _chart_record(contract, index)
+        for index, contract in enumerate(final_target_contracts())
+    )
     return StreamCacheSnapshot(
         generated_at=NOW,
         provider="schwab",
         provider_status="active",
         cache_max_age_seconds=15.0,
-        records=tuple(
-            _runtime_record(contract, index)
-            for index, contract in enumerate(final_target_contracts())
-        ),
+        records=quote_records + chart_records,
         blocking_reasons=(),
         stale_symbols=(),
     )
@@ -265,7 +293,9 @@ class LiveObservationCockpitLaunchTests(unittest.TestCase):
         # populated snapshot), not fixture data.
         for contract, row in rows.items():
             self.assertEqual(row["runtime_state"], "live_observation")
-            self.assertIn("quote", row["quote_status"])
+            self.assertEqual(row["quote_status"], "quote available")
+            self.assertNotEqual(row["chart_status"], "chart missing")
+            self.assertEqual(row["runtime_symbol"], RUNTIME_SYMBOL_BY_CONTRACT[contract])
         # Live status is surfaced on the cockpit, not hidden behind fixture framing.
         self.assertIn(
             surface["live_runtime_readiness_status"],

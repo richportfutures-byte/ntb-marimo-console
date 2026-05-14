@@ -42,6 +42,12 @@ class OperatorSchwabStreamClient:
     def __init__(self, session: StreamerSession) -> None:
         self._session = session
 
+    @property
+    def receive_session(self) -> object:
+        """Return the underlying streamer session for the operator receive loop."""
+
+        return self._session
+
     def login(self, config: SchwabStreamManagerConfig) -> StreamClientResult:
         try:
             return self._session.login(config)

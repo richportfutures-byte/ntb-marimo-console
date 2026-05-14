@@ -1105,12 +1105,17 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
             manager_builder=manager_builder,
             clock=_make_clock(),
         )
-        report = rehearsal.run_with_dependencies(
-            args=_make_args(live=True, duration=2),
-            env=_full_env(self.target_root),
-            target_root=self.target_root,
-            deps=deps,
-        )
+        with patch.object(
+            rehearsal,
+            "start_operator_live_runtime",
+            wraps=rehearsal.start_operator_live_runtime,
+        ) as starter:
+            report = rehearsal.run_with_dependencies(
+                args=_make_args(live=True, duration=2),
+                env=_full_env(self.target_root),
+                target_root=self.target_root,
+                deps=deps,
+            )
 
         self.assertEqual(report.mode, "live")
         self.assertEqual(report.status, "ok")
@@ -1128,6 +1133,7 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
         self.assertEqual(len(managers), 1)
         self.assertEqual(managers[0].start_count, 1)
         self.assertEqual(managers[0].shutdown_count, 1)
+        self.assertFalse(starter.call_args.kwargs["start_receive_worker"])
         self.assertEqual(report.cleanup_status, "ok")
 
     def test_long_duration_request_is_not_clamped_and_reported_transparently(self) -> None:

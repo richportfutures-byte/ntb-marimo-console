@@ -109,6 +109,68 @@ class FakeSchwabClient:
         return StreamClientResult(succeeded=True)
 
 
+class FakeReceiveSession:
+    def __init__(self, messages: tuple[dict[str, object], ...] = ()) -> None:
+        self.messages = messages
+        self.dispatch_calls = 0
+        self.last_status = "idle"
+
+    def dispatch_one(self, handler) -> bool:
+        self.dispatch_calls += 1
+        if not self.messages:
+            self.last_status = "timeout"
+            return False
+        for message in self.messages:
+            handler(message)
+        self.last_status = "message"
+        return True
+
+    def dispatch_status(self) -> str:
+        return self.last_status
+
+
+class FakeSchwabClientWithReceiveSession(FakeSchwabClient):
+    def __init__(self, session: FakeReceiveSession) -> None:
+        super().__init__()
+        self._receive_session = session
+
+    @property
+    def receive_session(self) -> FakeReceiveSession:
+        return self._receive_session
+
+
+class FakeReceiveWorker:
+    instances: list["FakeReceiveWorker"] = []
+
+    def __init__(self, *, session: object, manager: object) -> None:
+        self.session = session
+        self.manager = manager
+        self.start_calls = 0
+        self.stop_calls = 0
+        self.join_calls = 0
+        FakeReceiveWorker.instances.append(self)
+
+    def start(self) -> str:
+        self.start_calls += 1
+        return "started"
+
+    def stop(self) -> str:
+        self.stop_calls += 1
+        return "stopped"
+
+    def join(self, timeout: float | None = None) -> str:
+        self.join_calls += 1
+        return "joined"
+
+
+class PumpOnceReceiveWorker(FakeReceiveWorker):
+    def start(self) -> str:
+        self.start_calls += 1
+        dispatch_one = getattr(self.session, "dispatch_one")
+        dispatch_one(self.manager.ingest_message)
+        return "started"
+
+
 class FakeManager:
     def __init__(
         self,
@@ -125,6 +187,7 @@ class FakeManager:
         self.start_count = 0
         self.shutdown_count = 0
         self.snapshot_count = 0
+        self.ingested_messages: list[dict[str, object]] = []
 
     def _default_active_snapshot(self) -> StreamManagerSnapshot:
         return StreamManagerSnapshot(
@@ -170,6 +233,10 @@ class FakeManager:
         self.snapshot_count += 1
         return self._start_snapshot or self._default_active_snapshot()
 
+    def ingest_message(self, message: dict[str, object]) -> StreamManagerSnapshot:
+        self.ingested_messages.append(dict(message))
+        return self.snapshot()
+
 
 class _Sentinel:
     def __init__(self) -> None:
@@ -183,6 +250,7 @@ class _Sentinel:
 class OperatorLiveLauncherTests(unittest.TestCase):
     def setUp(self) -> None:
         clear_operator_live_runtime_registration()
+        FakeReceiveWorker.instances.clear()
         self.addCleanup(clear_operator_live_runtime_registration)
 
     def test_import_does_not_construct_or_start_anything(self) -> None:
@@ -251,6 +319,78 @@ class OperatorLiveLauncherTests(unittest.TestCase):
         self.assertEqual(result.started_snapshot.blocking_reasons, ())
         self.assertIsInstance(result.producer, StreamManagerRuntimeSnapshotProducer)
         self.assertIs(result.producer.manager, manager)
+
+    def test_launcher_starts_receive_worker_for_registered_streamer_session(self) -> None:
+        session = FakeReceiveSession()
+        client = FakeSchwabClientWithReceiveSession(session)
+        config = _live_config()
+
+        def manager_builder(cfg: SchwabStreamManagerConfig, real_client: object) -> FakeManager:
+            return FakeManager(cfg, real_client)
+
+        with patch.dict(
+            os.environ,
+            {"NTB_OPERATOR_RUNTIME_MODE": OPERATOR_LIVE_RUNTIME},
+            clear=True,
+        ):
+            result = start_operator_live_runtime(
+                client_factory=lambda cfg: client,
+                config=config,
+                manager_builder=manager_builder,
+                receive_thread_builder=FakeReceiveWorker,
+            )
+
+        manager = result.manager
+        worker = result.receive_worker
+        assert isinstance(manager, FakeManager)
+        assert isinstance(worker, FakeReceiveWorker)
+        self.assertIs(worker.session, session)
+        self.assertIs(worker.manager, manager)
+        self.assertEqual(worker.start_calls, 1)
+        self.assertEqual(result.receive_worker_status, "started")
+
+        stop_operator_live_runtime(manager)
+        self.assertEqual(worker.stop_calls, 1)
+        self.assertEqual(worker.join_calls, 1)
+        self.assertEqual(manager.shutdown_count, 1)
+
+    def test_receive_worker_pumps_live_messages_into_registered_cache_producer(self) -> None:
+        messages = tuple(
+            {
+                "service": "LEVELONE_FUTURES",
+                "symbol": symbol,
+                "contract": contract,
+                "message_type": "quote",
+                "fields": {"1": 100.0 + index},
+                "received_at": NOW,
+            }
+            for index, (contract, symbol) in enumerate(
+                zip(final_target_contracts(), _live_config().symbols_requested)
+            )
+        )
+        session = FakeReceiveSession(messages)
+        client = FakeSchwabClientWithReceiveSession(session)
+
+        with patch.dict(
+            os.environ,
+            {"NTB_OPERATOR_RUNTIME_MODE": OPERATOR_LIVE_RUNTIME},
+            clear=True,
+        ):
+            result = start_operator_live_runtime(
+                client_factory=lambda cfg: client,
+                config=_live_config(),
+                receive_thread_builder=PumpOnceReceiveWorker,
+            )
+
+        snapshot = result.producer.read_snapshot()
+        assert isinstance(snapshot, StreamManagerSnapshot)
+        contracts = {record.contract for record in snapshot.cache.records}
+        self.assertEqual(contracts, set(final_target_contracts()))
+        self.assertEqual(client.login_calls, 1)
+        self.assertEqual(client.subscribe_calls, 1)
+        self.assertEqual(session.dispatch_calls, 1)
+
+        stop_operator_live_runtime(result.manager)
 
     def test_launcher_registers_manager_when_register_true(self) -> None:
         client = FakeSchwabClient()
