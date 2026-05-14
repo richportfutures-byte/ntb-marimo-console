@@ -313,6 +313,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
             "rows": [],
             "last_query_result": None,
             "operator_action_status": None,
+            "operator_action_timeline": None,
         }
     surface = surfaces_raw.get("fixture_cockpit_overview")
     if not isinstance(surface, Mapping):
@@ -328,6 +329,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
             "rows": [],
             "last_query_result": None,
             "operator_action_status": None,
+            "operator_action_timeline": None,
         }
     return {
         "present": True,
@@ -341,6 +343,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
         "rows": list(surface.get("rows") or []),
         "last_query_result": surface.get("last_query_result"),
         "operator_action_status": surface.get("operator_action_status"),
+        "operator_action_timeline": surface.get("operator_action_timeline"),
     }
 
 
@@ -2475,6 +2478,9 @@ def _render_fixture_cockpit_primary(
     action_status_html = _fixture_cockpit_operator_action_status_html(
         surface.get("operator_action_status")
     )
+    action_timeline_html = _fixture_cockpit_operator_action_timeline_html(
+        surface.get("operator_action_timeline")
+    )
 
     error_html = ""
     if error is not None:
@@ -2490,6 +2496,7 @@ def _render_fixture_cockpit_primary(
         + action_status_html
         + table_html
         + last_query_html
+        + action_timeline_html
         + error_html
         + "</div>"
     )
@@ -2571,6 +2578,75 @@ def _fixture_cockpit_operator_action_status_html(value: object) -> str:
         f"<td class='ntb-muted'>{_h(blocked_reason)}</td>"
         f"<td>{_h(next_state)}</td>"
         "</tr></tbody></table></div>"
+    )
+
+
+def _fixture_cockpit_operator_action_timeline_html(value: object) -> str:
+    timeline = value if isinstance(value, Mapping) else {}
+    entries_raw = timeline.get("entries")
+    entries = entries_raw if isinstance(entries_raw, list) else []
+    rows_html = ""
+    for entry in reversed(entries):
+        if not isinstance(entry, Mapping):
+            continue
+        sequence = _as_str(entry.get("sequence"), default="<unavailable>")
+        recorded_at = _as_str(entry.get("recorded_at"), default="<none>")
+        action_kind = _as_str(entry.get("action_kind"), default="UNKNOWN")
+        action_status = _as_str(entry.get("action_status"), default="UNKNOWN")
+        contract = _as_str(entry.get("contract"), default="<none>")
+        action_text = _as_str(entry.get("action_text"), default="<none>")
+        blocked_reason = _as_str(entry.get("blocked_reason"), default="<none>")
+        bounded_summary = _as_str(
+            entry.get("bounded_result_summary"),
+            default="No bounded pipeline result is available.",
+        )
+        runtime_status = _as_str(
+            entry.get("runtime_readiness_status"),
+            default="LIVE_RUNTIME_NOT_REQUESTED",
+        )
+        runtime_preserved = _as_str(
+            entry.get("runtime_readiness_preserved"),
+            default=False,
+        )
+        next_state = _as_str(entry.get("next_operator_state"), default="<none>")
+        rows_html += (
+            "<tr>"
+            f"<td>{_h(sequence)}</td>"
+            f"<td>{_h(recorded_at)}</td>"
+            f"<td>{_h(action_kind)}</td>"
+            f"<td>{_ntb_chip_for_status(action_status)}</td>"
+            f"<td>{_h(contract)}</td>"
+            f"<td>{_h(action_text)}</td>"
+            f"<td>{_h(bounded_summary)}</td>"
+            f"<td>{_ntb_chip_for_status(runtime_status)}</td>"
+            f"<td>{_h(runtime_preserved)}</td>"
+            f"<td class='ntb-muted'>{_h(blocked_reason)}</td>"
+            f"<td>{_h(next_state)}</td>"
+            "</tr>"
+        )
+    if not rows_html:
+        rows_html = (
+            "<tr><td colspan='11' class='ntb-muted'>"
+            "No cockpit operator actions have been recorded yet.</td></tr>"
+        )
+    entry_count = _as_str(timeline.get("entry_count"), default=len(entries))
+    max_entries = _as_str(
+        timeline.get("max_entries"),
+        default="<unavailable>",
+    )
+    return (
+        '<div style="margin-top:12px">'
+        '<div class="ntb-stat__label" style="margin-bottom:6px">'
+        f"Operator Action Timeline (recent {_h(entry_count)} of bounded max {_h(max_entries)})"
+        "</div>"
+        '<table class="ntb-table"><thead><tr>'
+        "<th>#</th><th>Recorded At</th><th>Action</th><th>Status</th>"
+        "<th>Contract</th><th>Feedback</th><th>Bounded Result</th>"
+        "<th>Runtime Readiness</th><th>Preserved</th>"
+        "<th>Blocked Reason</th><th>Next Safe State</th>"
+        "</tr></thead>"
+        f"<tbody>{rows_html}</tbody>"
+        "</table></div>"
     )
 
 

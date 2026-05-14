@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from .contract_universe import final_target_contracts
 from .cockpit_manual_query import (
+    COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES,
     no_cockpit_manual_query_result,
     no_cockpit_operator_action_status,
 )
@@ -85,6 +86,12 @@ def build_fixture_operator_session_summary() -> dict[str, object]:
         "rows": rows,
         "last_query_result": no_cockpit_manual_query_result(),
         "operator_action_status": no_cockpit_operator_action_status(),
+        "operator_action_timeline": {
+            "schema": "cockpit_operator_action_timeline_v1",
+            "max_entries": COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES,
+            "entry_count": 0,
+            "entries": [],
+        },
         "sanitization": {
             "raw_quote_values_printed": False,
             "raw_bar_values_printed": False,

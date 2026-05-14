@@ -33,7 +33,10 @@ from .runtime_diagnostics import (
 )
 from .app import build_phase1_shell_from_artifacts
 from .cockpit_manual_query import (
+    COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES,
     CockpitManualQueryResult,
+    CockpitOperatorActionTimelineEntry,
+    append_operator_action_timeline_entry,
     operator_action_status_for_lifecycle_action,
     operator_action_status_from_manual_query_result,
     submit_cockpit_manual_query,
@@ -95,6 +98,7 @@ class SessionLifecycle:
     operator_runtime: OperatorRuntimeSnapshotResult | None = None
     runtime_snapshot_producer: RuntimeSnapshotProducer | None = None
     operator_runtime_mode: OperatorRuntimeMode | str | None = None
+    operator_action_timeline: tuple[CockpitOperatorActionTimelineEntry, ...] = ()
     trigger_transition_replay_source: TriggerTransitionReplaySource = field(
         default_factory=lambda: TriggerTransitionReplaySource(source="session_lifecycle"),
         repr=False,
@@ -294,6 +298,7 @@ def request_query_action(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime=operator_runtime,
         runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
         operator_runtime_mode=operator_runtime.mode,
+        operator_action_timeline=lifecycle.operator_action_timeline,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
     observe_phase1_trigger_state_results(next_lifecycle, artifacts.trigger_state_results)
@@ -316,13 +321,17 @@ def request_cockpit_manual_query(lifecycle: SessionLifecycle, contract: str) -> 
             submitted_at=assembly_result.inputs.pipeline_query.evaluation_timestamp_iso,
         )
     _attach_cockpit_manual_query_result(current_shell, result.to_dict())
-    _attach_cockpit_operator_action_status(
-        current_shell,
-        operator_action_status_from_manual_query_result(
-            result,
-            runtime_readiness_status=_cockpit_runtime_readiness_status(current_shell),
-            runtime_readiness_preserved=_cockpit_runtime_readiness_preserved(current_shell),
-        ),
+    operator_action_status = operator_action_status_from_manual_query_result(
+        result,
+        runtime_readiness_status=_cockpit_runtime_readiness_status(current_shell),
+        runtime_readiness_preserved=_cockpit_runtime_readiness_preserved(current_shell),
+    )
+    _attach_cockpit_operator_action_status(current_shell, operator_action_status)
+    operator_action_timeline = append_operator_action_timeline_entry(
+        lifecycle.operator_action_timeline,
+        status=operator_action_status,
+        recorded_at=result.submitted_at
+        or _resolved_recorded_at(lifecycle.operator_runtime),
     )
     status_summary = _cockpit_manual_query_summary(result)
     next_action = _cockpit_manual_query_next_action(result)
@@ -359,6 +368,7 @@ def request_cockpit_manual_query(lifecycle: SessionLifecycle, contract: str) -> 
         operator_runtime=lifecycle.operator_runtime,
         runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
         operator_runtime_mode=lifecycle.operator_runtime_mode,
+        operator_action_timeline=operator_action_timeline,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
 
@@ -367,16 +377,19 @@ def refresh_runtime_snapshot(lifecycle: SessionLifecycle) -> SessionLifecycle:
     operator_runtime = _resolve_operator_runtime_for_lifecycle(lifecycle)
     current_shell = deepcopy(lifecycle.shell)
     attach_launch_metadata(current_shell, lifecycle.report, operator_runtime=operator_runtime)
-    _attach_cockpit_operator_action_status(
-        current_shell,
-        operator_action_status_for_lifecycle_action(
-            action_kind="RUNTIME_REFRESH",
-            action_status="REFRESHED",
-            action_text="Runtime snapshot refresh completed; no manual query was submitted.",
-            runtime_readiness_status=_cockpit_runtime_readiness_status(current_shell),
-            runtime_readiness_preserved=_cockpit_runtime_readiness_preserved(current_shell),
-            next_operator_state="Review the refreshed cockpit gate states before any manual query.",
-        ),
+    runtime_refresh_status = operator_action_status_for_lifecycle_action(
+        action_kind="RUNTIME_REFRESH",
+        action_status="REFRESHED",
+        action_text="Runtime snapshot refresh completed; no manual query was submitted.",
+        runtime_readiness_status=_cockpit_runtime_readiness_status(current_shell),
+        runtime_readiness_preserved=_cockpit_runtime_readiness_preserved(current_shell),
+        next_operator_state="Review the refreshed cockpit gate states before any manual query.",
+    )
+    _attach_cockpit_operator_action_status(current_shell, runtime_refresh_status)
+    operator_action_timeline = append_operator_action_timeline_entry(
+        lifecycle.operator_action_timeline,
+        status=runtime_refresh_status,
+        recorded_at=_resolved_recorded_at(operator_runtime),
     )
     lifecycle_history = _continue_history(
         lifecycle.lifecycle_history,
@@ -415,6 +428,7 @@ def refresh_runtime_snapshot(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime=operator_runtime,
         runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
         operator_runtime_mode=operator_runtime.mode,
+        operator_action_timeline=operator_action_timeline,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
     return next_lifecycle
@@ -433,16 +447,19 @@ def reset_session(lifecycle: SessionLifecycle) -> SessionLifecycle:
     operator_runtime = _resolve_operator_runtime_for_lifecycle(lifecycle)
     current_shell = deepcopy(lifecycle.baseline_shell)
     attach_launch_metadata(current_shell, lifecycle.report, operator_runtime=operator_runtime)
-    _attach_cockpit_operator_action_status(
-        current_shell,
-        operator_action_status_for_lifecycle_action(
-            action_kind="SESSION_RESET",
-            action_status="RESET",
-            action_text="Session reset completed; bounded query and manual-query display state were cleared.",
-            runtime_readiness_status=_cockpit_runtime_readiness_status(current_shell),
-            runtime_readiness_preserved=_cockpit_runtime_readiness_preserved(current_shell),
-            next_operator_state="Review the reset cockpit state before submitting another manual query.",
-        ),
+    reset_status = operator_action_status_for_lifecycle_action(
+        action_kind="SESSION_RESET",
+        action_status="RESET",
+        action_text="Session reset completed; bounded query and manual-query display state were cleared.",
+        runtime_readiness_status=_cockpit_runtime_readiness_status(current_shell),
+        runtime_readiness_preserved=_cockpit_runtime_readiness_preserved(current_shell),
+        next_operator_state="Review the reset cockpit state before submitting another manual query.",
+    )
+    _attach_cockpit_operator_action_status(current_shell, reset_status)
+    operator_action_timeline = append_operator_action_timeline_entry(
+        lifecycle.operator_action_timeline,
+        status=reset_status,
+        recorded_at=_resolved_recorded_at(operator_runtime),
     )
     lifecycle_history = _continue_history(
         lifecycle.lifecycle_history,
@@ -488,6 +505,7 @@ def reset_session(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime=operator_runtime,
         runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
         operator_runtime_mode=operator_runtime.mode,
+        operator_action_timeline=operator_action_timeline,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
     return next_lifecycle
@@ -561,20 +579,24 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
             operator_runtime=startup.operator_runtime,
             runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
             operator_runtime_mode=startup.operator_runtime.mode,
+            operator_action_timeline=lifecycle.operator_action_timeline,
             trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
         )
 
     current_shell = deepcopy(startup.shell)
-    _attach_cockpit_operator_action_status(
-        current_shell,
-        operator_action_status_for_lifecycle_action(
-            action_kind="PROFILE_REFRESH",
-            action_status="REFRESHED",
-            action_text="Current profile refresh completed; no manual query was submitted.",
-            runtime_readiness_status=_cockpit_runtime_readiness_status(current_shell),
-            runtime_readiness_preserved=_cockpit_runtime_readiness_preserved(current_shell),
-            next_operator_state="Review the refreshed cockpit gate states before any manual query.",
-        ),
+    profile_refresh_status = operator_action_status_for_lifecycle_action(
+        action_kind="PROFILE_REFRESH",
+        action_status="REFRESHED",
+        action_text="Current profile refresh completed; no manual query was submitted.",
+        runtime_readiness_status=_cockpit_runtime_readiness_status(current_shell),
+        runtime_readiness_preserved=_cockpit_runtime_readiness_preserved(current_shell),
+        next_operator_state="Review the refreshed cockpit gate states before any manual query.",
+    )
+    _attach_cockpit_operator_action_status(current_shell, profile_refresh_status)
+    operator_action_timeline = append_operator_action_timeline_entry(
+        lifecycle.operator_action_timeline,
+        status=profile_refresh_status,
+        recorded_at=_resolved_recorded_at(startup.operator_runtime),
     )
     lifecycle_history = _continue_history(
         lifecycle.lifecycle_history,
@@ -616,6 +638,7 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime=startup.operator_runtime,
         runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
         operator_runtime_mode=startup.operator_runtime.mode,
+        operator_action_timeline=operator_action_timeline,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
     observe_phase1_trigger_state_results(next_lifecycle, startup.trigger_state_results)
@@ -679,6 +702,7 @@ def clear_retained_evidence(lifecycle: SessionLifecycle) -> SessionLifecycle:
         operator_runtime=lifecycle.operator_runtime,
         runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
         operator_runtime_mode=lifecycle.operator_runtime_mode,
+        operator_action_timeline=lifecycle.operator_action_timeline,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
 
@@ -731,6 +755,7 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
             operator_runtime=lifecycle.operator_runtime,
             runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
             operator_runtime_mode=lifecycle.operator_runtime_mode,
+            operator_action_timeline=lifecycle.operator_action_timeline,
             trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
         )
 
@@ -795,6 +820,7 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
             operator_runtime=lifecycle.operator_runtime,
             runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
             operator_runtime_mode=lifecycle.operator_runtime_mode,
+            operator_action_timeline=lifecycle.operator_action_timeline,
             trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
         )
 
@@ -840,6 +866,7 @@ def switch_profile(lifecycle: SessionLifecycle, profile_id: str) -> SessionLifec
         operator_runtime=startup.operator_runtime,
         runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
         operator_runtime_mode=startup.operator_runtime.mode,
+        operator_action_timeline=(),
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
     observe_phase1_trigger_state_results(next_lifecycle, startup.trigger_state_results)
@@ -875,18 +902,10 @@ def _manual_query_assembly_for_contract(
 
     profile_id = _PRESERVED_PROFILE_BY_CONTRACT.get(contract)
     if profile_id is None:
-        return CockpitManualQueryResult(
+        return _manual_query_blocked_result(
             contract=contract,
-            request_status="BLOCKED",
-            submitted=False,
-            submitted_at=None,
-            gate_provenance_basis="contract_universe",
-            pipeline_result_status="not_submitted",
-            terminal_summary=None,
-            stage_termination_reason=None,
-            blocked_reason=f"Manual query blocked: {contract} is not a supported cockpit query contract.",
-            query_action_state="DISABLED",
-            query_action_text="Manual query blocked.",
+            reason=f"Manual query blocked: {contract} is not a supported cockpit query contract.",
+            provenance="contract_universe",
         )
 
     fixtures_root = lifecycle.config.fixtures_root if lifecycle.config is not None else None
@@ -906,34 +925,43 @@ def _manual_query_assembly_for_contract(
         )
         assembly = _assemble_runtime(startup)
     except Exception as exc:
-        return CockpitManualQueryResult(
+        return _manual_query_blocked_result(
             contract=contract,
-            request_status="BLOCKED",
-            submitted=False,
-            submitted_at=None,
-            gate_provenance_basis="runtime_profile_preflight",
-            pipeline_result_status="not_submitted",
-            terminal_summary=None,
-            stage_termination_reason=None,
-            blocked_reason=f"Manual query blocked: runtime assembly failed for {contract}: {exc}",
-            query_action_state="DISABLED",
-            query_action_text="Manual query blocked.",
+            reason=f"Manual query blocked: runtime assembly failed for {contract}: {exc}",
+            provenance="runtime_profile_preflight",
         )
     if assembly is None:
-        return CockpitManualQueryResult(
+        return _manual_query_blocked_result(
             contract=contract,
-            request_status="BLOCKED",
-            submitted=False,
-            submitted_at=None,
-            gate_provenance_basis="runtime_profile_preflight",
-            pipeline_result_status="not_submitted",
-            terminal_summary=None,
-            stage_termination_reason=None,
-            blocked_reason=f"Manual query blocked: runtime assembly is unavailable for {contract}.",
-            query_action_state="DISABLED",
-            query_action_text="Manual query blocked.",
+            reason=f"Manual query blocked: runtime assembly is unavailable for {contract}.",
+            provenance="runtime_profile_preflight",
         )
     return assembly
+
+
+def _manual_query_blocked_result(
+    *,
+    contract: str,
+    reason: str,
+    provenance: str,
+) -> CockpitManualQueryResult:
+    return CockpitManualQueryResult(
+        contract=contract,
+        request_status="BLOCKED",
+        submitted=False,
+        submitted_at=None,
+        gate_provenance_basis=provenance,
+        pipeline_result_status="not_submitted",
+        terminal_summary=None,
+        stage_termination_reason=None,
+        blocked_reason=reason,
+        query_action_state="DISABLED",
+        query_action_text="Manual query blocked.",
+        attempted_action=f"manual_query:{contract}",
+        operator_feedback_text=reason,
+        bounded_result_summary="No bounded pipeline result is available because the query was not submitted.",
+        next_operator_state="Wait for gate/provenance authorization before submitting a manual query.",
+    )
 
 
 def _fixture_cockpit_rows(shell: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
@@ -986,6 +1014,46 @@ def _attach_cockpit_operator_action_status(
     workflow = shell.get("workflow")
     if isinstance(workflow, dict):
         workflow["cockpit_operator_action_status"] = dict(status)
+
+
+def _attach_cockpit_operator_action_timeline(
+    shell: dict[str, object],
+    timeline: tuple[CockpitOperatorActionTimelineEntry, ...],
+) -> None:
+    payload = {
+        "schema": "cockpit_operator_action_timeline_v1",
+        "max_entries": COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES,
+        "entry_count": len(timeline),
+        "entries": [entry.to_dict() for entry in timeline],
+    }
+    surfaces = shell.get("surfaces")
+    if isinstance(surfaces, dict):
+        cockpit = surfaces.get("fixture_cockpit_overview")
+        if isinstance(cockpit, dict):
+            cockpit["operator_action_timeline"] = dict(payload)
+            cockpit["operator_action_timeline"]["entries"] = [
+                dict(entry) for entry in payload["entries"]
+            ]
+    workflow = shell.get("workflow")
+    if isinstance(workflow, dict):
+        workflow["cockpit_operator_action_timeline_entry_count"] = len(timeline)
+
+
+def _resolved_recorded_at(
+    operator_runtime: OperatorRuntimeSnapshotResult | None,
+    *,
+    fallback: str | None = None,
+) -> str | None:
+    if operator_runtime is not None:
+        cache_generated = operator_runtime.cache_generated_at
+        if cache_generated:
+            return str(cache_generated)
+        snapshot = operator_runtime.snapshot
+        if snapshot is not None:
+            generated = getattr(snapshot, "generated_at", None)
+            if generated:
+                return str(generated)
+    return fallback
 
 
 def _cockpit_runtime_readiness_status(shell: Mapping[str, object]) -> str:
@@ -1295,6 +1363,7 @@ def _blocked_action(lifecycle: SessionLifecycle, *, summary: str) -> SessionLife
         operator_runtime=lifecycle.operator_runtime,
         runtime_snapshot_producer=lifecycle.runtime_snapshot_producer,
         operator_runtime_mode=lifecycle.operator_runtime_mode,
+        operator_action_timeline=lifecycle.operator_action_timeline,
         trigger_transition_replay_source=lifecycle.trigger_transition_replay_source,
     )
 
@@ -1333,6 +1402,7 @@ def _finalize_lifecycle(
     operator_runtime: OperatorRuntimeSnapshotResult | None = None,
     runtime_snapshot_producer: RuntimeSnapshotProducer | None = None,
     operator_runtime_mode: OperatorRuntimeMode | str | None = None,
+    operator_action_timeline: tuple[CockpitOperatorActionTimelineEntry, ...] = (),
     trigger_transition_replay_source: TriggerTransitionReplaySource | None = None,
 ) -> SessionLifecycle:
     resolved_operator_runtime = operator_runtime or resolve_operator_runtime_snapshot(
@@ -1342,6 +1412,7 @@ def _finalize_lifecycle(
     resolved_transition_replay_source = trigger_transition_replay_source or TriggerTransitionReplaySource(
         source="session_lifecycle",
     )
+    _attach_cockpit_operator_action_timeline(shell, operator_action_timeline)
     shell["lifecycle"] = _build_lifecycle_panel(
         shell=shell,
         lifecycle_state=lifecycle_state,
@@ -1416,6 +1487,7 @@ def _finalize_lifecycle(
         operator_runtime=resolved_operator_runtime,
         runtime_snapshot_producer=runtime_snapshot_producer,
         operator_runtime_mode=operator_runtime_mode or resolved_operator_runtime.mode,
+        operator_action_timeline=operator_action_timeline,
         trigger_transition_replay_source=resolved_transition_replay_source,
     )
 

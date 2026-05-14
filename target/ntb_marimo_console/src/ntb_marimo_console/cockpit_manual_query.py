@@ -14,6 +14,8 @@ from ntb_marimo_console.contract_universe import (
 
 COCKPIT_MANUAL_QUERY_SCHEMA: Final[str] = "cockpit_manual_query_result_v1"
 COCKPIT_OPERATOR_ACTION_STATUS_SCHEMA: Final[str] = "cockpit_operator_action_status_v1"
+COCKPIT_OPERATOR_ACTION_TIMELINE_ENTRY_SCHEMA: Final[str] = "cockpit_operator_action_timeline_entry_v1"
+COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES: Final[int] = 10
 NO_QUERY_SUBMITTED_TEXT: Final[str] = "No manual query has been submitted from the primary cockpit."
 MANUAL_QUERY_DECISION_AUTHORITY: Final[str] = "preserved_engine_only"
 MANUAL_QUERY_SOURCE: Final[str] = "primary_cockpit_manual_action"
@@ -148,6 +150,83 @@ def no_cockpit_operator_action_status() -> dict[str, object]:
         next_operator_state="Select an enabled contract before submitting a manual query.",
         gate_provenance_basis="not_submitted",
     ).to_dict()
+
+
+@dataclass(frozen=True)
+class CockpitOperatorActionTimelineEntry:
+    sequence: int
+    recorded_at: str | None
+    action_kind: str
+    action_status: str
+    contract: str | None
+    action_text: str
+    blocked_reason: str | None
+    bounded_result_summary: str
+    runtime_readiness_status: str
+    runtime_readiness_preserved: bool
+    next_operator_state: str
+    gate_provenance_basis: str
+    manual_query_only: bool = True
+    manual_execution_only: bool = True
+    raw_quote_values_included: bool = False
+    raw_bar_values_included: bool = False
+    raw_streamer_payloads_included: bool = False
+    schema: str = COCKPIT_OPERATOR_ACTION_TIMELINE_ENTRY_SCHEMA
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.schema,
+            "sequence": self.sequence,
+            "recorded_at": self.recorded_at,
+            "action_kind": self.action_kind,
+            "action_status": self.action_status,
+            "contract": self.contract,
+            "action_text": self.action_text,
+            "blocked_reason": self.blocked_reason,
+            "bounded_result_summary": self.bounded_result_summary,
+            "runtime_readiness_status": self.runtime_readiness_status,
+            "runtime_readiness_preserved": self.runtime_readiness_preserved,
+            "next_operator_state": self.next_operator_state,
+            "gate_provenance_basis": self.gate_provenance_basis,
+            "manual_query_only": self.manual_query_only,
+            "manual_execution_only": self.manual_execution_only,
+            "raw_quote_values_included": self.raw_quote_values_included,
+            "raw_bar_values_included": self.raw_bar_values_included,
+            "raw_streamer_payloads_included": self.raw_streamer_payloads_included,
+        }
+
+
+def append_operator_action_timeline_entry(
+    history: Sequence[CockpitOperatorActionTimelineEntry],
+    *,
+    status: Mapping[str, object],
+    recorded_at: str | None,
+    max_entries: int = COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES,
+) -> tuple[CockpitOperatorActionTimelineEntry, ...]:
+    sequence = (history[-1].sequence + 1) if history else 1
+    entry = CockpitOperatorActionTimelineEntry(
+        sequence=sequence,
+        recorded_at=recorded_at,
+        action_kind=str(status.get("action_kind") or "UNKNOWN"),
+        action_status=str(status.get("action_status") or "UNKNOWN"),
+        contract=_optional_text(status.get("contract")),
+        action_text=str(status.get("action_text") or ""),
+        blocked_reason=_optional_text(status.get("blocked_reason")),
+        bounded_result_summary=str(
+            status.get("bounded_result_summary")
+            or "No bounded pipeline result is available."
+        ),
+        runtime_readiness_status=str(
+            status.get("runtime_readiness_status") or "LIVE_RUNTIME_NOT_REQUESTED"
+        ),
+        runtime_readiness_preserved=bool(status.get("runtime_readiness_preserved")),
+        next_operator_state=str(status.get("next_operator_state") or ""),
+        gate_provenance_basis=str(status.get("gate_provenance_basis") or "not_submitted"),
+    )
+    updated = tuple(history) + (entry,)
+    if max_entries > 0 and len(updated) > max_entries:
+        updated = updated[-max_entries:]
+    return updated
 
 
 def operator_action_status_from_manual_query_result(

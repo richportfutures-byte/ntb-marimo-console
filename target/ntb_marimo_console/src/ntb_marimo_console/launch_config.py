@@ -8,7 +8,10 @@ from .adapters.contracts import RuntimeMode
 from .app import build_phase1_shell_from_artifacts
 from .market_data import FuturesQuoteServiceConfig, resolve_futures_quote_service_config
 from .market_data.stream_manager import StreamManagerSnapshot
-from .cockpit_manual_query import operator_action_status_for_lifecycle_action
+from .cockpit_manual_query import (
+    COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES,
+    operator_action_status_for_lifecycle_action,
+)
 from .operator_live_runtime import (
     OperatorRuntimeMode,
     OperatorRuntimeSnapshotResult,
@@ -449,6 +452,15 @@ def _attach_initial_cockpit_operator_action_status(shell: dict[str, object]) -> 
         runtime_readiness_preserved=runtime_preserved,
         next_operator_state="Select an enabled contract before submitting a manual query.",
         bounded_result_summary="No bounded pipeline result is available.",
+    )
+    cockpit.setdefault(
+        "operator_action_timeline",
+        {
+            "schema": "cockpit_operator_action_timeline_v1",
+            "max_entries": COCKPIT_OPERATOR_ACTION_TIMELINE_MAX_ENTRIES,
+            "entry_count": 0,
+            "entries": [],
+        },
     )
 
 
