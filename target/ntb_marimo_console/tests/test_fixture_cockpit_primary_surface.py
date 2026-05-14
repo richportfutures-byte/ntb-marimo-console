@@ -200,11 +200,20 @@ def test_primary_cockpit_plan_starts_with_no_manual_query_submitted() -> None:
     shell = _fixture_shell()
     plan = build_primary_cockpit_plan(shell)
     result = plan["last_query_result"]
+    action = plan["operator_action_status"]
 
     assert isinstance(result, dict)
     assert result["request_status"] == "NOT_SUBMITTED"
     assert result["submitted"] is False
     assert result["pipeline_result_status"] == "not_submitted"
+    assert isinstance(action, dict)
+    assert action["action_kind"] == "IDLE"
+    assert action["action_status"] == "IDLE"
+    assert action["action_text"] == "No cockpit operator action has been attempted."
+    assert action["bounded_result_summary"] == "No bounded pipeline result is available."
+    assert action["raw_quote_values_included"] is False
+    assert action["raw_bar_values_included"] is False
+    assert action["raw_streamer_payloads_included"] is False
 
 
 def test_primary_cockpit_plan_absent_when_no_surface() -> None:

@@ -34,6 +34,8 @@ from .runtime_diagnostics import (
 from .app import build_phase1_shell_from_artifacts
 from .cockpit_manual_query import (
     CockpitManualQueryResult,
+    operator_action_status_for_lifecycle_action,
+    operator_action_status_from_manual_query_result,
     submit_cockpit_manual_query,
 )
 from .contract_universe import normalize_contract_symbol
@@ -314,6 +316,14 @@ def request_cockpit_manual_query(lifecycle: SessionLifecycle, contract: str) -> 
             submitted_at=assembly_result.inputs.pipeline_query.evaluation_timestamp_iso,
         )
     _attach_cockpit_manual_query_result(current_shell, result.to_dict())
+    _attach_cockpit_operator_action_status(
+        current_shell,
+        operator_action_status_from_manual_query_result(
+            result,
+            runtime_readiness_status=_cockpit_runtime_readiness_status(current_shell),
+            runtime_readiness_preserved=_cockpit_runtime_readiness_preserved(current_shell),
+        ),
+    )
     status_summary = _cockpit_manual_query_summary(result)
     next_action = _cockpit_manual_query_next_action(result)
     return _finalize_lifecycle(
@@ -357,6 +367,17 @@ def refresh_runtime_snapshot(lifecycle: SessionLifecycle) -> SessionLifecycle:
     operator_runtime = _resolve_operator_runtime_for_lifecycle(lifecycle)
     current_shell = deepcopy(lifecycle.shell)
     attach_launch_metadata(current_shell, lifecycle.report, operator_runtime=operator_runtime)
+    _attach_cockpit_operator_action_status(
+        current_shell,
+        operator_action_status_for_lifecycle_action(
+            action_kind="RUNTIME_REFRESH",
+            action_status="REFRESHED",
+            action_text="Runtime snapshot refresh completed; no manual query was submitted.",
+            runtime_readiness_status=_cockpit_runtime_readiness_status(current_shell),
+            runtime_readiness_preserved=_cockpit_runtime_readiness_preserved(current_shell),
+            next_operator_state="Review the refreshed cockpit gate states before any manual query.",
+        ),
+    )
     lifecycle_history = _continue_history(
         lifecycle.lifecycle_history,
         runtime_shell=current_shell,
@@ -412,6 +433,17 @@ def reset_session(lifecycle: SessionLifecycle) -> SessionLifecycle:
     operator_runtime = _resolve_operator_runtime_for_lifecycle(lifecycle)
     current_shell = deepcopy(lifecycle.baseline_shell)
     attach_launch_metadata(current_shell, lifecycle.report, operator_runtime=operator_runtime)
+    _attach_cockpit_operator_action_status(
+        current_shell,
+        operator_action_status_for_lifecycle_action(
+            action_kind="SESSION_RESET",
+            action_status="RESET",
+            action_text="Session reset completed; bounded query and manual-query display state were cleared.",
+            runtime_readiness_status=_cockpit_runtime_readiness_status(current_shell),
+            runtime_readiness_preserved=_cockpit_runtime_readiness_preserved(current_shell),
+            next_operator_state="Review the reset cockpit state before submitting another manual query.",
+        ),
+    )
     lifecycle_history = _continue_history(
         lifecycle.lifecycle_history,
         action_states=(
@@ -533,6 +565,17 @@ def reload_current_profile(lifecycle: SessionLifecycle) -> SessionLifecycle:
         )
 
     current_shell = deepcopy(startup.shell)
+    _attach_cockpit_operator_action_status(
+        current_shell,
+        operator_action_status_for_lifecycle_action(
+            action_kind="PROFILE_REFRESH",
+            action_status="REFRESHED",
+            action_text="Current profile refresh completed; no manual query was submitted.",
+            runtime_readiness_status=_cockpit_runtime_readiness_status(current_shell),
+            runtime_readiness_preserved=_cockpit_runtime_readiness_preserved(current_shell),
+            next_operator_state="Review the refreshed cockpit gate states before any manual query.",
+        ),
+    )
     lifecycle_history = _continue_history(
         lifecycle.lifecycle_history,
         action_states=(
@@ -929,6 +972,43 @@ def _attach_cockpit_manual_query_result(
         workflow["cockpit_manual_query_status"] = result.get("request_status")
         workflow["cockpit_manual_query_contract"] = result.get("contract")
         workflow["cockpit_manual_query_result"] = dict(result)
+
+
+def _attach_cockpit_operator_action_status(
+    shell: dict[str, object],
+    status: dict[str, object],
+) -> None:
+    surfaces = shell.get("surfaces")
+    if isinstance(surfaces, dict):
+        cockpit = surfaces.get("fixture_cockpit_overview")
+        if isinstance(cockpit, dict):
+            cockpit["operator_action_status"] = dict(status)
+    workflow = shell.get("workflow")
+    if isinstance(workflow, dict):
+        workflow["cockpit_operator_action_status"] = dict(status)
+
+
+def _cockpit_runtime_readiness_status(shell: Mapping[str, object]) -> str:
+    summary = _five_contract_readiness_summary(shell)
+    status = summary.get("live_runtime_readiness_status")
+    return str(status).strip() if status is not None and str(status).strip() else "LIVE_RUNTIME_NOT_REQUESTED"
+
+
+def _cockpit_runtime_readiness_preserved(shell: Mapping[str, object]) -> bool:
+    summary = _five_contract_readiness_summary(shell)
+    return (
+        summary.get("readiness_source") == "runtime_cache_derived"
+        and summary.get("live_runtime_readiness_status") == "LIVE_RUNTIME_CONNECTED"
+        and summary.get("runtime_cache_bound_to_operator_launch") is True
+    )
+
+
+def _five_contract_readiness_summary(shell: Mapping[str, object]) -> Mapping[str, object]:
+    surfaces = shell.get("surfaces")
+    if not isinstance(surfaces, Mapping):
+        return {}
+    summary = surfaces.get("five_contract_readiness_summary")
+    return summary if isinstance(summary, Mapping) else {}
 
 
 def _cockpit_manual_query_summary(result: CockpitManualQueryResult) -> str:

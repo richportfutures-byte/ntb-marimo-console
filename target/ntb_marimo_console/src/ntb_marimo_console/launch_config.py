@@ -8,6 +8,7 @@ from .adapters.contracts import RuntimeMode
 from .app import build_phase1_shell_from_artifacts
 from .market_data import FuturesQuoteServiceConfig, resolve_futures_quote_service_config
 from .market_data.stream_manager import StreamManagerSnapshot
+from .cockpit_manual_query import operator_action_status_for_lifecycle_action
 from .operator_live_runtime import (
     OperatorRuntimeMode,
     OperatorRuntimeSnapshotResult,
@@ -394,6 +395,7 @@ def attach_launch_metadata(
     _attach_operator_live_runtime_metadata(shell, resolved_operator_runtime)
     _attach_startup_payload(shell, report)
     _attach_fixture_cockpit_overview(shell)
+    _attach_initial_cockpit_operator_action_status(shell)
     return shell
 
 
@@ -420,6 +422,34 @@ def _attach_fixture_cockpit_overview(shell: dict[str, object]) -> None:
             "error": str(exc),
             "mode": "fixture_build_failed",
         }
+
+
+def _attach_initial_cockpit_operator_action_status(shell: dict[str, object]) -> None:
+    surfaces = shell.get("surfaces")
+    if not isinstance(surfaces, dict):
+        return
+    cockpit = surfaces.get("fixture_cockpit_overview")
+    if not isinstance(cockpit, dict):
+        return
+    summary = surfaces.get("five_contract_readiness_summary")
+    summary_map = summary if isinstance(summary, dict) else {}
+    runtime_status = str(
+        summary_map.get("live_runtime_readiness_status") or "LIVE_RUNTIME_NOT_REQUESTED"
+    )
+    runtime_preserved = (
+        summary_map.get("readiness_source") == "runtime_cache_derived"
+        and summary_map.get("live_runtime_readiness_status") == "LIVE_RUNTIME_CONNECTED"
+        and summary_map.get("runtime_cache_bound_to_operator_launch") is True
+    )
+    cockpit["operator_action_status"] = operator_action_status_for_lifecycle_action(
+        action_kind="IDLE",
+        action_status="IDLE",
+        action_text="No cockpit operator action has been attempted.",
+        runtime_readiness_status=runtime_status,
+        runtime_readiness_preserved=runtime_preserved,
+        next_operator_state="Select an enabled contract before submitting a manual query.",
+        bounded_result_summary="No bounded pipeline result is available.",
+    )
 
 
 def _attach_five_contract_readiness_summary(

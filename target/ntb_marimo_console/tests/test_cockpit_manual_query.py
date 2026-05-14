@@ -67,6 +67,10 @@ def test_eligible_manual_query_calls_pipeline_backend_boundary() -> None:
         "blocked_reason": None,
         "query_action_state": "ENABLED",
         "query_action_text": "Manual query submitted; preserved pipeline returned a bounded result.",
+        "attempted_action": "manual_query:ES",
+        "operator_feedback_text": "Manual query submitted for ES; preserved pipeline returned a bounded result.",
+        "bounded_result_summary": "Preserved pipeline completed with terminal summary NO_TRADE; termination stage stage_b.",
+        "next_operator_state": "Review the bounded result; execution remains manual-only and outside this cockpit.",
         "pipeline_boundary": "PipelineBackend",
         "decision_authority": "preserved_engine_only",
         "manual_query_only": True,
@@ -97,6 +101,8 @@ def test_blocked_manual_query_does_not_call_pipeline_backend() -> None:
     assert result.request_status == "BLOCKED"
     assert result.pipeline_result_status == "not_submitted"
     assert result.blocked_reason == "Manual query blocked: chart bars are missing for NQ."
+    assert result.operator_feedback_text == "Manual query blocked: chart bars are missing for NQ."
+    assert result.bounded_result_summary == "No bounded pipeline result is available because the query was not submitted."
     assert backend.calls == []
 
 
@@ -161,6 +167,7 @@ def test_no_query_submitted_status_is_explicit_and_supported_contracts_are_final
     assert result["request_status"] == "NOT_SUBMITTED"
     assert result["submitted"] is False
     assert result["pipeline_result_status"] == "not_submitted"
+    assert result["operator_feedback_text"] == "No manual query has been submitted from the primary cockpit."
 
 
 def _query(contract: str) -> PipelineQueryRequest:

@@ -128,10 +128,14 @@ def test_fixture_cockpit_launch_default_non_live() -> None:
 def test_fixture_cockpit_launch_has_no_auto_submitted_manual_query() -> None:
     surface = build_fixture_cockpit_shell_surface()
     result = surface["last_query_result"]
+    action = surface["operator_action_status"]
 
     assert result["request_status"] == "NOT_SUBMITTED"
     assert result["submitted"] is False
     assert result["pipeline_result_status"] == "not_submitted"
+    assert action["action_status"] == "IDLE"
+    assert action["manual_query_only"] is True
+    assert action["manual_execution_only"] is True
 
 
 def test_fixture_cockpit_marimo_shell_has_surface() -> None:

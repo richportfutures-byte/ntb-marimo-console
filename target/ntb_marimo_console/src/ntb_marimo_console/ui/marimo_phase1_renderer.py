@@ -312,6 +312,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
             "supported_contracts": [],
             "rows": [],
             "last_query_result": None,
+            "operator_action_status": None,
         }
     surface = surfaces_raw.get("fixture_cockpit_overview")
     if not isinstance(surface, Mapping):
@@ -326,6 +327,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
             "supported_contracts": [],
             "rows": [],
             "last_query_result": None,
+            "operator_action_status": None,
         }
     return {
         "present": True,
@@ -338,6 +340,7 @@ def build_primary_cockpit_plan(shell: Mapping[str, object]) -> dict[str, object]
         "supported_contracts": list(surface.get("supported_contracts") or []),
         "rows": list(surface.get("rows") or []),
         "last_query_result": surface.get("last_query_result"),
+        "operator_action_status": surface.get("operator_action_status"),
     }
 
 
@@ -2469,6 +2472,9 @@ def _render_fixture_cockpit_primary(
         "</table>"
     )
     last_query_html = _fixture_cockpit_last_query_html(surface.get("last_query_result"))
+    action_status_html = _fixture_cockpit_operator_action_status_html(
+        surface.get("operator_action_status")
+    )
 
     error_html = ""
     if error is not None:
@@ -2481,6 +2487,7 @@ def _render_fixture_cockpit_primary(
         _ntb_section_divider("FIVE-CONTRACT FIXTURE COCKPIT")
         + '<div class="ntb-card">'
         + banner
+        + action_status_html
         + table_html
         + last_query_html
         + error_html
@@ -2519,6 +2526,50 @@ def _fixture_cockpit_last_query_html(value: object) -> str:
         f"<td>{_h(submitted_at)}</td>"
         f"<td>{_h(provenance)}</td>"
         f"<td class='ntb-muted'>{_h(reason)}</td>"
+        "</tr></tbody></table></div>"
+    )
+
+
+def _fixture_cockpit_operator_action_status_html(value: object) -> str:
+    status = value if isinstance(value, Mapping) else {}
+    action_kind = _as_str(status.get("action_kind"), default="IDLE")
+    action_status = _as_str(status.get("action_status"), default="IDLE")
+    contract = _as_str(status.get("contract"), default="<none>")
+    action_text = _as_str(
+        status.get("action_text"),
+        default="No cockpit operator action has been attempted.",
+    )
+    bounded_summary = _as_str(
+        status.get("bounded_result_summary"),
+        default="No bounded pipeline result is available.",
+    )
+    runtime_status = _as_str(
+        status.get("runtime_readiness_status"),
+        default="LIVE_RUNTIME_NOT_REQUESTED",
+    )
+    runtime_preserved = _as_str(
+        status.get("runtime_readiness_preserved"),
+        default=False,
+    )
+    next_state = _as_str(status.get("next_operator_state"), default="<unavailable>")
+    blocked_reason = _as_str(status.get("blocked_reason"), default="<none>")
+    return (
+        '<div style="margin:12px 0">'
+        '<div class="ntb-stat__label" style="margin-bottom:6px">Operator Action Status</div>'
+        '<table class="ntb-table"><thead><tr>'
+        "<th>Action</th><th>Status</th><th>Contract</th><th>Feedback</th>"
+        "<th>Bounded Result</th><th>Runtime Readiness</th><th>Preserved</th>"
+        "<th>Blocked Reason</th><th>Next Safe State</th>"
+        "</tr></thead><tbody><tr>"
+        f"<td>{_h(action_kind)}</td>"
+        f"<td>{_ntb_chip_for_status(action_status)}</td>"
+        f"<td>{_h(contract)}</td>"
+        f"<td>{_h(action_text)}</td>"
+        f"<td>{_h(bounded_summary)}</td>"
+        f"<td>{_ntb_chip_for_status(runtime_status)}</td>"
+        f"<td>{_h(runtime_preserved)}</td>"
+        f"<td class='ntb-muted'>{_h(blocked_reason)}</td>"
+        f"<td>{_h(next_state)}</td>"
         "</tr></tbody></table></div>"
     )
 

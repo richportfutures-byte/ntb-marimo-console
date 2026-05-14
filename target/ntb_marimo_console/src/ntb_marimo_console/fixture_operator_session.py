@@ -4,7 +4,10 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from .contract_universe import final_target_contracts
-from .cockpit_manual_query import no_cockpit_manual_query_result
+from .cockpit_manual_query import (
+    no_cockpit_manual_query_result,
+    no_cockpit_operator_action_status,
+)
 from .live_observables import build_live_observable_snapshot_v2
 from .market_data import ChartFuturesBarBuilder
 from .market_data.chart_bars import ContractBarState
@@ -81,6 +84,7 @@ def build_fixture_operator_session_summary() -> dict[str, object]:
         "supported_contracts": list(final_target_contracts()),
         "rows": rows,
         "last_query_result": no_cockpit_manual_query_result(),
+        "operator_action_status": no_cockpit_operator_action_status(),
         "sanitization": {
             "raw_quote_values_printed": False,
             "raw_bar_values_printed": False,

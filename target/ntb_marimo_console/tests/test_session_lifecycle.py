@@ -205,6 +205,7 @@ class SessionLifecycleTests(unittest.TestCase):
             queried = request_cockpit_manual_query(lifecycle, "ES")
 
         result = queried.shell["surfaces"]["fixture_cockpit_overview"]["last_query_result"]
+        action = queried.shell["surfaces"]["fixture_cockpit_overview"]["operator_action_status"]
         rows = {
             row["contract"]: row
             for row in queried.shell["surfaces"]["fixture_cockpit_overview"]["rows"]
@@ -215,6 +216,12 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertEqual(result["pipeline_result_status"], "completed")
         self.assertEqual(result["terminal_summary"], "NO_TRADE")
         self.assertEqual(result["gate_provenance_basis"], "real_trigger_state_result_and_pipeline_gate")
+        self.assertEqual(result["operator_feedback_text"], "Manual query submitted for ES; preserved pipeline returned a bounded result.")
+        self.assertEqual(action["action_kind"], "MANUAL_QUERY")
+        self.assertEqual(action["action_status"], "SUBMITTED")
+        self.assertEqual(action["action_text"], result["operator_feedback_text"])
+        self.assertEqual(action["bounded_result_summary"], result["bounded_result_summary"])
+        self.assertEqual(action["next_operator_state"], result["next_operator_state"])
         self.assertEqual(rows["ES"]["last_query_status"], "SUBMITTED")
         self.assertEqual(queried.shell["workflow"]["cockpit_manual_query_status"], "SUBMITTED")
 
@@ -224,6 +231,7 @@ class SessionLifecycleTests(unittest.TestCase):
             queried = request_cockpit_manual_query(lifecycle, "NQ")
 
         result = queried.shell["surfaces"]["fixture_cockpit_overview"]["last_query_result"]
+        action = queried.shell["surfaces"]["fixture_cockpit_overview"]["operator_action_status"]
         rows = {
             row["contract"]: row
             for row in queried.shell["surfaces"]["fixture_cockpit_overview"]["rows"]
@@ -232,6 +240,13 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertFalse(result["submitted"])
         self.assertEqual(result["pipeline_result_status"], "not_submitted")
         self.assertIn("Manual query blocked", result["blocked_reason"])
+        self.assertEqual(action["action_kind"], "MANUAL_QUERY")
+        self.assertEqual(action["action_status"], "BLOCKED")
+        self.assertEqual(action["blocked_reason"], result["blocked_reason"])
+        self.assertEqual(
+            action["bounded_result_summary"],
+            "No bounded pipeline result is available because the query was not submitted.",
+        )
         self.assertEqual(rows["NQ"]["last_query_status"], "BLOCKED")
 
     def test_lifecycle_observes_produced_trigger_state_results_without_first_replay(self) -> None:
@@ -477,6 +492,9 @@ class SessionLifecycleTests(unittest.TestCase):
                 self.assertTrue(summary["runtime_cache_snapshot_ready"])
                 self.assertIs(item.runtime_snapshot, snapshot)
                 self.assertFalse(summary["rows"][0]["query_ready"])
+                action = item.shell["surfaces"]["fixture_cockpit_overview"]["operator_action_status"]
+                self.assertEqual(action["runtime_readiness_status"], "LIVE_RUNTIME_CONNECTED")
+                self.assertTrue(action["runtime_readiness_preserved"])
 
         self.assertEqual(
             submitted_manual_query.shell["surfaces"]["fixture_cockpit_overview"]["last_query_result"][
@@ -489,6 +507,14 @@ class SessionLifecycleTests(unittest.TestCase):
                 "request_status"
             ],
             "BLOCKED",
+        )
+        self.assertEqual(
+            refreshed.shell["surfaces"]["fixture_cockpit_overview"]["operator_action_status"]["action_status"],
+            "REFRESHED",
+        )
+        self.assertEqual(
+            reset.shell["surfaces"]["fixture_cockpit_overview"]["operator_action_status"]["action_status"],
+            "RESET",
         )
 
     def test_refresh_success_path_in_second_preserved_mode(self) -> None:
