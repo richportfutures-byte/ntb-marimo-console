@@ -30,7 +30,7 @@ from ntb_marimo_console.operator_live_runtime import (
     resolve_operator_runtime_snapshot,
 )
 from ntb_marimo_console.readiness_summary import (
-    LIVE_RUNTIME_MISSING_REQUIRED_FIELDS,
+    LIVE_RUNTIME_CONNECTED,
     READINESS_SOURCE_FIXTURE_PRESERVED,
     READINESS_SOURCE_RUNTIME_CACHE,
 )
@@ -251,9 +251,10 @@ class OperatorLiveRuntimeTests(unittest.TestCase):
         self.assertEqual(producer.read_count, 1)
         self.assertEqual(artifacts.operator_runtime.status, OPERATOR_LIVE_RUNTIME)
         self.assertEqual(summary["readiness_source"], READINESS_SOURCE_RUNTIME_CACHE)
-        self.assertEqual(summary["live_runtime_readiness_status"], LIVE_RUNTIME_MISSING_REQUIRED_FIELDS)
+        self.assertEqual(summary["live_runtime_readiness_status"], LIVE_RUNTIME_CONNECTED)
         self.assertEqual(runtime["operator_live_runtime_status"], OPERATOR_LIVE_RUNTIME)
         self.assertTrue(runtime["operator_live_runtime_cache_derived"])
+        self.assertEqual(summary["rows"][0]["runtime_cache_status"], "runtime_cache_connected")
         self.assertEqual(summary["rows"][0]["quote_status"], "quote available")
         self.assertEqual(summary["rows"][0]["chart_status"], "chart missing")
         self.assertFalse(summary["rows"][0]["query_ready"])
@@ -305,7 +306,7 @@ class OperatorLiveRuntimeTests(unittest.TestCase):
         self.assertIs(refreshed.runtime_snapshot_producer, producer)
         self.assertEqual(
             lifecycle.shell["surfaces"]["five_contract_readiness_summary"]["live_runtime_readiness_status"],
-            LIVE_RUNTIME_MISSING_REQUIRED_FIELDS,
+            LIVE_RUNTIME_CONNECTED,
         )
         self.assertEqual(
             queried.shell["surfaces"]["five_contract_readiness_summary"]["readiness_source"],

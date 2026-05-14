@@ -463,10 +463,12 @@ class SessionLifecycleTests(unittest.TestCase):
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_es_phase1"}, clear=True):
             lifecycle = load_session_lifecycle_from_env(runtime_snapshot=snapshot)
             queried = request_query_action(lifecycle)
+            submitted_manual_query = request_cockpit_manual_query(lifecycle, "ES")
+            blocked_manual_query = request_cockpit_manual_query(lifecycle, "NQ")
             refreshed = reload_current_profile(queried)
             reset = reset_session(queried)
 
-        for item in (lifecycle, queried, refreshed, reset):
+        for item in (lifecycle, queried, submitted_manual_query, blocked_manual_query, refreshed, reset):
             with self.subTest(action=item.last_action):
                 summary = item.shell["surfaces"]["five_contract_readiness_summary"]
                 self.assertEqual(summary["readiness_source"], "runtime_cache_derived")
@@ -474,6 +476,20 @@ class SessionLifecycleTests(unittest.TestCase):
                 self.assertTrue(summary["runtime_cache_bound_to_operator_launch"])
                 self.assertTrue(summary["runtime_cache_snapshot_ready"])
                 self.assertIs(item.runtime_snapshot, snapshot)
+                self.assertFalse(summary["rows"][0]["query_ready"])
+
+        self.assertEqual(
+            submitted_manual_query.shell["surfaces"]["fixture_cockpit_overview"]["last_query_result"][
+                "request_status"
+            ],
+            "SUBMITTED",
+        )
+        self.assertEqual(
+            blocked_manual_query.shell["surfaces"]["fixture_cockpit_overview"]["last_query_result"][
+                "request_status"
+            ],
+            "BLOCKED",
+        )
 
     def test_refresh_success_path_in_second_preserved_mode(self) -> None:
         with patch.dict(os.environ, {"NTB_CONSOLE_PROFILE": "preserved_nq_phase1"}, clear=True):

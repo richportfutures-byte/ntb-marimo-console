@@ -368,14 +368,19 @@ def _build_row(
         missing_live_fields = _missing_live_fields(shell, market_data_status=market_data_status)
 
     query_ready = _query_ready(shell)
-    if runtime_bound and (
-        runtime_readiness.state != LIVE_RUNTIME_CONNECTED
-        or runtime_context.global_blocking_reasons
-    ):
-        query_ready = False
+    runtime_query_blockers: tuple[str, ...] = ()
+    if runtime_bound:
+        if runtime_readiness.state != LIVE_RUNTIME_CONNECTED or runtime_context.global_blocking_reasons:
+            query_ready = False
+        elif runtime_readiness.chart_status != "chart available":
+            query_ready = False
+            runtime_query_blockers = runtime_readiness.chart_blocking_reasons or (
+                f"chart_bars_missing:{profile.contract}",
+            )
     query_gate_status = _query_gate_status(shell)
     if runtime_bound and not query_ready:
         query_gate_status = "BLOCKED"
+    query_blocked_reasons = _dedupe(blocked_reasons + runtime_query_blockers)
     return FiveContractReadinessRow(
         contract=profile.contract,
         contract_label=runtime_readiness.label,
@@ -413,8 +418,8 @@ def _build_row(
         trigger_true_count=_trigger_count(shell, field="is_true"),
         query_gate_status=query_gate_status,
         query_ready=query_ready,
-        query_not_ready_reasons=() if query_ready else blocked_reasons,
-        primary_blocked_reasons=blocked_reasons,
+        query_not_ready_reasons=() if query_ready else query_blocked_reasons,
+        primary_blocked_reasons=query_blocked_reasons,
         evidence_replay_status=_audit_replay_status(shell),
         run_history_status=_run_history_status(shell),
         manual_only_boundary=MANUAL_ONLY_BOUNDARY_STATEMENT,
@@ -510,12 +515,6 @@ def _runtime_contract_readiness(
         state = LIVE_RUNTIME_MISSING_CONTRACT
         status = "runtime_cache_symbol_mismatch"
         market_data_status = "Runtime cache symbol mismatch"
-    elif chart_map.get("available") is not True:
-        state = LIVE_RUNTIME_MISSING_REQUIRED_FIELDS if chart_status == "chart missing" else LIVE_RUNTIME_ERROR
-        status = "runtime_cache_chart_bars_blocked"
-        market_data_status = "Runtime cache chart bars blocked"
-        missing_fields = _dedupe(missing_fields + ("chart_bars",))
-        reasons = _dedupe(reasons + chart_reasons)
     elif reasons:
         state = LIVE_RUNTIME_ERROR
         status = "runtime_cache_blocked"
