@@ -210,8 +210,9 @@ def build_five_contract_readiness_summary(
     *,
     active_profile_id: str | None = None,
     runtime_snapshot: RuntimeReadinessSnapshot | None = None,
+    bar_states: Mapping[str, object] | None = None,
 ) -> FiveContractReadinessSummary:
-    runtime_context = _build_runtime_context(runtime_snapshot)
+    runtime_context = _build_runtime_context(runtime_snapshot, bar_states=bar_states)
     rows = tuple(
         _build_row(profile, active_profile_id=active_profile_id, runtime_context=runtime_context)
         for profile in _final_target_preserved_profiles()
@@ -246,10 +247,12 @@ def build_five_contract_readiness_summary_surface(
     *,
     active_profile_id: str | None = None,
     runtime_snapshot: RuntimeReadinessSnapshot | None = None,
+    bar_states: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     return build_five_contract_readiness_summary(
         active_profile_id=active_profile_id,
         runtime_snapshot=runtime_snapshot,
+        bar_states=bar_states,
     ).to_dict()
 
 
@@ -321,7 +324,11 @@ def _resolve_bar_states() -> Mapping[str, object] | None:
     return None
 
 
-def _build_runtime_context(runtime_snapshot: RuntimeReadinessSnapshot | None) -> _RuntimeReadinessContext:
+def _build_runtime_context(
+    runtime_snapshot: RuntimeReadinessSnapshot | None,
+    *,
+    bar_states: Mapping[str, object] | None = None,
+) -> _RuntimeReadinessContext:
     if runtime_snapshot is None:
         return _RuntimeReadinessContext(
             cache_snapshot=None,
@@ -384,8 +391,8 @@ def _build_runtime_context(runtime_snapshot: RuntimeReadinessSnapshot | None) ->
                 quote_path_active=quote_path_active,
             )
 
-    bar_states = _resolve_bar_states()
-    observable_snapshot = build_live_observable_snapshot_v2(cache_snapshot, bar_states=bar_states)
+    resolved_bar_states = bar_states if bar_states is not None else _resolve_bar_states()
+    observable_snapshot = build_live_observable_snapshot_v2(cache_snapshot, bar_states=resolved_bar_states)
     provider_status = observable_snapshot.provider_status
     return _RuntimeReadinessContext(
         cache_snapshot=cache_snapshot,

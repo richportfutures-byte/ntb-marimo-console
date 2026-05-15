@@ -1082,6 +1082,8 @@ def _token_refresh_blocking_reason(session: object) -> str | None:
 def _per_contract_runtime_status(
     snapshot: object | None,
     observation: ReceiveLoopObservation,
+    *,
+    chart_bar_builder: ChartFuturesBarBuilder | None = None,
 ) -> dict[str, dict[str, str]]:
     quote_contracts = set(observation.quote_contracts)
     chart_contracts = set(observation.chart_contracts)
@@ -1113,7 +1115,10 @@ def _per_contract_runtime_status(
         }
     if not isinstance(snapshot, StreamManagerSnapshot):
         return statuses
-    surface = build_five_contract_readiness_summary_surface(runtime_snapshot=snapshot)
+    bar_states = chart_bar_builder.states() if chart_bar_builder is not None else None
+    surface = build_five_contract_readiness_summary_surface(
+        runtime_snapshot=snapshot, bar_states=bar_states,
+    )
     rows = surface.get("rows", ())
     if not isinstance(rows, list):
         return statuses
@@ -1439,6 +1444,7 @@ def run_with_dependencies(
         report.per_contract_status = _per_contract_runtime_status(
             post_receive_snapshot,
             receive_observation,
+            chart_bar_builder=chart_bar_builder,
         )
         if receive_observation.market_data_received:
             report.market_data_diagnostic = "levelone_futures_updates_received"
