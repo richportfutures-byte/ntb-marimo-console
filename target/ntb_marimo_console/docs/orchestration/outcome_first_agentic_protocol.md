@@ -209,3 +209,82 @@ Every implementation result must include:
 Every future NTB Marimo Console handoff must either include this document path or include this statement:
 
 `Orchestration source of truth: docs/orchestration/outcome_first_agentic_protocol.md. This supersedes stale one-command/one-prompt workflow rules whenever those rules slow app progress.`
+
+<!-- OPERATOR_FIRST_EXECUTION_BIAS_START -->
+
+## Operator-First Execution Bias
+
+This protocol is now biased toward getting the operator into the live cockpit and testing real workflow behavior.
+
+The default goal is working app behavior, not additional proof artifacts.
+
+The active acceptance target is:
+
+> Can the operator launch the cockpit, see truthful provider/quote/chart/query state, understand the current blocker, and safely continue the manual workflow?
+
+### Default decision rule
+
+Use this order of priority:
+
+1. Launch or inspect the actual operator cockpit.
+2. Verify screen truth from the operator's point of view.
+3. Fix the observed blocker if the screen lies, blocks real use, or risks unsafe/fake behavior.
+4. Start operator testing once the screen tells a coherent truthful story.
+5. Defer polish.
+
+### What must not happen
+
+Do not run audit-only, readiness-only, documentation-only, migration-only, or test-only loops unless they directly:
+
+- prevent fake live data,
+- prevent unsafe query readiness,
+- protect the no-secrets/no-broker/no-auto-execution boundaries,
+- or unblock a concrete observed app behavior.
+
+Do not re-prove already proven live plumbing unless the current code change touches that plumbing.
+
+Do not ask for another live smoke when focused tests can validate a display/coherence fix.
+
+Do not block operator testing on polish, old profile names, ugly labels, layout imperfections, or documentation gaps unless they misrepresent live state or prevent safe use.
+
+### Safety boundaries remain non-negotiable
+
+The operator-first bias does not relax safety:
+
+- default launch remains non-live,
+- live launch remains explicit opt-in only,
+- no fixture fallback after live failure,
+- no secrets, tokens, auth headers, streamer URLs, customer IDs, correl IDs, account IDs, raw quote values, raw bar values, or raw streamer payloads printed,
+- no broker/order/execution/account/fill/P&L behavior,
+- manual query only,
+- manual execution only,
+- preserved engine remains the sole decision authority,
+- display/view-model/rendering/evidence/replay code must never create QUERY_READY,
+- stale, missing, unsupported, lockout, invalidated, non-provenance, display-derived, replay-derived, or synthetic state must never produce QUERY_READY,
+- final target universe remains ES, NQ, CL, 6E, MGC,
+- ZN and GC remain excluded,
+- MGC is Micro Gold, not GC.
+
+Safety boundaries are guardrails. They must not be used as an excuse for audit spiral when the next app blocker is observable and fixable.
+
+### Agent selection rule
+
+Use the fastest tool that can safely complete the next concrete step.
+
+- Use Terminal for deterministic repo-rooted edits, launch commands, status checks, and known source-document updates.
+- Use Claude Opus for semantic/coherence bugs across app surfaces where the issue is meaning, status consistency, or UI truth.
+- Use Codex for repo-scale implementation tickets with explicit tests, verification, and commit requirements.
+- Use Sonnet only for narrower scoped implementation where target files and acceptance criteria are already clear.
+
+### Required handoff language
+
+Every future implementation handoff must state:
+
+- what app behavior now works,
+- what the operator can now do,
+- what actually blocks operator testing, if anything,
+- whether the next step is operator testing, code fix, or polish.
+
+If the live cockpit tells a coherent truthful story and manual query remains fail-closed without preserved-engine QUERY_READY provenance, the next step is operator testing, not another audit.
+
+<!-- OPERATOR_FIRST_EXECUTION_BIAS_END -->
