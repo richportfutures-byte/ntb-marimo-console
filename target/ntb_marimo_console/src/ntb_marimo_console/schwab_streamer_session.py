@@ -77,7 +77,46 @@ from .market_data.stream_manager import (
 from .market_data.stream_events import redact_sensitive_text
 
 
-DEFAULT_LEVELONE_FUTURES_FIELD_IDS: tuple[int, ...] = (0, 1, 2, 3, 4, 5)
+LEVELONE_FUTURES_NORMALIZED_FIELD_NAMES: dict[int, str] = {
+    0: "symbol",
+    1: "bid",
+    2: "ask",
+    3: "last",
+    4: "bid_size",
+    5: "ask_size",
+    8: "volume",
+    9: "last_size",
+    10: "quote_time",
+    11: "trade_time",
+    12: "high",
+    13: "low",
+    14: "prior_close",
+    18: "open",
+    19: "net_change",
+    20: "percent_change",
+    22: "security_status",
+    30: "tradable",
+    32: "active",
+}
+LEVELONE_FUTURES_READINESS_FIELD_IDS: tuple[int, ...] = (
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    8,
+    10,
+    11,
+    12,
+    13,
+    14,
+    18,
+    22,
+    30,
+    32,
+)
+DEFAULT_LEVELONE_FUTURES_FIELD_IDS: tuple[int, ...] = LEVELONE_FUTURES_READINESS_FIELD_IDS
 DEFAULT_CHART_FUTURES_FIELD_IDS: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 6)
 DEFAULT_RECV_TIMEOUT_SECONDS: float = 10.0
 DEFAULT_LOGIN_REQUESTID: str = "0"
@@ -379,11 +418,7 @@ def _extract_data_item_entries(
         if service == CHART_FUTURES_SERVICE:
             entries.append(_chart_futures_bar_entry(content, symbol=symbol, contract=contract, received_at=received_at))
             continue
-        fields = {
-            str(field_key): field_value
-            for field_key, field_value in content.items()
-            if field_key != "key"
-        }
+        fields = _levelone_futures_quote_fields(content)
         entries.append(
             {
                 "provider": "schwab",
@@ -396,6 +431,22 @@ def _extract_data_item_entries(
             }
         )
     return tuple(entries)
+
+
+def _levelone_futures_quote_fields(content: Mapping[str, object]) -> dict[str, object]:
+    fields: dict[str, object] = {}
+    for field_key, field_value in content.items():
+        if field_key == "key":
+            continue
+        raw_key = str(field_key).strip()
+        if not raw_key:
+            continue
+        fields[raw_key] = field_value
+        field_id = _optional_int(raw_key)
+        normalized_name = LEVELONE_FUTURES_NORMALIZED_FIELD_NAMES.get(field_id)
+        if normalized_name is not None:
+            fields.setdefault(normalized_name, field_value)
+    return fields
 
 
 def _chart_futures_bar_entry(

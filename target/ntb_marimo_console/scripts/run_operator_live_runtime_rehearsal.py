@@ -56,6 +56,9 @@ from ntb_marimo_console.operator_live_launcher import (
 from ntb_marimo_console.operator_live_runtime import (
     OPERATOR_LIVE_RUNTIME,
 )
+from ntb_marimo_console.readiness_summary import (
+    build_five_contract_readiness_summary_surface,
+)
 from ntb_marimo_console.schwab_stream_client import (
     build_operator_schwab_stream_client_factory,
 )
@@ -546,6 +549,23 @@ def render_text(report: RehearsalReport) -> str:
     if isinstance(chart_reasons, list):
         for reason in chart_reasons:
             body += f"\nchart_blocking_reason={reason}"
+    per_contract_status = payload.get("per_contract_status", {})
+    if isinstance(per_contract_status, dict):
+        for contract in final_target_contracts():
+            status = per_contract_status.get(contract)
+            if not isinstance(status, dict):
+                continue
+            body += (
+                f"\ncontract_status={contract}"
+                f"|quote_event={status.get('quote_status', 'unknown')}"
+                f"|chart_event={status.get('chart_status', 'unknown')}"
+                f"|provider={status.get('readiness_provider_status', 'unknown')}"
+                f"|readiness={status.get('readiness_state', 'unknown')}"
+                f"|quote={status.get('readiness_quote_status', 'unknown')}"
+                f"|chart={status.get('readiness_chart_status', 'unknown')}"
+                f"|missing_fields={status.get('missing_live_fields', 'unknown')}"
+                f"|query_ready={status.get('query_ready', 'no')}"
+            )
     if report.blocking_reason:
         body += f"\nblocking_reason={payload['blocking_reason']}"
     return body
@@ -1059,7 +1079,10 @@ def _token_refresh_blocking_reason(session: object) -> str | None:
     return _sanitize_text(reason.strip())
 
 
-def _per_contract_runtime_status(observation: ReceiveLoopObservation) -> dict[str, dict[str, str]]:
+def _per_contract_runtime_status(
+    snapshot: object | None,
+    observation: ReceiveLoopObservation,
+) -> dict[str, dict[str, str]]:
     quote_contracts = set(observation.quote_contracts)
     chart_contracts = set(observation.chart_contracts)
     chart_completed_contracts = set(observation.chart_completed_contracts)
@@ -1079,8 +1102,50 @@ def _per_contract_runtime_status(observation: ReceiveLoopObservation) -> dict[st
             "quote_status": quote_status,
             "chart_status": chart_status,
             "last_chart_event_status": last_chart_event_status,
+            "readiness_provider_status": "unknown",
+            "readiness_state": "unknown",
+            "readiness_quote_status": "unknown",
+            "readiness_chart_status": "unknown",
+            "readiness_quote_freshness": "unknown",
+            "readiness_chart_freshness": "unknown",
+            "missing_live_fields": "unknown",
+            "query_ready": "no",
         }
+    if not isinstance(snapshot, StreamManagerSnapshot):
+        return statuses
+    surface = build_five_contract_readiness_summary_surface(runtime_snapshot=snapshot)
+    rows = surface.get("rows", ())
+    if not isinstance(rows, list):
+        return statuses
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        contract = str(row.get("contract", "")).strip().upper()
+        if contract not in statuses:
+            continue
+        missing = row.get("missing_live_fields", ())
+        if isinstance(missing, list):
+            missing_fields = ",".join(str(item) for item in missing if str(item).strip()) or "none"
+        else:
+            missing_fields = "unknown"
+        statuses[contract].update(
+            {
+                "readiness_provider_status": _status_text(row.get("runtime_provider_status")),
+                "readiness_state": _status_text(row.get("live_runtime_readiness_state")),
+                "readiness_quote_status": _status_text(row.get("quote_status")),
+                "readiness_chart_status": _status_text(row.get("chart_status")),
+                "readiness_quote_freshness": _status_text(row.get("quote_freshness_state")),
+                "readiness_chart_freshness": _status_text(row.get("chart_freshness_state")),
+                "missing_live_fields": _status_text(missing_fields),
+                "query_ready": _yes_no(row.get("query_ready") is True),
+            }
+        )
     return statuses
+
+
+def _status_text(value: object) -> str:
+    text = _sanitize_text(str(value if value is not None else "")).strip()
+    return text[:120] if text else "unknown"
 
 
 def _chart_data_diagnostic(observation: ReceiveLoopObservation) -> str:
@@ -1351,10 +1416,12 @@ def run_with_dependencies(
         report.chart_completed_five_minute_contracts_count = (
             receive_observation.chart_completed_five_minute_contracts_count
         )
-        report.chart_blocking_reasons = tuple(_sanitize_text(reason)[:160] for reason in receive_observation.chart_blocking_reasons)
+        report.chart_blocking_reasons = tuple(
+            _sanitize_text(reason)[:160]
+            for reason in receive_observation.chart_blocking_reasons
+        )
         report.chart_dispatch_parse_error_count = receive_observation.chart_dispatch_parse_error_count
         report.chart_unsupported_response_count = receive_observation.chart_unsupported_response_count
-        report.per_contract_status = _per_contract_runtime_status(receive_observation)
         report.checks.append(
             RehearsalCheck(
                 "market_data_received",
@@ -1369,6 +1436,10 @@ def run_with_dependencies(
         )
 
         post_receive_snapshot = launch.manager.snapshot()
+        report.per_contract_status = _per_contract_runtime_status(
+            post_receive_snapshot,
+            receive_observation,
+        )
         if receive_observation.market_data_received:
             report.market_data_diagnostic = "levelone_futures_updates_received"
         elif (

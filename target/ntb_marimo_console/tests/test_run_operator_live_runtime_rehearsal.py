@@ -342,6 +342,25 @@ def _chart_numeric_frame(symbol: str = "/ESM26", *, minute: int = 0) -> str:
 
 
 def _data_frame(symbol: str = "/ESM26", bid: float = 1.0, *, timestamp: object = NOW) -> str:
+    content = {
+        "key": symbol,
+        "0": symbol,
+        "1": bid,
+        "2": bid + 0.25,
+        "3": bid + 0.125,
+        "4": 10,
+        "5": 12,
+        "8": 25_000,
+        "10": timestamp,
+        "11": timestamp,
+        "12": bid + 1.0,
+        "13": bid - 1.0,
+        "14": bid - 0.5,
+        "18": bid - 0.25,
+        "22": "Normal",
+        "30": "true",
+        "32": 1,
+    }
     return json.dumps(
         {
             "data": [
@@ -349,9 +368,7 @@ def _data_frame(symbol: str = "/ESM26", bid: float = 1.0, *, timestamp: object =
                     "service": "LEVELONE_FUTURES",
                     "command": "SUBS",
                     "timestamp": timestamp,
-                    "content": [
-                        {"key": symbol, "1": bid, "2": bid + 0.25, "3": bid + 0.125}
-                    ],
+                    "content": [content],
                 }
             ]
         }
@@ -1485,6 +1502,33 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
         self.assertTrue(report.market_data_received)
         self.assertGreaterEqual(report.received_contracts_count, 3)
         self.assertEqual(report.market_data_diagnostic, "levelone_futures_updates_received")
+        self.assertEqual(
+            report.per_contract_status["ES"]["readiness_provider_status"],
+            "connected",
+        )
+        self.assertEqual(
+            report.per_contract_status["ES"]["readiness_state"],
+            "LIVE_RUNTIME_CONNECTED",
+        )
+        self.assertEqual(
+            report.per_contract_status["ES"]["readiness_quote_status"],
+            "quote available",
+        )
+        self.assertEqual(
+            report.per_contract_status["ES"]["readiness_chart_status"],
+            "chart missing",
+        )
+        self.assertEqual(report.per_contract_status["ES"]["missing_live_fields"], "none")
+        self.assertEqual(report.per_contract_status["ES"]["query_ready"], "no")
+
+        text_output = rehearsal.render_text(report)
+        self.assertIn(
+            "contract_status=ES|quote_event=fresh_quote_update_received",
+            text_output,
+        )
+        self.assertIn("|quote=quote available|chart=chart missing", text_output)
+        self.assertIn("|missing_fields=none|query_ready=no", text_output)
+        self.assertNotIn("4321.5", text_output)
 
     def test_repeated_dispatch_does_not_repeat_login_subscribe_or_start(self) -> None:
         token_provider = FakeTokenProvider()
