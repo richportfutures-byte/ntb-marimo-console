@@ -247,7 +247,8 @@ class OperatorLiveRuntimeTests(unittest.TestCase):
         self.assertEqual(result.status, LIVE_RUNTIME_UNAVAILABLE)
         self.assertTrue(result.requested_live_runtime)
         self.assertIsNotNone(result.snapshot)
-        self.assertIn("operator_live_runtime_snapshot_unavailable", result.blocking_reasons)
+        # No producer at all → concrete "not started" lifecycle reason.
+        self.assertIn("operator_live_runtime_not_started", result.blocking_reasons)
 
     def test_operator_live_runtime_disabled_stale_and_error_states_block(self) -> None:
         cases = (

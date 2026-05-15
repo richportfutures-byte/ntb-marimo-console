@@ -18,6 +18,7 @@ from .launch_config import (
     resolve_launch_request_for_profile_id,
 )
 from .operator_live_runtime import (
+    OPERATOR_LIVE_RUNTIME,
     OperatorRuntimeMode,
     OperatorRuntimeSnapshotResult,
     RuntimeSnapshotProducer,
@@ -412,13 +413,17 @@ def refresh_runtime_snapshot(lifecycle: SessionLifecycle) -> SessionLifecycle:
     operator_runtime = _resolve_operator_runtime_for_lifecycle(lifecycle)
     current_shell = deepcopy(lifecycle.shell)
     attach_launch_metadata(current_shell, lifecycle.report, operator_runtime=operator_runtime)
+    refresh_action_status, refresh_action_text, refresh_blocked_reason = (
+        _runtime_refresh_action_outcome(operator_runtime)
+    )
     runtime_refresh_status = operator_action_status_for_lifecycle_action(
         action_kind="RUNTIME_REFRESH",
-        action_status="REFRESHED",
-        action_text="Runtime snapshot refresh completed; no manual query was submitted.",
+        action_status=refresh_action_status,
+        action_text=refresh_action_text,
         runtime_readiness_status=_cockpit_runtime_readiness_status(current_shell),
         runtime_readiness_preserved=_cockpit_runtime_readiness_preserved(current_shell),
         next_operator_state="Review the refreshed cockpit gate states before any manual query.",
+        blocked_reason=refresh_blocked_reason,
     )
     _attach_cockpit_operator_action_status(current_shell, runtime_refresh_status)
     operator_action_timeline = append_operator_action_timeline_entry(
@@ -436,8 +441,8 @@ def refresh_runtime_snapshot(lifecycle: SessionLifecycle) -> SessionLifecycle:
                 fallback=_resolved_recorded_at(operator_runtime),
             ),
             sequence=operator_action_timeline[-1].sequence,
-            action_status="REFRESHED",
-            summary="Runtime snapshot refresh completed; no manual query was submitted.",
+            action_status=refresh_action_status,
+            summary=refresh_action_text,
             active_profile_id=_selected_profile_id(lifecycle),
         ),
     )
@@ -1343,6 +1348,83 @@ def _resolve_operator_runtime_for_lifecycle(lifecycle: SessionLifecycle) -> Oper
         mode=lifecycle.operator_runtime_mode,
         producer=lifecycle.runtime_snapshot_producer,
         runtime_snapshot=lifecycle.runtime_snapshot,
+    )
+
+
+def _runtime_refresh_action_outcome(
+    operator_runtime: OperatorRuntimeSnapshotResult,
+) -> tuple[str, str, str | None]:
+    """Honest action_status / action_text / blocked_reason for runtime refresh.
+
+    Refresh is read-only against an already-started runtime/cache. The action
+    status must reflect what the refresh actually saw — it must not claim
+    ``REFRESHED`` when there is no usable runtime cache or the runtime is
+    fail-closed. The block reason carries the sanitized lifecycle blocker so
+    the operator can tell why refresh found nothing usable.
+    """
+
+    status = str(operator_runtime.status or "").strip()
+    blockers = tuple(operator_runtime.blocking_reasons or ())
+    primary_blocker = blockers[0] if blockers else None
+
+    if operator_runtime.mode != OPERATOR_LIVE_RUNTIME:
+        return (
+            "REFRESHED",
+            "Runtime snapshot refresh completed; no manual query was submitted.",
+            None,
+        )
+
+    if status == OPERATOR_LIVE_RUNTIME and operator_runtime.cache_snapshot_ready:
+        return (
+            "REFRESHED",
+            "Runtime snapshot refresh completed; operator runtime cache observed.",
+            None,
+        )
+    if status == OPERATOR_LIVE_RUNTIME:
+        # Live runtime active but cache not ready (e.g., stale or partial
+        # data). Refresh found a runtime, but it is not query-ready.
+        reason = primary_blocker or "operator_live_runtime_cache_not_ready"
+        return (
+            "REFRESH_DEGRADED",
+            (
+                "Runtime snapshot refresh observed the live runtime, but the "
+                f"runtime cache is not yet query-ready: {reason}."
+            ),
+            reason,
+        )
+    if status == "LIVE_RUNTIME_UNAVAILABLE":
+        reason = primary_blocker or "operator_live_runtime_not_started"
+        return (
+            "REFRESH_BLOCKED",
+            f"Runtime snapshot refresh found no usable live runtime cache: {reason}.",
+            reason,
+        )
+    if status == "LIVE_RUNTIME_ERROR":
+        reason = primary_blocker or "operator_live_runtime_error"
+        return (
+            "REFRESH_BLOCKED",
+            f"Runtime snapshot refresh failed: {reason}.",
+            reason,
+        )
+    if status == "LIVE_RUNTIME_STALE":
+        reason = primary_blocker or "operator_live_runtime_stale"
+        return (
+            "REFRESH_DEGRADED",
+            f"Runtime snapshot refresh observed a stale live runtime cache: {reason}.",
+            reason,
+        )
+    if status == "LIVE_RUNTIME_DISABLED":
+        reason = primary_blocker or "operator_live_runtime_disabled"
+        return (
+            "REFRESH_BLOCKED",
+            f"Runtime snapshot refresh blocked because the live runtime is disabled: {reason}.",
+            reason,
+        )
+    reason = primary_blocker or "operator_live_runtime_unavailable"
+    return (
+        "REFRESH_BLOCKED",
+        f"Runtime snapshot refresh blocked: {reason}.",
+        reason,
     )
 
 

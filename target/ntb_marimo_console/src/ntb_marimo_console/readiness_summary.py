@@ -438,11 +438,23 @@ def _build_row(
     if runtime_bound:
         market_data_status = runtime_readiness.market_data_status
         missing_live_fields = runtime_readiness.missing_live_fields
-        blocked_reasons = _dedupe(
-            blocked_reasons
-            + runtime_readiness.blocked_reasons
-            + runtime_context.global_blocking_reasons
-        )
+        # When the live runtime is fail-closed (no records, missing snapshot,
+        # error, disabled, disconnected), the lifecycle reasons must precede
+        # the underlying fixture/trigger reasons so the cockpit's first
+        # surfaced reason describes WHY the runtime cache is unusable, not
+        # the residual fixture trigger state.
+        if runtime_readiness.state != LIVE_RUNTIME_CONNECTED:
+            blocked_reasons = _dedupe(
+                runtime_context.global_blocking_reasons
+                + runtime_readiness.blocked_reasons
+                + blocked_reasons
+            )
+        else:
+            blocked_reasons = _dedupe(
+                blocked_reasons
+                + runtime_readiness.blocked_reasons
+                + runtime_context.global_blocking_reasons
+            )
     else:
         market_data_status = _market_data_status(shell)
         missing_live_fields = _missing_live_fields(shell, market_data_status=market_data_status)

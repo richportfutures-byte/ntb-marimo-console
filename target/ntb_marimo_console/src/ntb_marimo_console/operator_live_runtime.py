@@ -224,7 +224,7 @@ def resolve_operator_runtime_snapshot(
             status=LIVE_RUNTIME_UNAVAILABLE,
             source="operator_live_runtime_unavailable",
             provider_status="blocked",
-            reason="operator_live_runtime_snapshot_unavailable",
+            reason="operator_live_runtime_not_started",
         )
 
     try:
@@ -240,11 +240,21 @@ def resolve_operator_runtime_snapshot(
         )
 
     if snapshot is None:
+        # Propagate the producer's sanitized reason (e.g.
+        # ``operator_live_runtime_opt_in_required``,
+        # ``live_cockpit_client_factory_unavailable``,
+        # ``live_cockpit_runtime_start_failed:...``) so the cockpit can render
+        # the concrete lifecycle blocker instead of a generic
+        # ``snapshot_unavailable`` placeholder.
+        producer_reason = str(
+            getattr(active_producer, "reason", "operator_live_runtime_snapshot_unavailable")
+            or "operator_live_runtime_snapshot_unavailable"
+        )
         return _blocking_result(
             status=LIVE_RUNTIME_UNAVAILABLE,
             source="operator_live_runtime_unavailable",
             provider_status="blocked",
-            reason="operator_live_runtime_snapshot_unavailable",
+            reason=producer_reason,
         )
 
     return _result_from_snapshot(snapshot)

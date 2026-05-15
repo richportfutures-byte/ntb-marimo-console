@@ -2450,6 +2450,16 @@ def _render_fixture_cockpit_primary(
             runtime_status == "LIVE_RUNTIME_CONNECTED"
             and surface.get("runtime_snapshot_ready") is True
         )
+        lifecycle_blockers = surface.get("live_runtime_blocking_reasons")
+        lifecycle_text = ""
+        if (
+            not live_connected
+            and isinstance(lifecycle_blockers, (list, tuple))
+            and lifecycle_blockers
+        ):
+            joined = ", ".join(_as_str(item) for item in lifecycle_blockers if _as_str(item))
+            if joined:
+                lifecycle_text = f" | Lifecycle blocker: {joined}"
         banner = _ntb_severity_banner(
             "LIVE" if live_connected else "LIVE FAIL-CLOSED",
             (
@@ -2459,7 +2469,8 @@ def _render_fixture_cockpit_primary(
             ),
             f"Mode: {mode} | Live runtime: {runtime_status} | Provider: {provider_status} | "
             f"Decision authority: {authority} | Manual query only | "
-            "No fixture fallback after live failure",
+            "No fixture fallback after live failure"
+            + lifecycle_text,
             tier="ready" if live_connected else "blocked",
         )
         divider_title = _as_str(

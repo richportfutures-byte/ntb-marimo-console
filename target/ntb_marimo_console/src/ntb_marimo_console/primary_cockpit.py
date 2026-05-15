@@ -126,6 +126,8 @@ def _humanize_reason(reason: str) -> str:
 def _live_observation_row(
     contract: str,
     readiness_row: Mapping[str, object] | None,
+    *,
+    runtime_lifecycle_blockers: tuple[str, ...] = (),
 ) -> dict[str, object]:
     row = readiness_row if isinstance(readiness_row, Mapping) else {}
     # query_ready is sourced strictly from the upstream readiness summary, which
@@ -133,8 +135,17 @@ def _live_observation_row(
     # runtime cache. This view-model only reflects it.
     query_ready = row.get("query_ready") is True
     gate_state = str(row.get("query_gate_status") or "DISABLED")
-    reasons = _reasons_for_row(row)
     runtime_state = str(row.get("live_runtime_readiness_state") or "LIVE_RUNTIME_UNAVAILABLE")
+    # When the live runtime is not connected, prefer the runtime lifecycle
+    # blockers (e.g. ``operator_live_runtime_not_started``,
+    # ``live_cockpit_runtime_start_failed:...``) over residual fixture/trigger
+    # reasons so the operator first sees WHY the live cache is unusable. Per-
+    # contract blocked_reasons / chart_blocking_reasons remain available.
+    runtime_connected = runtime_state == "LIVE_RUNTIME_CONNECTED"
+    if not runtime_connected and runtime_lifecycle_blockers:
+        reasons = tuple(runtime_lifecycle_blockers) + _reasons_for_row(row)
+    else:
+        reasons = _reasons_for_row(row)
 
     if query_ready:
         query_reason = (
@@ -248,8 +259,13 @@ def build_live_observation_cockpit_surface(
 
     # Iterate the canonical five contracts only — ZN/GC are structurally
     # excluded and can never appear in the live-observation cockpit.
+    runtime_lifecycle_blockers = tuple(blocking_reasons) if not live_connected else ()
     rows = [
-        _live_observation_row(contract, readiness_rows.get(contract))
+        _live_observation_row(
+            contract,
+            readiness_rows.get(contract),
+            runtime_lifecycle_blockers=runtime_lifecycle_blockers,
+        )
         for contract in final_target_contracts()
     ]
 
