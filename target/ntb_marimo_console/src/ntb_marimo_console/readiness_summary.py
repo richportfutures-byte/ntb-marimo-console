@@ -15,6 +15,11 @@ from .live_observables import build_live_observable_snapshot_v2
 from .live_observables.schema_v2 import LiveObservableSnapshotV2
 from .market_data.stream_cache import StreamCacheSnapshot
 from .market_data.stream_manager import StreamManagerSnapshot
+
+
+_TRANSIENT_INACTIVE_REASONS: Final[frozenset[str]] = frozenset(
+    {"stream_not_active", "provider_disconnected"}
+)
 from .runtime_diagnostics import LaunchRequest, build_preflight_report
 from .runtime_modes import build_app_shell_for_profile
 from .runtime_profiles import RuntimeProfile, list_runtime_profiles
@@ -158,6 +163,9 @@ class FiveContractReadinessSummary:
     runtime_cache_provider_status: str | None = None
     runtime_cache_generated_at: str | None = None
     runtime_cache_snapshot_ready: bool = False
+    runtime_stream_active: bool = False
+    runtime_stream_state: str | None = None
+    runtime_stream_active_contracts: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -182,6 +190,9 @@ class FiveContractReadinessSummary:
             "runtime_cache_provider_status": self.runtime_cache_provider_status,
             "runtime_cache_generated_at": self.runtime_cache_generated_at,
             "runtime_cache_snapshot_ready": self.runtime_cache_snapshot_ready,
+            "runtime_stream_active": self.runtime_stream_active,
+            "runtime_stream_state": self.runtime_stream_state,
+            "runtime_stream_active_contracts": list(self.runtime_stream_active_contracts),
             "rows": [row.to_dict() for row in self.rows],
             "limitations": list(_limitations_for_summary(self)),
         }
@@ -214,6 +225,9 @@ def build_five_contract_readiness_summary(
         runtime_cache_provider_status=runtime_context.provider_status,
         runtime_cache_generated_at=runtime_context.generated_at,
         runtime_cache_snapshot_ready=runtime_context.snapshot_ready,
+        runtime_stream_active=runtime_context.stream_active,
+        runtime_stream_state=runtime_context.manager_state,
+        runtime_stream_active_contracts=runtime_context.stream_active_contracts,
     )
 
 
@@ -248,6 +262,8 @@ class _RuntimeReadinessContext:
     manager_state: str | None
     manager_blocking_reasons: tuple[str, ...]
     excluded_or_unsupported_contracts: tuple[str, ...]
+    stream_active: bool = False
+    stream_active_contracts: tuple[str, ...] = ()
 
     @property
     def global_blocking_reasons(self) -> tuple[str, ...]:
@@ -295,24 +311,88 @@ def _build_runtime_context(runtime_snapshot: RuntimeReadinessSnapshot | None) ->
     source_type = "stream_cache_snapshot"
     manager_state: str | None = None
     manager_blocking_reasons: tuple[str, ...] = ()
+    stream_active = False
+    stream_active_contracts: tuple[str, ...] = ()
     cache_snapshot = runtime_snapshot
     if isinstance(runtime_snapshot, StreamManagerSnapshot):
         source_type = "stream_manager_snapshot"
         manager_state = runtime_snapshot.state
         manager_blocking_reasons = tuple(str(reason) for reason in runtime_snapshot.blocking_reasons)
         cache_snapshot = runtime_snapshot.cache
+        stream_active_contracts = _stream_active_contracts(runtime_snapshot)
+        # The stream manager is the source of truth for stream identity. When the
+        # manager reports state="active", the stream/provider classification must
+        # follow that — historical transient reasons (e.g., a stream_not_active
+        # from before subscription completed) and a normalised
+        # provider_disconnected reason must not flip identity to inactive.
+        stream_active = manager_state == "active"
+        if stream_active:
+            cache_snapshot = _cache_snapshot_for_active_stream(cache_snapshot)
+            manager_blocking_reasons = tuple(
+                reason
+                for reason in manager_blocking_reasons
+                if reason not in _TRANSIENT_INACTIVE_REASONS
+            )
 
     observable_snapshot = build_live_observable_snapshot_v2(cache_snapshot)
+    provider_status = observable_snapshot.provider_status
     return _RuntimeReadinessContext(
         cache_snapshot=cache_snapshot,
         observable_snapshot=observable_snapshot,
         source_type=source_type,
-        provider_status=observable_snapshot.provider_status,
+        provider_status=provider_status,
         generated_at=observable_snapshot.generated_at,
         snapshot_ready=_observable_quote_cache_ready(observable_snapshot),
         manager_state=manager_state,
         manager_blocking_reasons=manager_blocking_reasons,
         excluded_or_unsupported_contracts=_excluded_or_unsupported_runtime_contracts(cache_snapshot),
+        stream_active=stream_active,
+        stream_active_contracts=stream_active_contracts,
+    )
+
+
+def _stream_active_contracts(snapshot: StreamManagerSnapshot) -> tuple[str, ...]:
+    status = snapshot.contract_heartbeat_status or {}
+    return tuple(
+        contract
+        for contract in snapshot.config.contracts_requested
+        if isinstance(status.get(contract), Mapping)
+        and str(status[contract].get("status") or "").strip().lower() == "active"
+    )
+
+
+def _cache_snapshot_for_active_stream(cache: StreamCacheSnapshot) -> StreamCacheSnapshot:
+    """Return a cache snapshot view that reflects the currently active stream.
+
+    When the stream manager reports ``state == "active"``, residual cache state
+    from earlier transient blocks (a ``provider_status`` of "blocked" recorded
+    before subscription completed, or a ``stream_not_active`` reason added by a
+    previous malformed message) must not be reported as the live identity.
+    Stale per-symbol state (``stale_symbols``, per-record blocking reasons) is
+    preserved so quote/chart freshness remains independently fail-closed.
+    """
+
+    filtered_reasons = tuple(
+        reason
+        for reason in cache.blocking_reasons
+        if reason not in _TRANSIENT_INACTIVE_REASONS
+    )
+    provider_status = cache.provider_status
+    if provider_status in {"blocked", "disconnected", "shutdown", "error"}:
+        provider_status = "active"
+    if (
+        filtered_reasons == cache.blocking_reasons
+        and provider_status == cache.provider_status
+    ):
+        return cache
+    return StreamCacheSnapshot(
+        generated_at=cache.generated_at,
+        provider=cache.provider,
+        provider_status=provider_status,
+        cache_max_age_seconds=cache.cache_max_age_seconds,
+        records=cache.records,
+        blocking_reasons=filtered_reasons,
+        stale_symbols=cache.stale_symbols,
     )
 
 

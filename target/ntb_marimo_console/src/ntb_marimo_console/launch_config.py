@@ -414,9 +414,72 @@ def attach_launch_metadata(
     _attach_runtime_identity(shell, report)
     _attach_operator_live_runtime_metadata(shell, resolved_operator_runtime)
     _attach_startup_payload(shell, report)
+    _overlay_live_observation_runtime_labels(shell, resolved_operator_runtime)
     _attach_primary_cockpit_overview(shell, resolved_operator_runtime)
     _attach_initial_cockpit_operator_action_status(shell)
     return shell
+
+
+def _overlay_live_observation_runtime_labels(
+    shell: dict[str, object],
+    operator_runtime: OperatorRuntimeSnapshotResult,
+) -> None:
+    """Overlay live-observation labels on top of fixture-derived shell state.
+
+    The console's underlying preserved/fixture profile drives the base startup
+    payload and the R14 cockpit runtime header (provider/stream/runtime mode).
+    Under explicit ``OPERATOR_LIVE_RUNTIME`` opt-in those labels would otherwise
+    leak fixture identity into the live-observation cockpit's secondary
+    sections (e.g., "Runtime Mode Fixture/Demo", "PROVIDER fixture",
+    "STREAM fixture"). This overlay rewrites only the identity/label fields so
+    the secondary sections frame the session honestly as live-observation
+    sourced from the operator runtime cache. Per-row freshness, blocking
+    reasons, and decision authority remain untouched and fail-closed.
+    """
+
+    if operator_runtime.mode != OPERATOR_LIVE_RUNTIME:
+        return
+
+    surfaces = shell.get("surfaces")
+    summary_map: dict[str, object] = {}
+    if isinstance(surfaces, dict):
+        summary = surfaces.get("five_contract_readiness_summary")
+        if isinstance(summary, dict):
+            summary_map = summary
+
+    stream_active = summary_map.get("runtime_stream_active") is True
+    provider_label = (
+        operator_runtime.cache_provider_status
+        or summary_map.get("runtime_cache_provider_status")
+        or "operator_live_runtime"
+    )
+    stream_label = (
+        summary_map.get("runtime_stream_state")
+        or operator_runtime.cache_provider_status
+        or "operator_live_runtime"
+    )
+    if stream_active:
+        provider_label = "operator_live_runtime"
+        stream_label = "operator_live_runtime_active"
+
+    startup = shell.get("startup")
+    if isinstance(startup, dict):
+        startup["runtime_mode"] = "operator_live_runtime"
+        startup["runtime_mode_label"] = LIVE_OBSERVATION_CONSOLE_MODE_LABEL
+        startup["runtime_backend"] = "operator_live_runtime"
+        startup["running_as"] = LIVE_OBSERVATION_CONSOLE_RUNNING_AS
+
+    runtime = shell.get("runtime")
+    if isinstance(runtime, dict):
+        runtime["runtime_mode"] = "operator_live_runtime"
+        runtime["runtime_backend"] = "operator_live_runtime"
+
+    cockpit = shell.get("r14_cockpit")
+    if isinstance(cockpit, dict):
+        runtime_status = cockpit.get("runtime_status")
+        if isinstance(runtime_status, dict):
+            runtime_status["provider_status"] = str(provider_label)
+            runtime_status["stream_status"] = str(stream_label)
 
 
 def _attach_primary_cockpit_overview(
