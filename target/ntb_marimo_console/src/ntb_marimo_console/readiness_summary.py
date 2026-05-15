@@ -308,6 +308,19 @@ class _RuntimeContractReadiness:
     label: str | None
 
 
+def _resolve_bar_states() -> Mapping[str, object] | None:
+    from .operator_live_runtime import get_registered_operator_live_bar_builder
+
+    bar_builder = get_registered_operator_live_bar_builder()
+    states_fn = getattr(bar_builder, "states", None)
+    if callable(states_fn):
+        try:
+            return states_fn()
+        except Exception:
+            return None
+    return None
+
+
 def _build_runtime_context(runtime_snapshot: RuntimeReadinessSnapshot | None) -> _RuntimeReadinessContext:
     if runtime_snapshot is None:
         return _RuntimeReadinessContext(
@@ -371,7 +384,8 @@ def _build_runtime_context(runtime_snapshot: RuntimeReadinessSnapshot | None) ->
                 quote_path_active=quote_path_active,
             )
 
-    observable_snapshot = build_live_observable_snapshot_v2(cache_snapshot)
+    bar_states = _resolve_bar_states()
+    observable_snapshot = build_live_observable_snapshot_v2(cache_snapshot, bar_states=bar_states)
     provider_status = observable_snapshot.provider_status
     return _RuntimeReadinessContext(
         cache_snapshot=cache_snapshot,

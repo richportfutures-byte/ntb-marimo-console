@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal, Protocol, TypedDict
@@ -242,6 +242,10 @@ class SchwabStreamManager:
         self._contract_last_seen_at: dict[str, datetime] = {}
         self._contract_service_last_seen_at: dict[tuple[str, str], datetime] = {}
         self._contract_watchdog_started_at: datetime | None = None
+        self._message_listeners: list[Callable[[Mapping[str, object]], None]] = []
+
+    def add_message_listener(self, listener: Callable[[Mapping[str, object]], None]) -> None:
+        self._message_listeners.append(listener)
 
     @property
     def state(self) -> StreamLifecycleState:
@@ -348,6 +352,11 @@ class SchwabStreamManager:
         return self._cache.snapshot()
 
     def ingest_message(self, message: Mapping[str, object]) -> StreamManagerSnapshot:
+        for listener in self._message_listeners:
+            try:
+                listener(message)
+            except Exception:
+                pass
         normalized = self._normalize_message(message)
         if normalized is None:
             return self.snapshot()

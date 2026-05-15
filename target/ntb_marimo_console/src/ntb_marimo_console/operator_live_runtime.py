@@ -122,6 +122,7 @@ def operator_runtime_mode_from_env(values: dict[str, str] | None = None) -> Oper
 
 
 _REGISTERED_OPERATOR_LIVE_PRODUCER: RuntimeSnapshotProducer | None = None
+_REGISTERED_BAR_BUILDER: object | None = None
 
 
 def register_operator_live_runtime_manager(manager: object) -> None:
@@ -148,16 +149,37 @@ def register_operator_live_runtime_producer(producer: RuntimeSnapshotProducer) -
 
 
 def clear_operator_live_runtime_registration() -> None:
-    """Drop any registered manager/producer. Safe to call when empty."""
+    """Drop any registered manager/producer and bar builder. Safe to call when empty."""
 
-    global _REGISTERED_OPERATOR_LIVE_PRODUCER
+    global _REGISTERED_OPERATOR_LIVE_PRODUCER, _REGISTERED_BAR_BUILDER
     _REGISTERED_OPERATOR_LIVE_PRODUCER = None
+    _REGISTERED_BAR_BUILDER = None
 
 
 def get_registered_operator_live_runtime_producer() -> RuntimeSnapshotProducer | None:
     """Return the currently registered producer, if any."""
 
     return _REGISTERED_OPERATOR_LIVE_PRODUCER
+
+
+def register_operator_live_bar_builder(bar_builder: object) -> None:
+    """Register the bar builder for the live runtime. Last write wins."""
+
+    global _REGISTERED_BAR_BUILDER
+    _REGISTERED_BAR_BUILDER = bar_builder
+
+
+def get_registered_operator_live_bar_builder() -> object | None:
+    """Return the currently registered bar builder, if any."""
+
+    return _REGISTERED_BAR_BUILDER
+
+
+def clear_operator_live_bar_builder() -> None:
+    """Drop any registered bar builder. Safe to call when empty."""
+
+    global _REGISTERED_BAR_BUILDER
+    _REGISTERED_BAR_BUILDER = None
 
 
 def build_operator_runtime_snapshot_producer_from_env(

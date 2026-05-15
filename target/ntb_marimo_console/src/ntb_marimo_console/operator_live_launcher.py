@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from .market_data.bar_builder import ChartFuturesBarBuilder
 from .market_data.stream_events import redact_sensitive_text
 from .market_data.stream_manager import (
     SchwabStreamClient,
@@ -14,9 +15,11 @@ from .operator_live_runtime import (
     OPERATOR_LIVE_RUNTIME,
     RuntimeSnapshotProducer,
     StreamManagerRuntimeSnapshotProducer,
+    clear_operator_live_bar_builder,
     clear_operator_live_runtime_registration,
     get_registered_operator_live_runtime_producer,
     operator_runtime_mode_from_env,
+    register_operator_live_bar_builder,
     register_operator_live_runtime_manager,
 )
 from .schwab_receive_thread import (
@@ -48,6 +51,7 @@ class OperatorLiveLaunchResult:
     started_snapshot: StreamManagerSnapshot
     receive_worker: object | None = None
     receive_worker_status: object | None = None
+    bar_builder: ChartFuturesBarBuilder | None = None
 
 
 _RECEIVE_WORKERS_BY_MANAGER_ID: dict[int, object] = {}
@@ -114,6 +118,8 @@ def start_operator_live_runtime(
             f"operator_live_runtime_start_error:{detail}",
         )
 
+    bar_builder = _create_and_hook_bar_builder(manager, resolved_config)
+
     receive_worker: object | None = None
     receive_worker_status: object | None = None
     if start_receive_worker:
@@ -126,6 +132,7 @@ def start_operator_live_runtime(
     producer = StreamManagerRuntimeSnapshotProducer(manager)
     if register:
         register_operator_live_runtime_manager(manager)
+        register_operator_live_bar_builder(bar_builder)
 
     return OperatorLiveLaunchResult(
         manager=manager,
@@ -133,7 +140,27 @@ def start_operator_live_runtime(
         started_snapshot=started_snapshot,
         receive_worker=receive_worker,
         receive_worker_status=receive_worker_status,
+        bar_builder=bar_builder,
     )
+
+
+def _create_and_hook_bar_builder(
+    manager: object,
+    config: SchwabStreamManagerConfig,
+) -> ChartFuturesBarBuilder:
+    expected_symbols: dict[str, str] | None = None
+    if config.contracts_requested and config.symbols_requested:
+        expected_symbols = dict(zip(config.contracts_requested, config.symbols_requested))
+    bar_builder = ChartFuturesBarBuilder(expected_symbols=expected_symbols)
+
+    def _chart_listener(message: Mapping[str, object]) -> None:
+        if str(message.get("service", "")).strip().upper() == "CHART_FUTURES":
+            bar_builder.ingest(message)
+
+    add_listener = getattr(manager, "add_message_listener", None)
+    if callable(add_listener):
+        add_listener(_chart_listener)
+    return bar_builder
 
 
 def stop_operator_live_runtime(manager: object) -> StreamManagerSnapshot:
@@ -145,6 +172,7 @@ def stop_operator_live_runtime(manager: object) -> StreamManagerSnapshot:
     """
 
     _stop_receive_worker_for_manager(manager)
+    clear_operator_live_bar_builder()
     snapshot = manager.shutdown()
     registered = get_registered_operator_live_runtime_producer()
     if isinstance(registered, StreamManagerRuntimeSnapshotProducer) and registered.manager is manager:
