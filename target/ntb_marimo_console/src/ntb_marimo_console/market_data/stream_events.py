@@ -97,8 +97,18 @@ def redact_sensitive_text(value: object) -> str:
     )
     text = re.sub(r"(?i)bearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [REDACTED]", text)
     text = re.sub(r"(?i)(wss?|https?)://[^\s,}\"']+", "[REDACTED_URL]", text)
+    # Token-like = a single contiguous 24+ char token whose own substring
+    # contains a digit/./+/=/~/-. The previous form used a separate lookahead
+    # that searched arbitrarily far past the match for a digit/punct, which
+    # false-positively flagged lifecycle codes like
+    # ``operator_live_runtime_stale.`` (the ``.`` belonged to the surrounding
+    # sentence punctuation, not the token). Anchoring the digit/punct
+    # requirement INSIDE the matched substring keeps real token-like
+    # material redacted while leaving normal sanitized lifecycle/status
+    # codes untouched.
     text = re.sub(
-        r"\b(?=[A-Za-z0-9._~+/=-]{24,}\b)(?=[A-Za-z0-9._~+/=-]*[0-9./+=~-])[A-Za-z0-9._~+/=-]+\b",
+        r"\b(?=[A-Za-z0-9._~+/=-]{24,}\b)"
+        r"[A-Za-z0-9._~+/=-]*[0-9./+=~-][A-Za-z0-9._~+/=-]*\b",
         "[REDACTED_TOKEN_LIKE]",
         text,
     )

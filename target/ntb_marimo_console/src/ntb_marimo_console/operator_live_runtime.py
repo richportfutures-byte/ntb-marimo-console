@@ -280,28 +280,47 @@ def _result_from_snapshot(snapshot: RuntimeReadinessSnapshot) -> OperatorRuntime
     cache = snapshot.cache if isinstance(snapshot, StreamManagerSnapshot) else snapshot
     manager_reasons: tuple[str, ...] = ()
     manager_state: str | None = None
+    levelone_active = False
+    chart_active = False
     if isinstance(snapshot, StreamManagerSnapshot):
         manager_reasons = tuple(_safe_reason(reason) for reason in snapshot.blocking_reasons)
         manager_state = str(snapshot.state)
+        levelone_active = _has_active_service(snapshot, "LEVELONE_FUTURES")
+        chart_active = _has_active_service(snapshot, "CHART_FUTURES")
 
     cache_reasons = tuple(_safe_reason(reason) for reason in cache.blocking_reasons)
     reasons = _dedupe(manager_reasons + cache_reasons)
     provider_status = str(cache.provider_status)
     status: OperatorRuntimeStatus = OPERATOR_LIVE_RUNTIME
+    # Quote-path-active means LEVELONE_FUTURES is flowing for at least one
+    # contract while the manager is reachable. CHART_FUTURES staleness alone
+    # must not flip the OperatorRuntimeStatus to LIVE_RUNTIME_STALE — the
+    # quote/provider path is genuinely fresh in that case, and per-row
+    # chart freshness remains independently fail-closed downstream.
+    quote_path_active = manager_state in {"active", "stale"} and levelone_active
     if provider_status == "disabled" or manager_state == "disabled":
         status = LIVE_RUNTIME_DISABLED
     elif manager_state == "reconnecting":
         status = LIVE_RUNTIME_UNAVAILABLE
         reasons = _dedupe(reasons + ("operator_live_runtime_reconnecting",))
-    elif provider_status == "stale" or cache.stale_symbols or manager_state == "stale":
+    elif (provider_status == "stale" or cache.stale_symbols or manager_state == "stale") and not quote_path_active:
         status = LIVE_RUNTIME_STALE
     elif provider_status in {"blocked", "error", "shutdown"} or manager_state in {"blocked", "error", "shutdown"}:
         status = LIVE_RUNTIME_ERROR
     elif not cache.records:
         status = LIVE_RUNTIME_UNAVAILABLE
         reasons = _dedupe(reasons + ("operator_live_runtime_snapshot_unavailable",))
-    elif reasons:
+    elif reasons and not quote_path_active:
         status = LIVE_RUNTIME_ERROR
+
+    if quote_path_active:
+        # Surface the quote-path-active state as OPERATOR_LIVE_RUNTIME and
+        # report a sanitized "chart_no_updates" lifecycle hint when chart
+        # is the only stale dimension. The per-row chart_status remains the
+        # authoritative chart-freshness signal.
+        status = OPERATOR_LIVE_RUNTIME
+        if not chart_active:
+            reasons = _dedupe(reasons + ("operator_live_runtime_chart_no_updates",))
 
     snapshot_ready = snapshot.ready if isinstance(snapshot, StreamManagerSnapshot) else cache.ready
     return OperatorRuntimeSnapshotResult(
@@ -355,6 +374,22 @@ def _blocking_cache_snapshot(*, provider_status: ProviderStatus, reason: str) ->
         blocking_reasons=(_safe_reason(reason),),
         stale_symbols=(),
     )
+
+
+def _has_active_service(snapshot: StreamManagerSnapshot, service: str) -> bool:
+    """True when the manager has at least one active per-(contract, service) entry."""
+    raw_status = snapshot.contract_service_status or {}
+    target = service.strip().upper()
+    for contract in snapshot.config.contracts_requested:
+        per_contract = raw_status.get(contract)
+        if not isinstance(per_contract, dict):
+            continue
+        entry = per_contract.get(target)
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("status") or "").strip().lower() == "active":
+            return True
+    return False
 
 
 def _safe_reason(value: object) -> str:

@@ -20,6 +20,8 @@ from .market_data.stream_manager import StreamManagerSnapshot
 _TRANSIENT_INACTIVE_REASONS: Final[frozenset[str]] = frozenset(
     {"stream_not_active", "provider_disconnected"}
 )
+LEVELONE_FUTURES_SERVICE: Final[str] = "LEVELONE_FUTURES"
+CHART_FUTURES_SERVICE: Final[str] = "CHART_FUTURES"
 from .runtime_diagnostics import LaunchRequest, build_preflight_report
 from .runtime_modes import build_app_shell_for_profile
 from .runtime_profiles import RuntimeProfile, list_runtime_profiles
@@ -166,6 +168,9 @@ class FiveContractReadinessSummary:
     runtime_stream_active: bool = False
     runtime_stream_state: str | None = None
     runtime_stream_active_contracts: tuple[str, ...] = ()
+    runtime_quote_path_active: bool = False
+    runtime_levelone_active_contracts: tuple[str, ...] = ()
+    runtime_chart_active_contracts: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -193,6 +198,9 @@ class FiveContractReadinessSummary:
             "runtime_stream_active": self.runtime_stream_active,
             "runtime_stream_state": self.runtime_stream_state,
             "runtime_stream_active_contracts": list(self.runtime_stream_active_contracts),
+            "runtime_quote_path_active": self.runtime_quote_path_active,
+            "runtime_levelone_active_contracts": list(self.runtime_levelone_active_contracts),
+            "runtime_chart_active_contracts": list(self.runtime_chart_active_contracts),
             "rows": [row.to_dict() for row in self.rows],
             "limitations": list(_limitations_for_summary(self)),
         }
@@ -228,6 +236,9 @@ def build_five_contract_readiness_summary(
         runtime_stream_active=runtime_context.stream_active,
         runtime_stream_state=runtime_context.manager_state,
         runtime_stream_active_contracts=runtime_context.stream_active_contracts,
+        runtime_quote_path_active=runtime_context.quote_path_active,
+        runtime_levelone_active_contracts=runtime_context.levelone_active_contracts,
+        runtime_chart_active_contracts=runtime_context.chart_active_contracts,
     )
 
 
@@ -264,6 +275,9 @@ class _RuntimeReadinessContext:
     excluded_or_unsupported_contracts: tuple[str, ...]
     stream_active: bool = False
     stream_active_contracts: tuple[str, ...] = ()
+    levelone_active_contracts: tuple[str, ...] = ()
+    chart_active_contracts: tuple[str, ...] = ()
+    quote_path_active: bool = False
 
     @property
     def global_blocking_reasons(self) -> tuple[str, ...]:
@@ -313,6 +327,9 @@ def _build_runtime_context(runtime_snapshot: RuntimeReadinessSnapshot | None) ->
     manager_blocking_reasons: tuple[str, ...] = ()
     stream_active = False
     stream_active_contracts: tuple[str, ...] = ()
+    levelone_active_contracts: tuple[str, ...] = ()
+    chart_active_contracts: tuple[str, ...] = ()
+    quote_path_active = False
     cache_snapshot = runtime_snapshot
     if isinstance(runtime_snapshot, StreamManagerSnapshot):
         source_type = "stream_manager_snapshot"
@@ -320,18 +337,38 @@ def _build_runtime_context(runtime_snapshot: RuntimeReadinessSnapshot | None) ->
         manager_blocking_reasons = tuple(str(reason) for reason in runtime_snapshot.blocking_reasons)
         cache_snapshot = runtime_snapshot.cache
         stream_active_contracts = _stream_active_contracts(runtime_snapshot)
+        levelone_active_contracts = _service_active_contracts(
+            runtime_snapshot, LEVELONE_FUTURES_SERVICE
+        )
+        chart_active_contracts = _service_active_contracts(
+            runtime_snapshot, CHART_FUTURES_SERVICE
+        )
         # The stream manager is the source of truth for stream identity. When the
         # manager reports state="active", the stream/provider classification must
         # follow that — historical transient reasons (e.g., a stream_not_active
         # from before subscription completed) and a normalised
         # provider_disconnected reason must not flip identity to inactive.
         stream_active = manager_state == "active"
-        if stream_active:
-            cache_snapshot = _cache_snapshot_for_active_stream(cache_snapshot)
-            manager_blocking_reasons = tuple(
-                reason
-                for reason in manager_blocking_reasons
-                if reason not in _TRANSIENT_INACTIVE_REASONS
+        # The QUOTE PATH (LEVELONE_FUTURES) is the freshness signal that drives
+        # provider/stream classification. CHART_FUTURES staleness must not
+        # globally downgrade provider freshness — chart issues only block the
+        # affected per-row chart_status. The quote path is "active" when the
+        # manager is reachable (state in {"active","stale"}) AND LEVELONE has
+        # active heartbeats for at least one configured contract.
+        quote_path_active = (
+            manager_state in {"active", "stale"} and bool(levelone_active_contracts)
+        )
+        if stream_active or quote_path_active:
+            cache_snapshot = _cache_snapshot_for_active_quote_path(
+                cache_snapshot,
+                levelone_active_contracts=levelone_active_contracts,
+                chart_active_contracts=chart_active_contracts,
+            )
+            manager_blocking_reasons = _filter_quote_path_irrelevant_reasons(
+                manager_blocking_reasons,
+                levelone_active_contracts=levelone_active_contracts,
+                chart_active_contracts=chart_active_contracts,
+                quote_path_active=quote_path_active,
             )
 
     observable_snapshot = build_live_observable_snapshot_v2(cache_snapshot)
@@ -348,6 +385,9 @@ def _build_runtime_context(runtime_snapshot: RuntimeReadinessSnapshot | None) ->
         excluded_or_unsupported_contracts=_excluded_or_unsupported_runtime_contracts(cache_snapshot),
         stream_active=stream_active,
         stream_active_contracts=stream_active_contracts,
+        levelone_active_contracts=levelone_active_contracts,
+        chart_active_contracts=chart_active_contracts,
+        quote_path_active=quote_path_active,
     )
 
 
@@ -361,28 +401,122 @@ def _stream_active_contracts(snapshot: StreamManagerSnapshot) -> tuple[str, ...]
     )
 
 
-def _cache_snapshot_for_active_stream(cache: StreamCacheSnapshot) -> StreamCacheSnapshot:
-    """Return a cache snapshot view that reflects the currently active stream.
+def _service_active_contracts(
+    snapshot: StreamManagerSnapshot, service: str
+) -> tuple[str, ...]:
+    """Per-service active contracts derived from contract_service_status.
 
-    When the stream manager reports ``state == "active"``, residual cache state
-    from earlier transient blocks (a ``provider_status`` of "blocked" recorded
-    before subscription completed, or a ``stream_not_active`` reason added by a
-    previous malformed message) must not be reported as the live identity.
-    Stale per-symbol state (``stale_symbols``, per-record blocking reasons) is
-    preserved so quote/chart freshness remains independently fail-closed.
+    A contract counts as service-active when the manager has recorded
+    ``status == "active"`` for the (contract, service) pair within the
+    heartbeat threshold — i.e., real ingest progress, not just a connection
+    heartbeat. Returns an empty tuple when the manager has not populated
+    contract_service_status (no service-level visibility).
     """
 
-    filtered_reasons = tuple(
-        reason
-        for reason in cache.blocking_reasons
-        if reason not in _TRANSIENT_INACTIVE_REASONS
+    status = snapshot.contract_service_status or {}
+    requested_service = service.strip().upper()
+    active: list[str] = []
+    for contract in snapshot.config.contracts_requested:
+        per_contract = status.get(contract)
+        if not isinstance(per_contract, Mapping):
+            continue
+        entry = per_contract.get(requested_service)
+        if not isinstance(entry, Mapping):
+            continue
+        if str(entry.get("status") or "").strip().lower() == "active":
+            active.append(contract)
+    return tuple(active)
+
+
+def _is_chart_only_reason(reason: str) -> bool:
+    text = reason.strip()
+    if not text:
+        return False
+    if text.startswith("contract_service_stale:") or text.startswith(
+        "contract_service_no_data:"
+    ):
+        return text.upper().endswith(":CHART_FUTURES")
+    if text.startswith("chart_bar_stale:") or text.startswith("chart_bars_missing:"):
+        return True
+    return False
+
+
+def _filter_quote_path_irrelevant_reasons(
+    reasons: tuple[str, ...],
+    *,
+    levelone_active_contracts: tuple[str, ...],
+    chart_active_contracts: tuple[str, ...],  # noqa: ARG001 - reserved for future symmetry
+    quote_path_active: bool,
+) -> tuple[str, ...]:
+    """Filter blocking reasons that should not poison provider/quote identity.
+
+    Always drops historical transient inactive reasons. When the quote path
+    is active, also drops chart-only reasons (e.g.
+    ``contract_service_stale:CONTRACT:CHART_FUTURES``) and per-contract
+    aggregate stale reasons (``contract_stale:CONTRACT`` /
+    ``contract_no_data:CONTRACT``) for contracts whose LEVELONE service is
+    still active — those are chart-side noise, not quote-path failures.
+    Chart-side issues remain visible per-row via the observable snapshot's
+    ``chart_bar.blocking_reasons``.
+    """
+
+    levelone_set = {contract.strip().upper() for contract in levelone_active_contracts}
+    filtered: list[str] = []
+    for reason in reasons:
+        if reason in _TRANSIENT_INACTIVE_REASONS:
+            continue
+        if not quote_path_active:
+            filtered.append(reason)
+            continue
+        if _is_chart_only_reason(reason):
+            continue
+        # ``contract_stale:CONTRACT`` / ``contract_no_data:CONTRACT`` are
+        # global per-contract heartbeat aggregates that flip when ANY service
+        # is missing/stale. If LEVELONE is still flowing for the contract,
+        # the quote path is fine — drop the global aggregate so it does not
+        # poison provider/quote identity.
+        if reason.startswith("contract_stale:") or reason.startswith("contract_no_data:"):
+            _, _, contract_part = reason.partition(":")
+            if contract_part.strip().upper() in levelone_set:
+                continue
+        filtered.append(reason)
+    return tuple(filtered)
+
+
+def _cache_snapshot_for_active_quote_path(
+    cache: StreamCacheSnapshot,
+    *,
+    levelone_active_contracts: tuple[str, ...],
+    chart_active_contracts: tuple[str, ...],
+) -> StreamCacheSnapshot:
+    """Return a cache snapshot view that reflects the currently active quote path.
+
+    When the quote path (LEVELONE_FUTURES) is active, residual cache state
+    from earlier transient blocks (a ``provider_status`` of "blocked" set
+    before subscription completed, an inherited "stale" set by a per-service
+    chart watchdog, or a ``stream_not_active`` / chart-only blocking reason)
+    must not be reported as the live identity. Per-record freshness and
+    ``stale_symbols`` remain so quote/chart freshness stay independently
+    fail-closed at the per-contract level.
+    """
+
+    filtered_reasons = _filter_quote_path_irrelevant_reasons(
+        cache.blocking_reasons,
+        levelone_active_contracts=levelone_active_contracts,
+        chart_active_contracts=chart_active_contracts,
+        quote_path_active=True,
     )
     provider_status = cache.provider_status
-    if provider_status in {"blocked", "disconnected", "shutdown", "error"}:
+    if provider_status in {"blocked", "disconnected", "shutdown", "error", "stale"}:
         provider_status = "active"
+    # Strip per-symbol stale entries that come solely from chart-only
+    # records. Quote-side stale per-symbol entries remain (they reflect
+    # actual stale LEVELONE data and still belong on the per-row view).
+    filtered_stale_symbols = _filter_chart_only_stale_symbols(cache)
     if (
         filtered_reasons == cache.blocking_reasons
         and provider_status == cache.provider_status
+        and filtered_stale_symbols == cache.stale_symbols
     ):
         return cache
     return StreamCacheSnapshot(
@@ -392,7 +526,48 @@ def _cache_snapshot_for_active_stream(cache: StreamCacheSnapshot) -> StreamCache
         cache_max_age_seconds=cache.cache_max_age_seconds,
         records=cache.records,
         blocking_reasons=filtered_reasons,
-        stale_symbols=cache.stale_symbols,
+        stale_symbols=filtered_stale_symbols,
+    )
+
+
+def _filter_chart_only_stale_symbols(cache: StreamCacheSnapshot) -> tuple[str, ...]:
+    """Remove symbols whose stale entry is ONLY from a stale chart record.
+
+    A symbol with both a stale CHART record and a fresh LEVELONE record
+    should not be reported as a stale_symbol because its quote path is
+    actually fresh; the chart-side staleness is captured per-row via the
+    observable snapshot's chart_bar.blocking_reasons.
+    """
+
+    stale = list(cache.stale_symbols)
+    if not stale:
+        return cache.stale_symbols
+    fresh_quote_symbols: set[str] = set()
+    stale_chart_symbols: set[str] = set()
+    for record in cache.records:
+        symbol = str(getattr(record, "symbol", "")).strip().upper()
+        if not symbol:
+            continue
+        message_type = str(getattr(record, "message_type", "")).strip().lower()
+        is_fresh = bool(getattr(record, "fresh", False))
+        if message_type == "quote" and is_fresh:
+            fresh_quote_symbols.add(symbol)
+        if message_type == "bar" and not is_fresh:
+            stale_chart_symbols.add(symbol)
+    chart_only_stale = stale_chart_symbols & fresh_quote_symbols
+    if not chart_only_stale:
+        return cache.stale_symbols
+    return tuple(symbol for symbol in stale if symbol not in chart_only_stale)
+
+
+# Backward-compatible alias retained for any external callers that imported
+# the previous helper name. Internal callers go through
+# ``_cache_snapshot_for_active_quote_path``.
+def _cache_snapshot_for_active_stream(cache: StreamCacheSnapshot) -> StreamCacheSnapshot:
+    return _cache_snapshot_for_active_quote_path(
+        cache,
+        levelone_active_contracts=(),
+        chart_active_contracts=(),
     )
 
 
