@@ -294,6 +294,7 @@ def _contract_observable(
             delayed=None,
             symbol_match=symbol_match,
             required_fields_present=not required_reasons,
+            core_quote_fields_present=_core_quote_fields_present(quote),
             missing_fields=missing_fields,
             chart_bars_ready=chart_bar.available,
             dependency_blocking_reasons=dependency_reasons,
@@ -654,6 +655,10 @@ def _missing_required_fields(
         if getattr(session, field_name) is None:
             missing.append(field_name)
     return tuple(missing)
+
+
+def _core_quote_fields_present(quote: QuoteObservableV2) -> bool:
+    return all(getattr(quote, field_name) is not None for field_name in REQUIRED_QUOTE_FIELDS)
 
 
 def _mid(bid: float | int | None, ask: float | int | None) -> float | None:

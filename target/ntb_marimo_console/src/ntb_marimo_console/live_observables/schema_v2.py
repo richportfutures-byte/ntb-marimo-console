@@ -161,6 +161,7 @@ class QualityObservableV2:
     delayed: bool | None = None
     symbol_match: bool = False
     required_fields_present: bool = False
+    core_quote_fields_present: bool = False
     missing_fields: tuple[str, ...] = ()
     chart_bars_ready: bool = False
     dependency_blocking_reasons: tuple[str, ...] = ()
@@ -176,6 +177,7 @@ class QualityObservableV2:
             "delayed": self.delayed,
             "symbol_match": self.symbol_match,
             "required_fields_present": self.required_fields_present,
+            "core_quote_fields_present": self.core_quote_fields_present,
             "missing_fields": list(self.missing_fields),
             "chart_bars_ready": self.chart_bars_ready,
             "dependency_blocking_reasons": list(self.dependency_blocking_reasons),

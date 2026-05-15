@@ -113,6 +113,19 @@ class StreamCache:
             message.symbol.strip().upper(),
             message.service.strip().upper(),
         )
+        existing = self._records.get(key)
+        if existing is not None and message.message_type == "quote":
+            merged_fields = dict(existing.fields)
+            merged_fields.update(message.fields)
+            message = NormalizedStreamMessage(
+                provider=message.provider,
+                service=message.service,
+                symbol=message.symbol,
+                contract=message.contract,
+                message_type=message.message_type,
+                fields=merged_fields,
+                received_at=message.received_at,
+            )
         self._records[key] = message
 
     def add_blocking_reason(self, reason: object, *, symbol: str | None = None) -> None:

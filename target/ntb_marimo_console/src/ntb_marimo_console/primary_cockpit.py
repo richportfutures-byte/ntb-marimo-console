@@ -250,7 +250,7 @@ def build_live_observation_cockpit_surface(
         else []
     )
 
-    live_connected = runtime_status == "LIVE_RUNTIME_CONNECTED" and snapshot_ready
+    live_connected = snapshot_ready
     mode = (
         LIVE_OBSERVATION_MODE_CONNECTED
         if live_connected

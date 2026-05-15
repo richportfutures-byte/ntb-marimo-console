@@ -771,9 +771,14 @@ def _runtime_contract_readiness(
         market_data_status = "Runtime cache missing contract"
         missing_fields = _dedupe(missing_fields + ("runtime_cache_record",))
     elif quality_map.get("required_fields_present") is not True:
-        state = LIVE_RUNTIME_MISSING_REQUIRED_FIELDS
-        status = "runtime_cache_missing_required_fields"
-        market_data_status = "Runtime cache missing required fields"
+        if quality_map.get("core_quote_fields_present") is True:
+            state = LIVE_RUNTIME_CONNECTED
+            status = "runtime_cache_connected"
+            market_data_status = "Runtime cache connected"
+        else:
+            state = LIVE_RUNTIME_MISSING_REQUIRED_FIELDS
+            status = "runtime_cache_missing_required_fields"
+            market_data_status = "Runtime cache missing required fields"
     elif quality_map.get("fresh") is not True:
         state = LIVE_RUNTIME_STALE
         status = "runtime_cache_stale"
@@ -804,7 +809,7 @@ def _runtime_contract_readiness(
         quote_freshness_state=quote_freshness_state,
         chart_freshness_state=chart_freshness_state,
         missing_live_fields=missing_fields,
-        blocked_reasons=() if live_data_available else reasons,
+        blocked_reasons=reasons,
         chart_blocking_reasons=chart_reasons,
         provider_status=provider_status,
         symbol=symbol_text,
@@ -817,8 +822,15 @@ def _observable_quote_cache_ready(observable_snapshot: LiveObservableSnapshotV2)
         return False
     quote_ready_contracts = observable_snapshot.data_quality.get("quote_ready_contracts")
     if isinstance(quote_ready_contracts, list):
-        return set(quote_ready_contracts) == set(final_target_contracts())
-    return observable_snapshot.ready
+        if set(quote_ready_contracts) == set(final_target_contracts()):
+            return True
+    for contract in final_target_contracts():
+        obs = observable_snapshot.contracts.get(contract)
+        if obs is None or not obs.quality.fresh or not obs.quality.symbol_match:
+            return False
+        if not obs.quality.core_quote_fields_present:
+            return False
+    return True
 
 
 def _summary_runtime_status(
@@ -1030,6 +1042,8 @@ def _quote_status(quality: Mapping[str, object], reasons: tuple[str, ...]) -> st
     if quality.get("fresh") is not True:
         return "quote stale"
     if quality.get("required_fields_present") is not True:
+        if quality.get("core_quote_fields_present") is True:
+            return "quote available"
         return "quote missing"
     if reasons:
         return "quote blocked"
