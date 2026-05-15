@@ -35,6 +35,21 @@ LIVE_OBSERVATION_COCKPIT_TITLE = "FIVE-CONTRACT LIVE-OBSERVATION COCKPIT"
 LIVE_OBSERVATION_MODE_CONNECTED = "live_observation_runtime_cache"
 LIVE_OBSERVATION_MODE_FAIL_CLOSED = "live_observation_fail_closed"
 
+FAIL_CLOSED_REASON_RUNTIME_CACHE_UNAVAILABLE = "Operator Runtime Cache Unavailable"
+FAIL_CLOSED_REASON_QUERY_GATE_BLOCKED = "Query Gate Blocked"
+FAIL_CLOSED_REASON_RUNTIME_STALE = "Runtime Cache Stale"
+FAIL_CLOSED_REASON_RUNTIME_DISABLED = "Operator Runtime Disabled"
+FAIL_CLOSED_REASON_RUNTIME_ERROR = "Operator Runtime Error"
+FAIL_CLOSED_REASON_RUNTIME_MISSING_CONTRACT = "Operator Runtime Cache Missing Contract"
+FAIL_CLOSED_REASON_RUNTIME_MISSING_REQUIRED_FIELDS = (
+    "Operator Runtime Cache Missing Required Fields"
+)
+FAIL_CLOSED_REASON_NOT_REQUESTED = "Operator Live Runtime Not Requested"
+
+_QUOTE_PATH_PROVIDER_DOWNGRADES = frozenset(
+    {"blocked", "disconnected", "shutdown", "error", "stale"}
+)
+
 LIVE_OBSERVATION_CONSOLE_MODE_LABEL = "Live-Observation"
 LIVE_OBSERVATION_CONSOLE_RUNNING_AS = "Live-Observation"
 
@@ -240,7 +255,23 @@ def build_live_observation_cockpit_surface(
     runtime_status = str(
         summary.get("live_runtime_readiness_status") or "LIVE_RUNTIME_UNAVAILABLE"
     )
-    provider_status = runtime.get("cache_provider_status")
+    raw_provider_status = runtime.get("cache_provider_status")
+    quote_path_active = bool(summary.get("runtime_quote_path_active"))
+    # When the quote path is active the readiness-summary view of the cache has
+    # already corrected residual transient labels ("blocked" / "stale" left over
+    # from before subscription completed, or a chart-only stale flag) to
+    # "active". Mirror that correction on the cockpit-displayed provider_status
+    # so the header does not contradict the per-row data which is itself built
+    # from the corrected snapshot. Per-row freshness remains fail-closed
+    # independently.
+    if (
+        quote_path_active
+        and isinstance(raw_provider_status, str)
+        and raw_provider_status.strip().lower() in _QUOTE_PATH_PROVIDER_DOWNGRADES
+    ):
+        provider_status: object = "active"
+    else:
+        provider_status = raw_provider_status
     snapshot_ready = runtime.get("cache_snapshot_ready") is True
     generated_at = runtime.get("cache_generated_at")
     global_blockers = runtime.get("blocking_reasons")
@@ -250,11 +281,16 @@ def build_live_observation_cockpit_surface(
         else []
     )
 
+    runtime_connected = runtime_status == "LIVE_RUNTIME_CONNECTED"
     live_connected = snapshot_ready
     mode = (
         LIVE_OBSERVATION_MODE_CONNECTED
         if live_connected
         else LIVE_OBSERVATION_MODE_FAIL_CLOSED
+    )
+    fail_closed_reason_text = _fail_closed_reason_text(
+        runtime_status=runtime_status,
+        snapshot_ready=snapshot_ready,
     )
 
     # Iterate the canonical five contracts only — ZN/GC are structurally
@@ -281,8 +317,12 @@ def build_live_observation_cockpit_surface(
         "fixture_fallback_after_live_failure": False,
         "supported_contracts": list(final_target_contracts()),
         "live_runtime_readiness_status": runtime_status,
+        "runtime_connected": runtime_connected,
         "runtime_provider_status": provider_status,
+        "runtime_provider_status_raw": raw_provider_status,
+        "runtime_quote_path_active": quote_path_active,
         "runtime_snapshot_ready": snapshot_ready,
+        "fail_closed_reason_text": fail_closed_reason_text,
         "runtime_cache_generated_at": generated_at,
         "generated_at": generated_at,
         "live_runtime_blocking_reasons": blocking_reasons,
@@ -292,3 +332,42 @@ def build_live_observation_cockpit_surface(
         "raw_bar_values_included": False,
         "raw_streamer_payloads_included": False,
     }
+
+
+_RUNTIME_STATUS_TO_FAIL_CLOSED_REASON = {
+    "LIVE_RUNTIME_DISABLED": FAIL_CLOSED_REASON_RUNTIME_DISABLED,
+    "LIVE_RUNTIME_ERROR": FAIL_CLOSED_REASON_RUNTIME_ERROR,
+    "LIVE_RUNTIME_STALE": FAIL_CLOSED_REASON_RUNTIME_STALE,
+    "LIVE_RUNTIME_MISSING_CONTRACT": FAIL_CLOSED_REASON_RUNTIME_MISSING_CONTRACT,
+    "LIVE_RUNTIME_MISSING_REQUIRED_FIELDS": FAIL_CLOSED_REASON_RUNTIME_MISSING_REQUIRED_FIELDS,
+    "LIVE_RUNTIME_NOT_REQUESTED": FAIL_CLOSED_REASON_NOT_REQUESTED,
+    "LIVE_RUNTIME_UNAVAILABLE": FAIL_CLOSED_REASON_RUNTIME_CACHE_UNAVAILABLE,
+}
+
+
+def _fail_closed_reason_text(
+    *,
+    runtime_status: str,
+    snapshot_ready: bool,
+) -> str:
+    """Describe why the live-observation cockpit is fail-closed, coherently.
+
+    When the upstream runtime status is ``LIVE_RUNTIME_CONNECTED`` the runtime
+    cache is by definition reachable and per-row data has flowed through; any
+    remaining fail-closed state is then a downstream query/trigger blocker
+    (manual query remains gated on preserved-engine ``QUERY_READY`` provenance).
+    Returning ``"Operator Runtime Cache Unavailable"`` in that case would
+    contradict the runtime status and the per-row data. When the runtime is
+    not connected, the headline reflects the actual runtime-level reason so the
+    operator can see why the cache is unusable.
+
+    Empty string means the cockpit is not fail-closed.
+    """
+
+    if snapshot_ready and runtime_status == "LIVE_RUNTIME_CONNECTED":
+        return ""
+    if runtime_status == "LIVE_RUNTIME_CONNECTED":
+        return FAIL_CLOSED_REASON_QUERY_GATE_BLOCKED
+    return _RUNTIME_STATUS_TO_FAIL_CLOSED_REASON.get(
+        runtime_status, FAIL_CLOSED_REASON_RUNTIME_CACHE_UNAVAILABLE
+    )

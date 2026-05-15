@@ -2446,9 +2446,17 @@ def _render_fixture_cockpit_primary(
         provider_status = _as_str(
             surface.get("runtime_provider_status"), default="unavailable"
         )
-        live_connected = (
-            runtime_status == "LIVE_RUNTIME_CONNECTED"
-            and surface.get("runtime_snapshot_ready") is True
+        runtime_connected = surface.get("runtime_connected") is True
+        snapshot_ready = surface.get("runtime_snapshot_ready") is True
+        # "live_connected" governs the top-level severity badge and tier: green
+        # only when the runtime is connected AND the snapshot is fully ready.
+        # The header subtitle below distinguishes "runtime not connected" from
+        # "runtime connected but downstream query gate blocked" so the operator
+        # screen tells one coherent story.
+        live_connected = runtime_connected and snapshot_ready
+        fail_closed_reason = _as_str(
+            surface.get("fail_closed_reason_text"),
+            default="Operator Runtime Cache Unavailable",
         )
         lifecycle_blockers = surface.get("live_runtime_blocking_reasons")
         lifecycle_text = ""
@@ -2465,7 +2473,7 @@ def _render_fixture_cockpit_primary(
             (
                 "Live-Observation Cockpit — Operator Runtime Cache"
                 if live_connected
-                else "Live-Observation Cockpit — Fail-Closed (Operator Runtime Cache Unavailable)"
+                else f"Live-Observation Cockpit — Fail-Closed ({fail_closed_reason})"
             ),
             f"Mode: {mode} | Live runtime: {runtime_status} | Provider: {provider_status} | "
             f"Decision authority: {authority} | Manual query only | "
