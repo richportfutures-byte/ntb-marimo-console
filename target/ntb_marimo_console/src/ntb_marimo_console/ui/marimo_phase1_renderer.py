@@ -413,10 +413,24 @@ def render_phase1_console(
     if isinstance(startup, Mapping):
         operator_ready = startup.get("operator_ready") is True
 
-    elements: list[Any] = [
-        _ntb_css_style_element(),
-        _render_console_header(shell, heading=heading, mode_summary=mode_summary),
-    ]
+    elements: list[Any] = [_ntb_css_style_element()]
+
+    # OPERATOR TESTING MODULE V0 — the top operator-facing surface. Renders
+    # FIRST so the operator can read the status of the live workflow within
+    # 10 seconds: title, status, runtime/provider/manual-query state, one
+    # top blocker, one next safe action, and five per-contract rows.
+    surfaces_map = shell.get("surfaces")
+    operator_testing_surface = (
+        surfaces_map.get("operator_testing_module")
+        if isinstance(surfaces_map, Mapping)
+        else None
+    )
+    if isinstance(operator_testing_surface, Mapping):
+        elements.append(_render_operator_testing_module(operator_testing_surface))
+
+    elements.append(
+        _render_console_header(shell, heading=heading, mode_summary=mode_summary)
+    )
 
     # PRIMARY LANDING SURFACE — the primary cockpit renders immediately after the
     # header, before pre-market brief, stream health, anchors, notes, and all
@@ -2416,6 +2430,111 @@ def _render_surface_section(
         )
 
     return _render_surface_card(mo.md(f"## {key}\n- unavailable"))
+
+
+def _render_operator_testing_module(surface: Mapping[str, object]) -> Any:
+    """Render the Operator Testing Module V0 status board.
+
+    Top-of-notebook surface. The operator must be able to read the status of
+    the live workflow within ~10 seconds: title, status badge, runtime /
+    provider / manual-query state, one top blocker, one next safe action,
+    and five per-contract rows. Engine source profile (e.g. fixture_es_demo)
+    is exposed only as secondary/debug metadata.
+    """
+
+    title = _as_str(
+        surface.get("title"), default="NTB Live Observation Testing Module"
+    )
+    status = _as_str(
+        surface.get("operator_testing_status"),
+        default="NOT_READY_FOR_OPERATOR_TESTING",
+    )
+    runtime_text = _as_str(surface.get("runtime_state_text"), default="<unavailable>")
+    provider_text = _as_str(
+        surface.get("provider_state_text"), default="<unavailable>"
+    )
+    manual_query_text = _as_str(
+        surface.get("manual_query_state_text"), default="<unavailable>"
+    )
+    top_blocker = _as_str(surface.get("top_blocker"), default="").strip()
+    next_safe_action = _as_str(surface.get("next_safe_action"), default="").strip()
+    engine_profile = _as_str(surface.get("engine_source_profile_id"), default="").strip()
+
+    badge_tier = "ready" if status == "READY_FOR_OPERATOR_TESTING" else "blocked"
+    subtitle = f"{runtime_text} {provider_text} {manual_query_text}".strip()
+    banner = _ntb_severity_banner(status, title, subtitle, tier=badge_tier)
+
+    top_blocker_html = (
+        '<div class="ntb-stat" style="margin-top:8px">'
+        '<div class="ntb-stat__label">Top blocker</div>'
+        f'<div class="ntb-stat__value">{_h(top_blocker or "<none>")}</div>'
+        "</div>"
+    )
+    next_action_html = (
+        '<div class="ntb-stat" style="margin-top:8px">'
+        '<div class="ntb-stat__label">Next safe action</div>'
+        f'<div class="ntb-stat__value">{_h(next_safe_action or "<none>")}</div>'
+        "</div>"
+    )
+
+    rows = surface.get("rows")
+    tbody = ""
+    if isinstance(rows, list):
+        for row in rows:
+            if not isinstance(row, Mapping):
+                continue
+            contract = _as_str(row.get("contract"))
+            label = _as_str(row.get("profile_label"))
+            provider = _as_str(row.get("provider"))
+            quote = _as_str(row.get("quote"))
+            chart = _as_str(row.get("chart"))
+            trigger = _as_str(row.get("trigger"))
+            query_gate = _as_str(row.get("query_gate"))
+            blocker = _as_str(row.get("blocker"))
+            row_action = _as_str(row.get("next_safe_action"))
+            tbody += (
+                "<tr>"
+                f"<td><strong>{_h(contract)}</strong></td>"
+                f"<td class='ntb-muted'>{_h(label)}</td>"
+                f"<td>{_ntb_chip_for_status(provider)}</td>"
+                f"<td>{_ntb_chip_for_status(quote)}</td>"
+                f"<td>{_ntb_chip_for_status(chart)}</td>"
+                f"<td>{_ntb_chip_for_status(trigger)}</td>"
+                f"<td>{_ntb_chip_for_status(query_gate)}</td>"
+                f"<td>{_h(blocker)}</td>"
+                f"<td class='ntb-muted'>{_h(row_action)}</td>"
+                "</tr>"
+            )
+    if not tbody:
+        tbody = "<tr><td colspan='9' class='ntb-muted'>&lt;unavailable&gt;</td></tr>"
+
+    table_html = (
+        '<table class="ntb-table" style="margin-top:8px"><thead><tr>'
+        "<th>Contract</th><th>Profile</th><th>Provider</th><th>Quote</th>"
+        "<th>Chart</th><th>Trigger</th><th>Query gate</th><th>Blocker</th>"
+        "<th>Next safe action</th>"
+        f"</tr></thead><tbody>{tbody}</tbody></table>"
+    )
+
+    engine_html = ""
+    if engine_profile:
+        engine_html = (
+            '<div class="ntb-muted" style="margin-top:8px;font-size:0.85em">'
+            f"Engine source profile: {_h(engine_profile)}"
+            " &middot; preserved engine remains the sole decision authority."
+            "</div>"
+        )
+
+    container = (
+        '<div class="ntb-shell" style="margin-bottom:12px">'
+        + banner
+        + top_blocker_html
+        + next_action_html
+        + table_html
+        + engine_html
+        + "</div>"
+    )
+    return mo.Html(container)
 
 
 def _render_fixture_cockpit_primary(

@@ -1060,25 +1060,15 @@ def _(
 
     stop_output = render_watchman_gate_stop_output(
         shell,
-        heading="NTB Marimo Operator Console",
+        heading="NTB Live Observation Testing Module",
         mode_summary=(
-            "Explicit profile-driven operator console with startup preflight, in-session workflow gating, "
-            "and repeatable manual lifecycle controls.\n\n"
-            f"- Selected profile: `{profile_id}`.\n"
+            "Operator Testing Module V0 stop output. Startup preflight or "
+            "watchman gate is blocked; resolve the reported diagnostic and "
+            "relaunch.\n\n"
+            f"- Engine source profile: `{profile_id}` (secondary metadata).\n"
             f"- Runtime mode: `{mode}`.\n"
             f"- Running as: `{running_as}`.\n"
-            "- Startup Status confirms whether the console is actually ready.\n"
-            "- Session Lifecycle shows whether the current profile was freshly reloaded, reset, or left unchanged.\n"
-            "- Recent Session Evidence shows bounded, ordered evidence for the active and recently used profiles.\n"
-            "- Restored Prior Run versus Current Session labels keep persisted evidence truthful across app restarts.\n"
-            "- Session Workflow shows whether live query is blocked, eligible, requested, completed, or failed.\n"
-            "- Supported Profile Operations lists all supported profiles plus blocked candidate contracts.\n"
-            "- Profile Selector switches only between supported profiles and fails closed when validation does not complete.\n"
-            "- Reload Current Profile reruns preflight and reloads the declared source artifacts for the selected profile.\n"
-            "- Reset Session clears bounded query state without changing the selected profile.\n"
-            "- The live-query action runs only against the currently loaded bounded snapshot.\n"
-            "- It does not place orders, imply fills, or bypass fail-closed gating.\n"
-            "- Debug JSON stays secondary only."
+            "- Default launch is non-live. Live mode is explicit opt-in only."
         ),
         lifecycle_control_panel=lifecycle_controls,
         profile_control_panel=profile_controls,
@@ -1092,25 +1082,18 @@ def _(
 
     rendered = render_phase1_console(
         shell,
-        heading="NTB Marimo Operator Console",
+        heading="NTB Live Observation Testing Module",
         mode_summary=(
-            "Explicit profile-driven operator console with startup preflight, in-session workflow gating, "
-            "and repeatable manual lifecycle controls.\n\n"
-            f"- Selected profile: `{profile_id}`.\n"
+            "Operator Testing Module V0. Top status board above shows live "
+            "runtime, provider, manual-query state, top blocker, next safe "
+            "action, and per-contract rows for ES, NQ, CL, 6E, MGC.\n\n"
+            f"- Engine source profile: `{profile_id}` (secondary metadata).\n"
             f"- Runtime mode: `{mode}`.\n"
             f"- Running as: `{running_as}`.\n"
-            "- Startup Status confirms whether the console is actually ready.\n"
-            "- Session Lifecycle shows whether the current profile was freshly reloaded, reset, or left unchanged.\n"
-            "- Recent Session Evidence shows bounded, ordered evidence for the active and recently used profiles.\n"
-            "- Restored Prior Run versus Current Session labels keep persisted evidence truthful across app restarts.\n"
-            "- Session Workflow shows whether live query is blocked, eligible, requested, completed, or failed.\n"
-            "- Supported Profile Operations lists all supported profiles plus blocked candidate contracts.\n"
-            "- Profile Selector switches only between supported profiles and fails closed when validation does not complete.\n"
-            "- Reload Current Profile reruns preflight and reloads the declared source artifacts for the selected profile.\n"
-            "- Reset Session clears bounded query state without changing the selected profile.\n"
-            "- The live-query action runs only against the currently loaded bounded snapshot.\n"
-            "- It does not place orders, imply fills, or bypass fail-closed gating.\n"
-            "- Debug JSON stays secondary only."
+            "- Default launch is non-live; explicit `OPERATOR_LIVE_RUNTIME=1` enables live data.\n"
+            "- Preserved engine remains the sole decision authority. Manual query only.\n"
+            "- No fixture fallback after live failure. No broker, order, account, fill, or P&L behavior.\n"
+            "- The detail sections below (startup status, session lifecycle, evidence, workflow) are secondary."
         ),
         query_action_control=query_button,
         lifecycle_control_panel=lifecycle_controls,

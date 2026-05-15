@@ -36,6 +36,9 @@ from .primary_cockpit import (
     build_live_observation_cockpit_surface,
     primary_cockpit_surface_mutable,
 )
+from .operator_testing_module import (
+    build_operator_testing_module_surface,
+)
 from .readiness_summary import (
     RuntimeReadinessSnapshot,
     build_five_contract_readiness_summary_surface,
@@ -417,6 +420,7 @@ def attach_launch_metadata(
     _overlay_live_observation_runtime_labels(shell, resolved_operator_runtime)
     _attach_primary_cockpit_overview(shell, resolved_operator_runtime)
     _attach_initial_cockpit_operator_action_status(shell)
+    _attach_operator_testing_module_surface(shell, report, resolved_operator_runtime)
     return shell
 
 
@@ -597,6 +601,40 @@ def _attach_five_contract_readiness_summary(
             active_profile_id=report.request.profile.profile_id,
             runtime_snapshot=runtime_snapshot,
         )
+    )
+
+
+def _attach_operator_testing_module_surface(
+    shell: dict[str, object],
+    report: PreflightReport,
+    operator_runtime: OperatorRuntimeSnapshotResult,
+) -> None:
+    """Attach the V0 operator-facing top status board.
+
+    The V0 surface is derived read-only from the five-contract readiness
+    summary, the primary cockpit surface, and the operator live runtime
+    metadata. It is always attached so the operator-facing top surface is
+    present regardless of mode; in non-live mode the surface honestly reports
+    ``NOT_READY_FOR_OPERATOR_TESTING`` and tells the operator how to enable
+    the live runtime.
+    """
+
+    surfaces = shell.get("surfaces")
+    if not isinstance(surfaces, dict):
+        return
+    readiness_summary = surfaces.get("five_contract_readiness_summary")
+    primary_cockpit = None
+    primary_key = shell.get(PRIMARY_COCKPIT_SURFACE_KEY_FIELD)
+    if isinstance(primary_key, str):
+        primary_cockpit = surfaces.get(primary_key)
+    engine_profile_id = (
+        report.request.profile.profile_id if report.request is not None else None
+    )
+    surfaces["operator_testing_module"] = build_operator_testing_module_surface(
+        readiness_summary=readiness_summary if isinstance(readiness_summary, dict) else None,
+        primary_cockpit_surface=primary_cockpit if isinstance(primary_cockpit, dict) else None,
+        operator_live_runtime=operator_runtime.to_dict(),
+        engine_source_profile_id=engine_profile_id,
     )
 
 
