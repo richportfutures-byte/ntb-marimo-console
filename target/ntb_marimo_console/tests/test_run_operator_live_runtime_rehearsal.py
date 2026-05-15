@@ -1471,6 +1471,51 @@ class RehearsalDependencyWiringTests(unittest.TestCase):
         self.assertEqual(report.chart_blocking_reasons, ())
         self.assertEqual(report.chart_data_diagnostic, "chart_futures_completed_five_minute_bars_received")
 
+    def test_completed_chart_bars_after_startup_gap_report_available_while_query_stays_blocked(self) -> None:
+        token_provider = FakeTokenProvider()
+        credentials_provider = FakeCredentialsProvider()
+        websocket_factory = FakeWebsocketFactory()
+        websocket_factory.connection.recv_queue.append(_admin_login_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0))
+        websocket_factory.connection.recv_queue.append(_subs_ack(code=0, service="CHART_FUTURES"))
+        observed_at = datetime(2026, 5, 9, 14, 0, 0, tzinfo=timezone.utc)
+        for symbol in ("/ESM26", "/NQM26", "/CLM26", "/6EM26", "/MGCM26"):
+            websocket_factory.connection.recv_queue.append(_data_frame(symbol, bid=100.0))
+            for minute in (2, 3, 4, 5, 6, 7, 8, 9):
+                websocket_factory.connection.recv_queue.append(_chart_frame(symbol, minute=minute))
+
+        deps = rehearsal.RehearsalDependencies(
+            token_provider=token_provider,
+            credentials_provider=credentials_provider,
+            websocket_factory=websocket_factory,
+            manager_builder=lambda cfg, c: SchwabStreamManager(cfg, client=c, clock=lambda: observed_at),
+            clock=_make_clock(),
+        )
+        report = rehearsal.run_with_dependencies(
+            args=_make_args(live=True, duration=10),
+            env=_full_env(self.target_root),
+            target_root=self.target_root,
+            deps=deps,
+        )
+
+        self.assertTrue(report.market_data_received)
+        self.assertEqual(report.received_contracts_count, 5)
+        self.assertTrue(report.chart_data_received)
+        self.assertEqual(report.chart_completed_five_minute_contracts_count, 5)
+        self.assertEqual(report.chart_data_diagnostic, "chart_futures_completed_five_minute_bars_received")
+        for contract in ("ES", "NQ", "CL", "6E", "MGC"):
+            with self.subTest(contract=contract):
+                self.assertEqual(
+                    report.per_contract_status[contract]["chart_status"],
+                    "completed_five_minute_bar_available",
+                )
+                self.assertEqual(
+                    report.per_contract_status[contract]["readiness_chart_status"],
+                    "chart available",
+                )
+                self.assertEqual(report.per_contract_status[contract]["readiness_quote_status"], "quote available")
+                self.assertEqual(report.per_contract_status[contract]["query_ready"], "no")
+
     def test_dispatch_counts_numeric_schwab_epoch_millis_timestamps_with_real_manager(self) -> None:
         token_provider = FakeTokenProvider()
         credentials_provider = FakeCredentialsProvider()

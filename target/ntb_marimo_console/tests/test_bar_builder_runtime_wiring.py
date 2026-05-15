@@ -93,8 +93,16 @@ def _levelone_frame(*, symbol: str) -> str:
         "3": 100.125,
         "4": 10,
         "5": 12,
+        "8": 1000,
         "10": NOW_MILLIS,
         "11": NOW_MILLIS,
+        "12": 101.0,
+        "13": 99.0,
+        "14": 99.75,
+        "18": 100.0,
+        "22": "Normal",
+        "30": True,
+        "32": True,
     }
     return json.dumps({
         "data": [{
@@ -139,6 +147,12 @@ def _ingest_levelone(manager: SchwabStreamManager) -> None:
 def _ingest_five_complete_bars(manager: SchwabStreamManager) -> None:
     for contract in final_target_contracts():
         for minute in range(5):
+            manager.ingest_message(_chart_message(contract, minute_offset=minute))
+
+
+def _ingest_startup_gap_then_complete_bars(manager: SchwabStreamManager) -> None:
+    for contract in final_target_contracts():
+        for minute in (2, 3, 4, 5, 6, 7, 8, 9):
             manager.ingest_message(_chart_message(contract, minute_offset=minute))
 
 
@@ -275,6 +289,50 @@ def test_readiness_summary_chart_available_with_completed_bars() -> None:
             assert row.chart_freshness_state == "fresh", (
                 f"{row.contract}: expected chart freshness 'fresh', got '{row.chart_freshness_state}'"
             )
+    finally:
+        clear_operator_live_runtime_registration()
+
+
+def test_completed_fresh_bars_with_startup_gap_show_chart_available_but_not_query_ready() -> None:
+    """A historical startup gap must not relabel proven fresh completed
+    five-minute bars as chart blocked, and the display label must not create
+    QUERY_READY without preserved-engine provenance."""
+    clear_operator_live_runtime_registration()
+    try:
+        manager = _manager()
+        bar_builder = _create_and_hook_bar_builder(manager, _config())
+        register_operator_live_bar_builder(bar_builder)
+
+        _ingest_levelone(manager)
+        _ingest_startup_gap_then_complete_bars(manager)
+
+        states = bar_builder.states()
+        for contract, state in states.items():
+            assert state.completed_five_minute_bars, f"{contract}: expected completed five-minute bars"
+            assert any(
+                reason.startswith(f"gap_in_one_minute_bars:{contract}:")
+                for reason in state.blocking_reasons
+            ), f"{contract}: expected startup gap blocker"
+            readiness = state.readiness()
+            assert readiness.completed_five_minute_available is True
+            assert readiness.fresh is True
+            assert readiness.state == "blocked"
+
+        summary = build_five_contract_readiness_summary(
+            runtime_snapshot=manager.snapshot(),
+            bar_states=states,
+        )
+
+        assert tuple(row.contract for row in summary.rows) == ("ES", "NQ", "CL", "6E", "MGC")
+        for row in summary.rows:
+            assert row.chart_status == "chart available"
+            assert row.chart_freshness_state == "fresh"
+            assert row.query_ready is False
+            assert "ZN" not in row.contract
+            assert row.contract != "GC"
+        mgc = next(row for row in summary.rows if row.contract == "MGC")
+        assert mgc.contract_label == "Micro Gold"
+        assert mgc.contract_label != "GC"
     finally:
         clear_operator_live_runtime_registration()
 

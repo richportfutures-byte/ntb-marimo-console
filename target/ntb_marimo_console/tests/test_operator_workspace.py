@@ -1040,6 +1040,36 @@ def test_r14_cockpit_contract_status_blocks_missing_stale_and_malformed_chart_ba
     assert "malformed_chart_event" in states_by_category(malformed)
 
 
+def test_r14_cockpit_completed_fresh_chart_bars_are_not_labeled_blocked() -> None:
+    fake_gate = {
+        "enabled": True,
+        "pipeline_query_authorized": True,
+        "contract": "ES",
+        "profile_id": "preserved_es_phase1",
+        "trigger_state": "QUERY_READY",
+        "trigger_state_from_real_producer": False,
+        "enabled_reasons": ["trigger_state_query_ready"],
+        "disabled_reasons": [],
+        "blocking_reasons": [],
+        "required_conditions": ["trigger_state_query_ready"],
+        "missing_conditions": [],
+    }
+    cockpit = ready_cockpit(
+        "ES",
+        gate=fake_gate,
+        trigger_state={"state": "QUERY_READY"},
+        live_observable=operator_status_snapshot(chart_state="blocked_completed"),
+    )
+    es = {row["contract"]: row for row in cockpit["contract_statuses"]}["ES"]
+
+    assert es["quote_status"] == "quote available"
+    assert es["chart_status"] == "chart available"
+    assert es["chart_freshness_state"] == "fresh"
+    assert es["query_action_state"] == "DISABLED"
+    assert cockpit["query_readiness"]["query_ready"] is False
+    assert "pipeline_gate_provenance_not_verified" in es["blocking_reasons"]
+
+
 def test_contract_status_display_does_not_create_query_readiness_from_view_model() -> None:
     fake_gate = {
         "enabled": True,
@@ -1307,6 +1337,8 @@ def operator_status_snapshot(*, chart_state: str = "available", include_raw_valu
                 "state": "stale",
                 "available": False,
                 "fresh": False,
+                "completed_five_minute_available": True,
+                "completed_five_minute_count": 1,
                 "blocking_reasons": ["chart_bar_stale:ES"],
             }
         elif chart_state == "missing" and contract == "ES":
@@ -1322,6 +1354,15 @@ def operator_status_snapshot(*, chart_state: str = "available", include_raw_valu
                 "available": False,
                 "fresh": True,
                 "blocking_reasons": ["malformed_chart_event:ES", "chart_bar_missing_required_fields:ES:open"],
+            }
+        elif chart_state == "blocked_completed" and contract == "ES":
+            chart_bar = {
+                "state": "blocked",
+                "available": False,
+                "fresh": True,
+                "completed_five_minute_available": True,
+                "completed_five_minute_count": 1,
+                "blocking_reasons": ["gap_in_one_minute_bars:ES:2026-05-06T14:00:00+00:00"],
             }
         contract_payload: dict[str, object] = {
             "contract": contract,

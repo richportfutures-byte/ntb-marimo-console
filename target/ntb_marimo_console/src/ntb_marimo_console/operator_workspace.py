@@ -772,6 +772,11 @@ def _chart_status(chart_bar: Mapping[str, Any], reasons: Sequence[str]) -> str:
         return "chart missing"
     if state == "stale" or chart_bar.get("fresh") is False:
         return "chart stale"
+    if (
+        chart_bar.get("completed_five_minute_available") is True
+        and chart_bar.get("fresh") is True
+    ):
+        return "chart available"
     if state == "building" or chart_bar.get("building") is True:
         return "chart building"
     if state == "blocked":
