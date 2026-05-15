@@ -267,6 +267,133 @@ The operator-first bias does not relax safety:
 
 Safety boundaries are guardrails. They must not be used as an excuse for audit spiral when the next app blocker is observable and fixable.
 
+<!-- EXECUTION_RESTRAINT_DIALBACKS_START -->
+
+### Execution Restraint Dial-Backs
+
+The operator-first bias requires dialing back process restraints that slow app delivery without materially improving safety.
+
+These dial-backs apply immediately.
+
+#### 1. Bounded live confirmation is allowed after screen-affecting changes
+
+If a change affects what the operator sees in live mode, one bounded sanitized live confirmation is allowed after targeted tests pass.
+
+Do not debate whether a live check is absolutely necessary when the acceptance question is live operator behavior.
+
+Live confirmation must remain explicit opt-in and sanitized:
+- no secrets,
+- no token contents,
+- no auth headers,
+- no streamer URLs,
+- no customer IDs,
+- no correl IDs,
+- no account IDs,
+- no raw streamer payloads,
+- no raw quote/bar values in terminal output, logs, commits, screenshots, or chat.
+
+#### 2. Local live cockpit display may show market values
+
+The ban on raw quote/bar values applies to terminal output, logs, commits, screenshots, chat, and diagnostic artifacts.
+
+It does not prohibit the local explicitly-launched live cockpit from displaying market values when those values are necessary for operator use.
+
+Do not let redaction rules prevent building a real local workstation display.
+
+#### 3. Continue through same-surface app-owned blockers
+
+Do not stop after one small fix when the next blocker is visible, app-owned, and inside the same surface.
+
+Continue in the same implementation session across same-surface blockers until:
+- the cockpit is usable for operator testing,
+- targeted verification fails for an unclear reason,
+- or a hard safety boundary is reached.
+
+Examples of same-surface blockers:
+- header wording contradiction,
+- provider/quote/chart label inconsistency,
+- primary cockpit identity confusion,
+- row-level blocker text confusion,
+- next-safe-action missing from the operator table.
+
+#### 4. Inspection exists to enable implementation
+
+Do not produce audit-only or readiness-only output after a concrete blocker is known.
+
+Inspection is allowed only as needed to implement the next working app behavior.
+
+The deliverable is changed operator-visible app behavior, not a readiness conclusion.
+
+#### 5. Verification should match the milestone
+
+Run targeted tests while coding.
+
+At an operator milestone, run the relevant cockpit/readiness/renderer/launch acceptance slice without asking again.
+
+Do not repeatedly run expensive broad verification unless the changed surface requires it.
+
+Do not use lack of broad verification as a reason to avoid fixing an observed operator-screen blocker.
+
+#### 6. Documentation is secondary but allowed when it steers behavior
+
+Docs must not lead implementation.
+
+Docs are allowed when they:
+- change future orchestration behavior,
+- define the current operator workflow,
+- prevent future audit spiral,
+- or explain how to run the app safely.
+
+Do not write historical audit documents unless explicitly requested.
+
+#### 7. Internal labels are backlog unless they mislead the operator
+
+Old internal names such as fixture/demo profile names do not block testing by themselves.
+
+They become implementation blockers only when they are the primary live-screen identity or cause the operator to believe live data is fake.
+
+Internal labels may remain in secondary/debug text.
+
+#### 8. source/ntb_engine remains protected, not impossible forever
+
+Default rule: do not modify source/ntb_engine.
+
+If a future blocker is proven to be engine-side, stop and request explicit authorization before crossing that boundary.
+
+Do not use the engine boundary as an excuse to avoid target-app fixes.
+
+#### 9. Safety boundaries are guardrails, not excuses for delay
+
+Keep the real safety boundaries:
+- no broker/order/execution/account/fill/P&L behavior,
+- no default live launch,
+- no fixture fallback after live failure,
+- no secrets or sensitive identifiers printed,
+- no display/view-model/replay/evidence path creating QUERY_READY,
+- preserved engine remains the sole decision authority,
+- manual query only,
+- manual execution only,
+- ES, NQ, CL, 6E, MGC only,
+- ZN and GC excluded,
+- MGC is Micro Gold, not GC.
+
+Do not use those safety boundaries to justify audit spiral when the next app blocker is observable, target-owned, and fixable.
+
+#### 10. Default implementation rule
+
+If the cockpit screen is incoherent, fix the screen.
+
+If the cockpit screen is coherent and live data works, start operator testing.
+
+If operator testing exposes a real blocker, fix that blocker.
+
+If the issue is only naming, layout, copy, or polish, backlog it unless it causes false interpretation.
+
+If the issue touches secrets, broker execution, fake readiness, or QUERY_READY authority, stop and preserve safety.
+
+<!-- EXECUTION_RESTRAINT_DIALBACKS_END -->
+
+
 ### Agent selection rule
 
 Use the fastest tool that can safely complete the next concrete step.
